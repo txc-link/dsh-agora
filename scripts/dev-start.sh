@@ -114,7 +114,7 @@ if [ ! -d "$PROJECT_ROOT/extensions/agora-plugin/node_modules" ]; then
 fi
 
 # ── 可选参数 ──────────────────────────────────────
-BACKEND_PORT="${AGORA_BACKEND_PORT:-18420}"
+BACKEND_PORT="${AGORA_BACKEND_PORT:-18008}"
 FRONTEND_PORT="${AGORA_FRONTEND_PORT:-33173}"
 DB_PATH="${AGORA_DB_PATH:-$HOME/.agora/agora.db}"
 CONFIG_PATH="${AGORA_CONFIG_PATH:-}"

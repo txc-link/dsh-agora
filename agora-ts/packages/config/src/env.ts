@@ -4,7 +4,7 @@ import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const DEFAULT_AGORA_HOST = '127.0.0.1';
-export const DEFAULT_AGORA_BACKEND_PORT = 18420;
+export const DEFAULT_AGORA_BACKEND_PORT = 18008;
 export const DEFAULT_AGORA_FRONTEND_PORT = 33173;
 
 const RUNTIME_ENV_KEYS = new Set([

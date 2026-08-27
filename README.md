@@ -203,7 +203,7 @@ The stable manual path is still:
 
 ```bash
 openclaw plugins install -l ./extensions/agora-plugin
-openclaw config set plugins.entries.agora.config.serverUrl http://127.0.0.1:18420
+openclaw config set plugins.entries.agora.config.serverUrl http://127.0.0.1:18008
 ```
 
 It only automates safe plugin registration and Agora server wiring.
@@ -279,7 +279,7 @@ When `AGORA_DEV_REGRESSION_MODE=true`, `agora dashboard session login` can read 
 
 Default local endpoints:
 
-- API: `http://127.0.0.1:18420/api/health`
+- API: `http://127.0.0.1:18008/api/health`
 - Dashboard: `http://127.0.0.1:33173/dashboard/`
 
 ### Create A Task

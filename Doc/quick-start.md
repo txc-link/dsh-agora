@@ -38,7 +38,7 @@ cd Agora
 
 ## Default Local URLs
 
-- API: `http://127.0.0.1:18420/api/health`
+- API: `http://127.0.0.1:18008/api/health`
 - Dashboard: `http://127.0.0.1:33173/dashboard/`
 
 ## Developer Live Regression Mode

@@ -29,7 +29,7 @@ describe('watched process craftsman adapter', () => {
     spawn.mockReturnValue(createSpawnResult(1357));
     const inner = new CodexCraftsmanAdapter({ spawn: vi.fn() });
     const adapter = new WatchedProcessCraftsmanAdapter(inner, {
-      callbackUrl: 'http://127.0.0.1:18420/api/craftsmen/callback',
+      callbackUrl: 'http://127.0.0.1:18008/api/craftsmen/callback',
     });
 
     const result = adapter.dispatchTask({
@@ -69,7 +69,7 @@ describe('watched process craftsman adapter', () => {
     const spawn = vi.fn(() => createSpawnResult());
     const inner = new CodexCraftsmanAdapter({ spawn: vi.fn() });
     const adapter = new WatchedProcessCraftsmanAdapter(inner, {
-      callbackUrl: 'http://127.0.0.1:18420/api/craftsmen/callback',
+      callbackUrl: 'http://127.0.0.1:18008/api/craftsmen/callback',
       apiToken: 'secret-token',
       spawn,
       resolveRunner: () => ({
@@ -120,7 +120,7 @@ describe('watched process craftsman adapter', () => {
     const spawn = vi.fn(() => createSpawnResult(6789));
     const inner = new CodexCraftsmanAdapter({ spawn: vi.fn() });
     const adapter = new WatchedProcessCraftsmanAdapter(inner, {
-      callbackUrl: 'http://127.0.0.1:18420/api/craftsmen/callback',
+      callbackUrl: 'http://127.0.0.1:18008/api/craftsmen/callback',
       spawn,
     });
 
@@ -160,7 +160,7 @@ describe('watched process craftsman adapter', () => {
     const spawn = vi.fn(() => createSpawnResult(2468));
     const inner = new CodexCraftsmanAdapter({ spawn: vi.fn() });
     const adapter = new WatchedProcessCraftsmanAdapter(inner, {
-      callbackUrl: 'http://127.0.0.1:18420/api/craftsmen/callback',
+      callbackUrl: 'http://127.0.0.1:18008/api/craftsmen/callback',
       spawn,
     });
 
@@ -192,7 +192,7 @@ describe('watched process craftsman adapter', () => {
     const inner = new CodexCraftsmanAdapter({ spawn: vi.fn() });
     const spawn = vi.fn(() => createSpawnResult(0));
     const adapter = new WatchedProcessCraftsmanAdapter(inner, {
-      callbackUrl: 'http://127.0.0.1:18420/api/craftsmen/callback',
+      callbackUrl: 'http://127.0.0.1:18008/api/craftsmen/callback',
       spawn,
       resolveRunner: () => ({
         command: 'node',

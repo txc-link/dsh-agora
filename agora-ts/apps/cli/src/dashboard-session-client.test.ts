@@ -56,7 +56,7 @@ describe('dashboard session client', () => {
       ));
 
     const client = createDashboardSessionClient({
-      apiBaseUrl: 'http://127.0.0.1:18420',
+      apiBaseUrl: 'http://127.0.0.1:18008',
       sessionFilePath,
       fetchImpl,
     });
@@ -80,7 +80,7 @@ describe('dashboard session client', () => {
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
       2,
-      'http://127.0.0.1:18420/api/dashboard/session',
+      'http://127.0.0.1:18008/api/dashboard/session',
       expect.objectContaining({
         headers: expect.objectContaining({
           cookie: 'agora_dashboard_session=session-token',
@@ -89,7 +89,7 @@ describe('dashboard session client', () => {
     );
     expect(fetchImpl).toHaveBeenNthCalledWith(
       3,
-      'http://127.0.0.1:18420/api/dashboard/session/logout',
+      'http://127.0.0.1:18008/api/dashboard/session/logout',
       expect.objectContaining({
         headers: expect.objectContaining({
           cookie: 'agora_dashboard_session=session-token',
@@ -122,7 +122,7 @@ describe('dashboard session client', () => {
       ));
 
     const client = createDashboardSessionClient({
-      apiBaseUrl: 'http://127.0.0.1:18420',
+      apiBaseUrl: 'http://127.0.0.1:18008',
       sessionFilePath,
       fetchImpl,
     });

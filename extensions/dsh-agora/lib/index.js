@@ -25,7 +25,7 @@ export const name = 'dsh-agora';
 // node worker. Declaring it here also makes Cordis delay apply() until the web
 // host is initialized instead of silently starting in command-only mode.
 export const inject = ['commands', 'tools', 'webServer'];
-const PLUGIN_VERSION = '0.3.1';
+const PLUGIN_VERSION = '0.3.2';
 export function apply(ctx, config = {}) {
     const commandName = normalizeCommandName(config.commandName ?? 'agora');
     const nodeId = normalizeNodeId(config.nodeId ?? process.env.DSH_AGORA_NODE_ID ?? hostname());
@@ -35,7 +35,7 @@ export function apply(ctx, config = {}) {
     let worker = null;
     const registry = new DshAgoraExtensionRegistry();
     const client = new AgoraClient({
-        serverUrl: config.serverUrl ?? process.env.AGORA_SERVER_URL ?? 'http://127.0.0.1:18420',
+        serverUrl: config.serverUrl ?? process.env.AGORA_SERVER_URL ?? 'http://127.0.0.1:18008',
         apiToken: config.apiToken ?? process.env.AGORA_API_TOKEN,
         timeoutMs: config.requestTimeoutMs,
     });

@@ -132,7 +132,7 @@ describe('runInitCommand', () => {
     await runInitCommand({
       runtimeEnvironment: {
         projectRoot: '/repo',
-        serverUrl: 'http://127.0.0.1:18420',
+        serverUrl: 'http://127.0.0.1:18008',
       },
       setupHybridRetrieval,
       ...assetFixtures,
@@ -168,7 +168,7 @@ describe('runInitCommand', () => {
     await runInitCommand({
       runtimeEnvironment: {
         projectRoot: '/repo',
-        serverUrl: 'http://127.0.0.1:18420',
+        serverUrl: 'http://127.0.0.1:18008',
       },
       setupHybridRetrieval,
       ...assetFixtures,
@@ -205,7 +205,7 @@ describe('runInitCommand', () => {
       await runInitCommand({
         runtimeEnvironment: {
           projectRoot: '/repo',
-          serverUrl: 'http://127.0.0.1:18420',
+          serverUrl: 'http://127.0.0.1:18008',
         },
         setupHybridRetrieval,
         ...assetFixtures,

@@ -22,7 +22,7 @@ npm test
 dsh plugin --profile web add /absolute/path/to/Agora/extensions/dsh-agora
 ```
 
-The bundle defaults to Agora's standard `http://127.0.0.1:18420`. Set `AGORA_SERVER_URL` when the server listens elsewhere. `AGORA_API_TOKEN` is forwarded as a bearer token to Agora. Secrets should be supplied through the process environment, not committed in the profile patch.
+The bundle defaults to Agora's standard `http://127.0.0.1:18008`. Set `AGORA_SERVER_URL` when the server listens elsewhere. `AGORA_API_TOKEN` is forwarded as a bearer token to Agora. Secrets should be supplied through the process environment, not committed in the profile patch.
 
 ## Surfaces
 

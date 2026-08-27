@@ -25,7 +25,7 @@ describe('default craftsman adapters', () => {
   it('returns watched adapters when adapter mode is watched', () => {
     const adapters = createDefaultCraftsmanAdapters({
       mode: 'watched',
-      callbackUrl: 'http://127.0.0.1:18420/api/craftsmen/callback',
+      callbackUrl: 'http://127.0.0.1:18008/api/craftsmen/callback',
     });
 
     expect(adapters.codex).toBeInstanceOf(WatchedProcessCraftsmanAdapter);
@@ -44,7 +44,7 @@ describe('default craftsman adapters', () => {
   it('returns acp adapters when adapter mode is acp', () => {
     const adapters = createDefaultCraftsmanAdapters({
       mode: 'acp',
-      callbackUrl: 'http://127.0.0.1:18420/api/craftsmen/callback',
+      callbackUrl: 'http://127.0.0.1:18008/api/craftsmen/callback',
     });
 
     expect(adapters.codex).toBeInstanceOf(AcpCraftsmanAdapter);

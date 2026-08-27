@@ -52,7 +52,7 @@ describe("plugin register", () => {
 
     expect(registerCommand).toHaveBeenCalledTimes(2);
     expect(registerCommand.mock.calls.map(([command]) => command.name)).toEqual(["project", "task"]);
-    expect(logger.info).toHaveBeenCalledWith("Agora plugin loaded (http://127.0.0.1:18420)");
+    expect(logger.info).toHaveBeenCalledWith("Agora plugin loaded (http://127.0.0.1:18008)");
   });
 
   it("honors AGORA_SERVER_URL when plugin config omits serverUrl", async () => {

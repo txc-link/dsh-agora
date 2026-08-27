@@ -26,7 +26,7 @@ Do not point OpenClaw at a temporary agent worktree. Use the stable repo path un
 Then point OpenClaw's Agora plugin config to your local Agora service:
 
 ```bash
-openclaw config set plugins.entries.agora.config.serverUrl http://127.0.0.1:18420
+openclaw config set plugins.entries.agora.config.serverUrl http://127.0.0.1:18008
 ```
 
 If API auth is enabled, also set the token:
@@ -40,7 +40,7 @@ openclaw config set plugins.entries.agora.config.apiToken your-secret-token
 Check the Agora health endpoint:
 
 ```bash
-curl http://127.0.0.1:18420/api/health
+curl http://127.0.0.1:18008/api/health
 ```
 
 Check the plugin:

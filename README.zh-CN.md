@@ -195,7 +195,7 @@ cd Agora
 
 ```bash
 openclaw plugins install -l ./extensions/agora-plugin
-openclaw config set plugins.entries.agora.config.serverUrl http://127.0.0.1:18420
+openclaw config set plugins.entries.agora.config.serverUrl http://127.0.0.1:18008
 ```
 
 它只会自动处理安全的插件注册和 Agora server 连接信息。
@@ -261,7 +261,7 @@ npm run dev -w @agora-ts/cli -- regression live --task-id <task_id> --goal "验�
 
 默认本地地址：
 
-- API：`http://127.0.0.1:18420/api/health`
+- API：`http://127.0.0.1:18008/api/health`
 - Dashboard：`http://127.0.0.1:33173/dashboard/`
 
 ### 创建任务

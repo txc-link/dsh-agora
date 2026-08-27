@@ -29,10 +29,10 @@ npm test
 dsh plugin --profile web add /home/ailink/dsh-agora/extensions/dsh-agora
 ```
 
-默认连接 `http://127.0.0.1:18420`。可以编辑 profile 中 Agora 插件的配置，或在启动 DSH 前设置：
+默认连接 `http://127.0.0.1:18008`。可以编辑 profile 中 Agora 插件的配置，或在启动 DSH 前设置：
 
 ```bash
-export AGORA_SERVER_URL=http://127.0.0.1:18420
+export AGORA_SERVER_URL=http://127.0.0.1:18008
 export AGORA_API_TOKEN=replace-if-agora-requires-a-bearer-token
 export DSH_AGORA_API_TOKEN=replace-to-allow-non-loopback-host-api-calls
 ```
@@ -46,7 +46,7 @@ export DSH_AGORA_API_TOKEN=replace-to-allow-non-loopback-host-api-calls
     - id: agora
       name: dsh-agora
       config:
-        serverUrl: http://127.0.0.1:18420
+        serverUrl: http://127.0.0.1:18008
         nodeEnabled: true
         nodeId: ailink-web
         maxConcurrent: 2

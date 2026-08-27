@@ -15,7 +15,7 @@ describe('ACP-backed craftsman transport', () => {
     } as const;
     const adapter = new AcpCraftsmanAdapter('claude', {
       runtime: runtime as never,
-      callbackUrl: 'http://127.0.0.1:18420/api/craftsmen/callback',
+      callbackUrl: 'http://127.0.0.1:18008/api/craftsmen/callback',
     });
 
     const result = adapter.dispatchTask({
@@ -57,7 +57,7 @@ describe('ACP-backed craftsman transport', () => {
     } as const;
     const adapter = new AcpCraftsmanAdapter('codex', {
       runtime: runtime as never,
-      callbackUrl: 'http://127.0.0.1:18420/api/craftsmen/callback',
+      callbackUrl: 'http://127.0.0.1:18008/api/craftsmen/callback',
       sessionDefaults: {
         model: 'gpt-5-codex',
         timeoutSeconds: 90,

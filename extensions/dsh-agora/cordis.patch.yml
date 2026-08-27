@@ -3,7 +3,7 @@
     - id: agora
       name: 'dsh-agora'
       config:
-        serverUrl: 'http://127.0.0.1:18420'
+        serverUrl: 'http://127.0.0.1:18008'
         requestTimeoutMs: 10000
         defaultCreator: 'dsh'
         commandName: 'agora'
