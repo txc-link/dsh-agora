@@ -201,6 +201,17 @@ openclaw config set plugins.entries.agora.config.serverUrl http://127.0.0.1:1800
 它只会自动处理安全的插件注册和 Agora server 连接信息。
 它**不会**自动改 OpenClaw 的 Discord 行为策略，比如 bot roster、`allowBots`、`requireMention`、guild/channel allowlist。
 
+DeepSeek Harness 用户可以安装原生轻量适配器：
+
+```bash
+cd extensions/dsh-agora
+npm install
+npm test
+dsh plugin --profile web add "$PWD"
+```
+
+每套协同网络只部署一个中央 Agora Server；每个参与执行的 DSH 都安装一次 `dsh-agora`，并配置唯一、稳定的 `nodeId`。完整的多节点配置、Web 面板、dsh-im bridge 补丁、Discord 验收和 pnpm 排障流程见 [`extensions/dsh-agora/README.md`](./extensions/dsh-agora/README.md)。英文集成指南见 [`Doc/dsh-integration.md`](./Doc/dsh-integration.md)。
+
 如果你要启用语义化 `project brain` 检索，`./agora init` 现在会提供一个可选安装阶段，自动完成：
 
 - 收集 embedding API 配置
