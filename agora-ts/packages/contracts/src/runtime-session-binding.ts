@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const runtimeProviderSchema = z.enum(['openclaw', 'cc-connect', 'acpx', 'tmux']);
+export const runtimeProviderSchema = z.enum(['openclaw', 'cc-connect', 'acpx', 'tmux', 'dsh']);
 export type RuntimeProviderDto = z.infer<typeof runtimeProviderSchema>;
 export const runtimeSessionPresenceStateSchema = z.enum(['active', 'idle', 'closed']);
 export type RuntimeSessionPresenceStateDto = z.infer<typeof runtimeSessionPresenceStateSchema>;
@@ -25,3 +25,15 @@ export const runtimeSessionBindingSchema = z.object({
   closed_at: z.string().nullable(),
 });
 export type RuntimeSessionBindingDto = z.infer<typeof runtimeSessionBindingSchema>;
+
+export const bindRuntimeSessionRequestSchema = z.object({
+  runtime_provider: runtimeProviderSchema,
+  runtime_session_ref: z.string().min(1),
+  runtime_actor_ref: z.string().min(1).nullable().optional(),
+  continuity_ref: z.string().min(1).nullable().optional(),
+  presence_state: runtimeSessionPresenceStateSchema.default('active'),
+  binding_reason: z.string().min(1).default('runtime_node_attach'),
+  desired_runtime_presence: runtimeSessionDesiredPresenceSchema.optional(),
+  last_seen_at: z.string().optional(),
+}).strict();
+export type BindRuntimeSessionRequestDto = z.infer<typeof bindRuntimeSessionRequestSchema>;

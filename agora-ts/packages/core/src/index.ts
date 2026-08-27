@@ -72,6 +72,8 @@ export type { DashboardQueryServiceOptions } from './dashboard-query-service.js'
 export { DashboardQueryService } from './dashboard-query-service.js';
 export type { RuntimeTargetServiceOptions } from './runtime-target-service.js';
 export { RuntimeTargetService } from './runtime-target-service.js';
+export type { RuntimeNodeRepositoryPort } from './runtime-node-registry-service.js';
+export { RuntimeNodeRegistryService, runtimeTargetRefFor } from './runtime-node-registry-service.js';
 export { isDeveloperRegressionEnabled, isRegressionOperatorProxyEnabled } from './dev-regression-mode.js';
 export { ActivityKind, AgentRole, CollaborationMode, CraftsmanType, DispatchStatus, EscalationLevel, GateType, GovernancePreset, SubtaskState, TaskPriority, TaskState, TaskType } from './enums.js';
 export { NotFoundError, PermissionDeniedError } from './errors.js';

@@ -1,0 +1,7 @@
+{
+  "id": "dsh-agora",
+  "name": "Agora",
+  "description": "Connect DSH sessions and IM command gateways to Agora governance.",
+  "version": "0.2.0",
+  "entry": "lib/index.js"
+}

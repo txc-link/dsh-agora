@@ -1,0 +1,75 @@
+{
+  "name": "dsh-agora",
+  "version": "0.3.0",
+  "description": "DSH-native adapter for an Agora governance server",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./contracts": {
+      "types": "./lib/contracts.d.ts",
+      "default": "./lib/contracts.js"
+    },
+    "./sdk": {
+      "types": "./lib/extension-sdk.d.ts",
+      "default": "./lib/extension-sdk.js"
+    },
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "timer"
+      ]
+    }
+  },
+  "files": [
+    "lib",
+    "client",
+    "src",
+    "patches",
+    "cordis.patch.yml",
+    "dsh.plugin.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/build-client.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "prepack": "npm run build"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "agora",
+    "governance",
+    "orchestration"
+  ],
+  "peerDependencies": {
+    "cordis": "^4.0.0-rc.7"
+  },
+  "peerDependenciesMeta": {
+    "cordis": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "cordis": "^4.0.0-rc.8",
+    "typescript": "^5.9.0"
+  }
+}

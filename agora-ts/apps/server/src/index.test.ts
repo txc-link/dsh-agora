@@ -45,6 +45,21 @@ describe('server index wiring', () => {
     runtime.db.close();
   });
 
+  it('passes the runtime node registry from runtime into buildApp', async () => {
+    const dir = makeTempDir();
+    const configPath = join(dir, 'agora.json');
+    writeFileSync(configPath, JSON.stringify({ db_path: join(dir, 'runtime.db') }));
+    const runtime = createServerRuntime({ configPath });
+    const app = createAppFromRuntime(runtime);
+
+    const response = await app.inject({ method: 'GET', url: '/api/runtime-nodes' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ nodes: [] });
+    await app.close();
+    runtime.db.close();
+  });
+
   it('passes taskInboundService from runtime into buildApp', async () => {
     const ingest = vi.fn(() => ({
       entry: {

@@ -31,6 +31,7 @@ import {
   RetrievalRegistry,
   RetrievalService,
   RolePackService,
+  RuntimeNodeRegistryService,
   RuntimeTargetService,
   TaskAuthorityService,
   type ProjectKnowledgePort,
@@ -93,6 +94,7 @@ import {
   ProjectWriteLockRepository,
   RoleBindingRepository,
   RoleDefinitionRepository,
+  RuntimeNodeRepository,
   RuntimeTargetOverlayRepository,
   RuntimeSessionBindingRepository,
   SubtaskRepository,
@@ -140,6 +142,9 @@ export interface ServerCompositionOptions {
 }
 
 export interface ServerComposition {
+  agentRegistry: AgentInventorySource;
+  presenceSource: PresenceSource;
+  runtimeNodeRegistryService: RuntimeNodeRegistryService;
   taskService: TaskService;
   projectService: ProjectService;
   projectBrainService: ProjectBrainService;
@@ -167,9 +172,16 @@ export interface ServerComposition {
 }
 
 export interface ServerCompositionFactories {
+  createRuntimeNodeRegistryService: (context: ServerCompositionContext) => RuntimeNodeRegistryService;
   createLiveSessionStore: (context: ServerCompositionContext) => LiveSessionStore;
-  createAgentRegistry: (context: ServerCompositionContext) => AgentInventorySource;
-  createPresenceSource: (context: ServerCompositionContext) => PresenceSource;
+  createAgentRegistry: (
+    context: ServerCompositionContext,
+    deps?: { runtimeNodeRegistryService: RuntimeNodeRegistryService },
+  ) => AgentInventorySource;
+  createPresenceSource: (
+    context: ServerCompositionContext,
+    deps?: { runtimeNodeRegistryService: RuntimeNodeRegistryService },
+  ) => PresenceSource;
   createAgentRuntimePort: (context: ServerCompositionContext, deps: { agentRegistry: AgentInventorySource }) => AgentRuntimePort;
   createCraftsmanDispatcher: (
     context: ServerCompositionContext,
@@ -319,18 +331,22 @@ export function ensureRuntimeBrainPackRoot(projectRoot: string): string {
 
 export function createDefaultServerCompositionFactories(): ServerCompositionFactories {
   return {
+    createRuntimeNodeRegistryService: (context) => new RuntimeNodeRegistryService(
+      new RuntimeNodeRepository(context.db),
+    ),
     createLiveSessionStore: () => new LiveSessionStore({
       staleAfterMs: Number(process.env.AGORA_LIVE_SESSION_TTL_MS ?? 15 * 60 * 1000),
     }),
-    createAgentRegistry: () => new CompositeAgentInventorySource([
+    createAgentRegistry: (_context, deps) => new CompositeAgentInventorySource([
       new OpenClawAgentRegistry(
         process.env.AGORA_OPENCLAW_CONFIG_PATH
           ? { configPath: process.env.AGORA_OPENCLAW_CONFIG_PATH }
           : {},
       ),
       new CcConnectAgentRegistry(),
+      ...(deps?.runtimeNodeRegistryService ? [deps.runtimeNodeRegistryService] : []),
     ]),
-    createPresenceSource: () => new CompositePresenceSource([
+    createPresenceSource: (_context, deps) => new CompositePresenceSource([
       new OpenClawLogPresenceSource(
         process.env.AGORA_OPENCLAW_GATEWAY_LOG_PATH
           ? {
@@ -346,6 +362,7 @@ export function createDefaultServerCompositionFactories(): ServerCompositionFact
         staleAfterMs: Number(process.env.AGORA_PROVIDER_STALE_AFTER_MS ?? 10 * 60 * 1000),
         pollIntervalMs: Number(process.env.AGORA_CC_CONNECT_POLL_INTERVAL_MS ?? 30_000),
       }),
+      ...(deps?.runtimeNodeRegistryService ? [deps.runtimeNodeRegistryService] : []),
     ]),
     createAgentRuntimePort: (_context, deps) => new InventoryBackedAgentRuntimePort(deps.agentRegistry),
     createCraftsmanDispatcher: (context, deps) => {
@@ -737,6 +754,7 @@ function createDefaultRuntimeTargetService(db: AgoraDatabase) {
           : {},
       ),
       new CcConnectAgentRegistry(),
+      new RuntimeNodeRegistryService(new RuntimeNodeRepository(db)),
     ]),
     overlayRepository: new RuntimeTargetOverlayRepository(db),
   });
@@ -751,9 +769,10 @@ export function buildServerComposition(
     ...overrides,
   };
 
+  const runtimeNodeRegistryService = factories.createRuntimeNodeRegistryService(context);
   const liveSessionStore = factories.createLiveSessionStore(context);
-  const agentRegistry = factories.createAgentRegistry(context);
-  const presenceSource = factories.createPresenceSource(context);
+  const agentRegistry = factories.createAgentRegistry(context, { runtimeNodeRegistryService });
+  const presenceSource = factories.createPresenceSource(context, { runtimeNodeRegistryService });
   const agentRuntimePort = factories.createAgentRuntimePort(context, { agentRegistry });
   const craftsmanMode = resolveCraftsmanRuntimeMode('server');
   const acpRuntime = craftsmanMode === 'acp' ? new DirectAcpxRuntimePort() : undefined;
@@ -867,6 +886,9 @@ export function buildServerComposition(
       });
 
   return {
+    agentRegistry,
+    presenceSource,
+    runtimeNodeRegistryService,
     taskService,
     projectService,
     projectBrainService,

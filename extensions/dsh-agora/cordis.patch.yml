@@ -1,0 +1,18 @@
+# Install with: dsh plugin --profile <profile> add <path-or-git-url>
+- insert:
+    - id: agora
+      name: 'dsh-agora'
+      config:
+        serverUrl: 'http://127.0.0.1:18420'
+        requestTimeoutMs: 10000
+        defaultCreator: 'dsh'
+        commandName: 'agora'
+        nodeEnabled: true
+        nodeId: 'ailink-web'
+        maxConcurrent: 2
+        runtimeAgents:
+          - id: 'default'
+            displayName: 'Ailink General Agent'
+            workspace: '/home/ailink'
+            roles: ['general']
+            capabilities: ['research', 'coding']

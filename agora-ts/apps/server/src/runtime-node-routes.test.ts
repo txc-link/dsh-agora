@@ -1,0 +1,126 @@
+import { describe, expect, it, vi } from 'vitest';
+import { buildApp } from './app.js';
+
+const heartbeat = {
+  protocol: 'dsh-agora.node/v1' as const,
+  instance_id: 'instance-1',
+  plugin_version: '0.2.0',
+  host_framework: 'deepseek-harness' as const,
+  runtime_provider: 'dsh' as const,
+  agents: [{
+    agent_ref: 'default',
+    display_name: 'Default agent',
+    roles: ['worker'],
+    capabilities: ['session.resume'],
+  }],
+  bots: [],
+  capacity: { max_concurrent: 2, active: 0 },
+  lease_seconds: 90,
+};
+
+const node = {
+  ...heartbeat,
+  node_id: 'web-1',
+  presence: 'online' as const,
+  registered_at: '2026-08-26T01:00:00.000Z',
+  last_seen_at: '2026-08-26T01:00:00.000Z',
+  expires_at: '2026-08-26T01:01:30.000Z',
+};
+
+const pendingDispatch = {
+  id: 'dispatch-1',
+  node_id: 'web-1',
+  task_id: null,
+  participant_binding_id: null,
+  runtime_target_ref: 'dsh:web-1:default',
+  session_id: null,
+  workspace_alias: null,
+  agent_preset: null,
+  prompt: 'Review the task.',
+  idempotency_key: 'review-1',
+  metadata: null,
+  status: 'pending' as const,
+  claimed_by: null,
+  claim_expires_at: null,
+  result: null,
+  error: null,
+  created_at: '2026-08-26T01:00:01.000Z',
+  updated_at: '2026-08-26T01:00:01.000Z',
+  completed_at: null,
+};
+
+describe('runtime node routes', () => {
+  it('returns 503 when the registry is not configured', async () => {
+    const app = buildApp({});
+    const response = await app.inject({ method: 'GET', url: '/api/runtime-nodes' });
+    expect(response.statusCode).toBe(503);
+  });
+
+  it('maps heartbeat and dispatch lifecycle requests to the registry', async () => {
+    const claimed = {
+      ...pendingDispatch,
+      status: 'claimed' as const,
+      claimed_by: 'instance-1',
+      claim_expires_at: '2026-08-26T01:02:01.000Z',
+    };
+    const completed = {
+      ...claimed,
+      status: 'completed' as const,
+      session_id: 'session-1',
+      claim_expires_at: null,
+      result: { answer: 'done' },
+      completed_at: '2026-08-26T01:00:05.000Z',
+    };
+    const service = {
+      heartbeat: vi.fn(() => node),
+      listNodes: vi.fn(() => [node]),
+      getNode: vi.fn(() => node),
+      removeNode: vi.fn(() => true),
+      createDispatch: vi.fn(() => pendingDispatch),
+      listDispatches: vi.fn(() => [pendingDispatch]),
+      getDispatch: vi.fn(() => pendingDispatch),
+      claimDispatch: vi.fn(() => claimed),
+      completeDispatch: vi.fn(() => completed),
+    };
+    const app = buildApp({ runtimeNodeRegistryService: service as never });
+
+    const heartbeated = await app.inject({
+      method: 'PUT',
+      url: '/api/runtime-nodes/web-1/heartbeat',
+      payload: heartbeat,
+    });
+    expect(heartbeated.statusCode).toBe(200);
+    expect(service.heartbeat).toHaveBeenCalledWith('web-1', heartbeat);
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/runtime-nodes/web-1/dispatches',
+      payload: {
+        runtime_target_ref: 'dsh:web-1:default',
+        prompt: 'Review the task.',
+        idempotency_key: 'review-1',
+      },
+    });
+    expect(created.statusCode).toBe(201);
+
+    const claimedResponse = await app.inject({
+      method: 'POST',
+      url: '/api/runtime-nodes/web-1/dispatches/claim',
+      payload: { instance_id: 'instance-1', lease_seconds: 120 },
+    });
+    expect(claimedResponse.json()).toEqual({ dispatch: claimed });
+
+    const completedResponse = await app.inject({
+      method: 'POST',
+      url: '/api/runtime-nodes/web-1/dispatches/dispatch-1/complete',
+      payload: {
+        instance_id: 'instance-1',
+        status: 'completed',
+        session_id: 'session-1',
+        result: { answer: 'done' },
+      },
+    });
+    expect(completedResponse.statusCode).toBe(200);
+    expect(completedResponse.json()).toMatchObject({ status: 'completed', session_id: 'session-1' });
+  });
+});

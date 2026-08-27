@@ -11,6 +11,7 @@ It is intentionally smaller than the internal `docs/` repository. Only public-fa
 - [architecture-overview.md](./architecture-overview.md)
 - [discord-setup.md](./discord-setup.md)
 - [openclaw-local-setup.md](./openclaw-local-setup.md)
+- [dsh-integration.md](./dsh-integration.md)
 - [agents-contributor-reference.md](./agents-contributor-reference.md)
 - [reference/README.md](./reference/README.md)
 

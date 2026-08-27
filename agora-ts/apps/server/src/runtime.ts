@@ -14,11 +14,8 @@ import {
   ProjectBrainIndexService,
   ProjectBrainIndexWorkerService,
   RuntimeTargetService,
-  CompositeAgentInventorySource,
 } from '@agora-ts/core';
 import { OpenAiCompatibleProjectBrainEmbeddingAdapter, QdrantProjectBrainVectorIndexAdapter } from '@agora-ts/adapters-brain';
-import { CcConnectAgentRegistry } from '@agora-ts/adapters-cc-connect';
-import { OpenClawAgentRegistry } from '@agora-ts/adapters-openclaw';
 import { RuntimeTargetOverlayRepository } from '@agora-ts/db';
 import { existsSync } from 'node:fs';
 
@@ -278,14 +275,7 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
   }, options.factories);
   const { taskService } = composition;
   const runtimeTargetService = new RuntimeTargetService({
-    agentInventory: new CompositeAgentInventorySource([
-      new OpenClawAgentRegistry(
-        process.env.AGORA_OPENCLAW_CONFIG_PATH
-          ? { configPath: process.env.AGORA_OPENCLAW_CONFIG_PATH }
-          : {},
-      ),
-      new CcConnectAgentRegistry(),
-    ]),
+    agentInventory: composition.agentRegistry,
     overlayRepository: new RuntimeTargetOverlayRepository(db),
   });
   composition.discordPresenceService?.start();

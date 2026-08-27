@@ -42,7 +42,7 @@ Agora Core / Orchestrator
         |
         v
 Runtime / Execution Adapters
-Hosted runtimes: OpenClaw · future hosts
+Hosted runtimes: OpenClaw · DSH adapter · future hosts
 Execution substrates: ACPX (default) · tmux (legacy fallback)
 ```
 
@@ -61,6 +61,7 @@ If replacing Discord, OpenClaw, or Codex would require changing the core orchest
 - `agora-ts/`: server, CLI, contracts, core, db, config, testing
 - `dashboard/`: React dashboard
 - `extensions/`: external bridge adapters
+  - `dsh-agora`: thin DSH command/API/IM-contract adapter; no duplicate Core state
 - `Doc/`: shareable public docs
 - `docs/`: internal docs repo
 

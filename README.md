@@ -209,6 +209,16 @@ openclaw config set plugins.entries.agora.config.serverUrl http://127.0.0.1:1842
 It only automates safe plugin registration and Agora server wiring.
 It does **not** rewrite OpenClaw Discord policy such as bot rosters, `allowBots`, `requireMention`, or guild/channel allowlists.
 
+DSH users can install the native thin adapter instead:
+
+```bash
+cd extensions/dsh-agora
+npm install && npm test
+dsh plugin --profile web add /absolute/path/to/Agora/extensions/dsh-agora
+```
+
+See [Doc/dsh-integration.md](Doc/dsh-integration.md) for the command surface, security boundary, and the versioned dsh-im collaboration contract.
+
 If you want semantic `project brain` retrieval, `./agora init` now offers an optional setup phase that:
 
 - collects your embedding API settings

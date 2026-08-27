@@ -98,6 +98,15 @@ import {
   projectRuntimePolicyResponseSchema,
   runtimeTargetListResponseSchema,
   runtimeTargetResponseSchema,
+  bindRuntimeSessionRequestSchema,
+  runtimeSessionBindingSchema,
+  runtimeNodeHeartbeatRequestSchema,
+  runtimeNodeListResponseSchema,
+  runtimeNodeSchema,
+  createRuntimeNodeDispatchRequestSchema,
+  claimRuntimeNodeDispatchRequestSchema,
+  completeRuntimeNodeDispatchRequestSchema,
+  runtimeNodeDispatchSchema,
   updateProjectRuntimePolicyRequestSchema,
   upsertRuntimeTargetOverlayRequestSchema,
   type HealthResponse,
@@ -164,6 +173,7 @@ import {
   type TemplateAuthoringService,
   type WorkspaceBootstrapService,
   type RuntimeTargetService,
+  type RuntimeNodeRegistryService,
   WorkspaceBootstrapService as WorkspaceBootstrapServiceImpl,
 } from '@agora-ts/core';
 import {
@@ -207,6 +217,7 @@ export interface BuildAppOptions {
   citizenService?: CitizenService;
   dashboardQueryService?: DashboardQueryService;
   runtimeTargetService?: RuntimeTargetService;
+  runtimeNodeRegistryService?: RuntimeNodeRegistryService;
   ccConnectInspectionService?: CcConnectInspectionService;
   ccConnectManagementService?: CcConnectManagementService;
   ccConnectThreadSessionService?: CcConnectThreadSessionServiceLike;
@@ -1069,6 +1080,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   const citizenService = options.citizenService;
   const dashboardQueryService = options.dashboardQueryService;
   const runtimeTargetService = options.runtimeTargetService;
+  const runtimeNodeRegistryService = options.runtimeNodeRegistryService;
   const ccConnectInspectionService = options.ccConnectInspectionService ?? new CcConnectInspectionService();
   const ccConnectManagementService = options.ccConnectManagementService ?? new CcConnectManagementService();
   const ccConnectThreadSessionService = options.ccConnectThreadSessionService;
@@ -4523,6 +4535,131 @@ export function buildApp(options: BuildAppOptions = {}) {
     }
   });
 
+  app.get('/api/runtime-nodes', async (_request, reply) => {
+    if (!runtimeNodeRegistryService) {
+      return reply.status(503).send({ message: 'Runtime node registry service is not configured' });
+    }
+    return reply.send(runtimeNodeListResponseSchema.parse({
+      nodes: runtimeNodeRegistryService.listNodes(),
+    }));
+  });
+
+  app.get('/api/runtime-nodes/:nodeId', async (request, reply) => {
+    if (!runtimeNodeRegistryService) {
+      return reply.status(503).send({ message: 'Runtime node registry service is not configured' });
+    }
+    try {
+      const { nodeId } = request.params as { nodeId: string };
+      return reply.send(runtimeNodeSchema.parse(runtimeNodeRegistryService.getNode(nodeId)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.put('/api/runtime-nodes/:nodeId/heartbeat', async (request, reply) => {
+    if (!runtimeNodeRegistryService) {
+      return reply.status(503).send({ message: 'Runtime node registry service is not configured' });
+    }
+    try {
+      const { nodeId } = request.params as { nodeId: string };
+      const input = runtimeNodeHeartbeatRequestSchema.parse(request.body);
+      return reply.send(runtimeNodeSchema.parse(runtimeNodeRegistryService.heartbeat(nodeId, input)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.delete('/api/runtime-nodes/:nodeId', async (request, reply) => {
+    if (!runtimeNodeRegistryService) {
+      return reply.status(503).send({ message: 'Runtime node registry service is not configured' });
+    }
+    const { nodeId } = request.params as { nodeId: string };
+    return reply.send({ removed: runtimeNodeRegistryService.removeNode(nodeId) });
+  });
+
+  app.post('/api/runtime-nodes/:nodeId/dispatches', async (request, reply) => {
+    if (!runtimeNodeRegistryService) {
+      return reply.status(503).send({ message: 'Runtime node registry service is not configured' });
+    }
+    try {
+      const { nodeId } = request.params as { nodeId: string };
+      const input = createRuntimeNodeDispatchRequestSchema.parse(request.body);
+      return reply.status(201).send(runtimeNodeDispatchSchema.parse(
+        runtimeNodeRegistryService.createDispatch(nodeId, input),
+      ));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/runtime-nodes/:nodeId/dispatches', async (request, reply) => {
+    if (!runtimeNodeRegistryService) {
+      return reply.status(503).send({ message: 'Runtime node registry service is not configured' });
+    }
+    try {
+      const { nodeId } = request.params as { nodeId: string };
+      return reply.send({
+        dispatches: runtimeNodeRegistryService.listDispatches(nodeId),
+      });
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/runtime-dispatches/:dispatchId', async (request, reply) => {
+    if (!runtimeNodeRegistryService) {
+      return reply.status(503).send({ message: 'Runtime node registry service is not configured' });
+    }
+    try {
+      const { dispatchId } = request.params as { dispatchId: string };
+      return reply.send(runtimeNodeDispatchSchema.parse(
+        runtimeNodeRegistryService.getDispatch(dispatchId),
+      ));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/runtime-nodes/:nodeId/dispatches/claim', async (request, reply) => {
+    if (!runtimeNodeRegistryService) {
+      return reply.status(503).send({ message: 'Runtime node registry service is not configured' });
+    }
+    try {
+      const { nodeId } = request.params as { nodeId: string };
+      const input = claimRuntimeNodeDispatchRequestSchema.parse(request.body);
+      const dispatch = runtimeNodeRegistryService.claimDispatch(
+        nodeId,
+        input.instance_id,
+        input.lease_seconds,
+      );
+      return reply.send({ dispatch: dispatch ? runtimeNodeDispatchSchema.parse(dispatch) : null });
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/runtime-nodes/:nodeId/dispatches/:dispatchId/complete', async (request, reply) => {
+    if (!runtimeNodeRegistryService) {
+      return reply.status(503).send({ message: 'Runtime node registry service is not configured' });
+    }
+    try {
+      const { nodeId, dispatchId } = request.params as { nodeId: string; dispatchId: string };
+      const input = completeRuntimeNodeDispatchRequestSchema.parse(request.body);
+      return reply.send(runtimeNodeDispatchSchema.parse(
+        runtimeNodeRegistryService.completeDispatch(nodeId, dispatchId, input),
+      ));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
   app.get('/api/projects/:projectId/runtime-policy', async (request, reply) => {
     if (!projectService) {
       return reply.status(503).send({ message: 'Project service is not configured' });
@@ -4943,6 +5080,38 @@ export function buildApp(options: BuildAppOptions = {}) {
     try {
       const { id } = request.params as { id: string };
       return reply.send(taskParticipationService.listRuntimeSessions(id));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.put('/api/tasks/:id/runtime-session-bindings/:participantBindingId', async (request, reply) => {
+    if (!taskParticipationService) {
+      return reply.status(503).send({ message: 'Task participation service is not configured' });
+    }
+    try {
+      const { id, participantBindingId } = request.params as { id: string; participantBindingId: string };
+      const participant = taskParticipationService.getParticipantById(participantBindingId);
+      if (!participant || participant.task_id !== id) {
+        throw new NotFoundError(`Participant binding ${participantBindingId} not found for task ${id}`);
+      }
+      const body = bindRuntimeSessionRequestSchema.parse(request.body);
+      const binding = taskParticipationService.bindRuntimeSession({
+        participant_binding_id: participantBindingId,
+        runtime_provider: body.runtime_provider,
+        runtime_session_ref: body.runtime_session_ref,
+        runtime_actor_ref: body.runtime_actor_ref ?? null,
+        continuity_ref: body.continuity_ref ?? null,
+        presence_state: body.presence_state,
+        binding_reason: body.binding_reason,
+        ...(body.desired_runtime_presence === undefined
+          ? {}
+          : { desired_runtime_presence: body.desired_runtime_presence }),
+        last_seen_at: body.last_seen_at ?? new Date().toISOString(),
+      });
+      if (!binding) throw new NotFoundError(`Participant binding ${participantBindingId} not found`);
+      return reply.send(runtimeSessionBindingSchema.parse(binding));
     } catch (error) {
       const translated = translateError(error);
       return reply.status(translated.statusCode).send(translated.body);
