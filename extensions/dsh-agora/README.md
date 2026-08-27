@@ -96,7 +96,7 @@ Agent 还可使用全局 `agora_task` 工具执行 `dispatch`、`dispatch_status
 
 ## DSH Web 界面
 
-0.3.0 起插件会向 `dsh-better-sidebar` 注册“Agora 协同”页签。界面包含：
+0.3.1 起插件会向 `dsh-better-sidebar` 注册“Agora 协同”页签，并在页面右上角提供常驻 `Agora` 按钮。升级后首次刷新会自动打开一次；之后可随时点击右上角按钮，或在 `better-sidebar` 的“新建标签页”菜单中选择它。界面包含：
 
 - 总览：中央服务、本机节点、dsh-im 桥、节点/Agent/Bot 数量和执行容量；
 - 节点：每个 Harness 的心跳、Agent、能力标签、Bot 与在线状态；

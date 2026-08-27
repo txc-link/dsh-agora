@@ -6,6 +6,8 @@ window.__ModuleLoader__.load({ id: 'dsh-agora', factory: (require) => {
 
   const API_PREFIX = '/dsh-agora/api/'
   const POLL_MS = 5000
+  const TAB_ID = 'dsh-agora:dashboard'
+  const FIRST_OPEN_KEY = 'dsh-agora:dashboard:auto-opened:v1'
 
   async function rpc(method, payload) {
     const response = await fetch(API_PREFIX + method, {
@@ -36,6 +38,50 @@ window.__ModuleLoader__.load({ id: 'dsh-agora', factory: (require) => {
     React.createElement('circle', { cx: 3, cy: 12, r: 1.5 }),
     React.createElement('circle', { cx: 13, cy: 12, r: 1.5 }),
     React.createElement('path', { d: 'M4.3 4.8 6.2 6.4M11.7 4.8 9.8 6.4M4.3 11.2 6.2 9.6M11.7 11.2 9.8 9.6' }))
+  }
+
+  function openAgora(sidebar) {
+    if (!sidebar || typeof sidebar.openTab !== 'function') return
+    // A content seed makes better-sidebar expand whichever panel owns the tab.
+    sidebar.openTab({ type: TAB_ID, path: 'dsh-agora://dashboard' })
+  }
+
+  function shouldAutoOpen() {
+    if (typeof window === 'undefined' || !window.sessionStorage) return false
+    try {
+      if (window.sessionStorage.getItem(FIRST_OPEN_KEY) === '1') return false
+      window.sessionStorage.setItem(FIRST_OPEN_KEY, '1')
+      return true
+    } catch (error) {
+      return false
+    }
+  }
+
+  function installLauncher(sidebar) {
+    if (typeof document === 'undefined' || !document.body) return function () {}
+    const old = document.querySelector('[data-dsh-agora-launcher]')
+    if (old) old.remove()
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'da-launcher'
+    button.setAttribute('data-dsh-agora-launcher', '')
+    button.setAttribute('aria-label', '打开 Agora 协同')
+    button.setAttribute('title', '打开 Agora 协同')
+    const icon = document.createElement('span')
+    icon.className = 'da-launcher-icon'
+    icon.setAttribute('aria-hidden', 'true')
+    icon.textContent = '⬡'
+    const label = document.createElement('span')
+    label.className = 'da-launcher-label'
+    label.textContent = 'Agora'
+    button.append(icon, label)
+    const onClick = function () { openAgora(sidebar) }
+    button.addEventListener('click', onClick)
+    document.body.appendChild(button)
+    return function () {
+      button.removeEventListener('click', onClick)
+      button.remove()
+    }
   }
 
   function text(value, fallback) {
@@ -263,6 +309,7 @@ window.__ModuleLoader__.load({ id: 'dsh-agora', factory: (require) => {
   const CSS = [
     '.da-root{box-sizing:border-box;height:100%;min-height:0;display:flex;flex-direction:column;background:var(--dsw-alias-bg-layer-1,var(--dsw-alias-bg-base));color:var(--dsw-alias-label-primary);font-size:13px;pointer-events:auto}',
     '.da-root *{box-sizing:border-box}',
+    '.da-launcher{position:fixed;z-index:90;top:6px;right:46px;height:28px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);display:inline-flex;align-items:center;gap:5px;padding:0 8px;cursor:pointer;font:inherit;font-size:11px;box-shadow:var(--dsw-shadow-lv1)}.da-launcher:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-brand-primary)}.da-launcher-icon{font-size:17px;line-height:1}.da-launcher-label{display:inline}@media(max-width:767px){.da-launcher{width:28px;padding:0;justify-content:center}.da-launcher-label{display:none}}',
     '.da-header{height:44px;flex:none;padding:0 9px 0 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--dsw-alias-border-l1)}',
     '.da-header>div{display:flex;flex-direction:column;line-height:17px}.da-header strong{font-size:14px}.da-header small,.da-muted{color:var(--dsw-alias-label-dimmed);font-size:11px}',
     '.da-header button,.da-error button{border:0;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;border-radius:50%;width:28px;height:28px;font-size:18px}.da-header button:hover,.da-error button:hover{background:var(--dsw-alias-interactive-bg-hover)}',
@@ -300,14 +347,26 @@ window.__ModuleLoader__.load({ id: 'dsh-agora', factory: (require) => {
         const sidebar = sidebarCtx.betterSidebar || sidebarCtx.get?.('betterSidebar')
         if (!sidebar || typeof sidebar.registerTab !== 'function') return
         sidebarCtx.effect(function () {
-          return sidebar.registerTab({
-            id: 'dsh-agora:dashboard',
+          const unregister = sidebar.registerTab({
+            id: TAB_ID,
             title: function () { return 'Agora 协同' },
             icon: function (size) { return React.createElement(AgoraIcon, { size: size }) },
             order: 45,
             single: true,
             component: function (props) { return React.createElement(AgoraPanel, { visible: props.visible, scope: props.scope }) },
           })
+          const removeLauncher = installLauncher(sidebar)
+          let cancelled = false
+          if (shouldAutoOpen()) {
+            Promise.resolve().then(function () {
+              if (!cancelled) openAgora(sidebar)
+            })
+          }
+          return function () {
+            cancelled = true
+            removeLauncher()
+            unregister()
+          }
         }, 'dsh-agora: better-sidebar tab')
       },
     })
