@@ -5112,6 +5112,137 @@ export function buildApp(options: BuildAppOptions = {}) {
     }
   });
 
+  // -------------------------------------------------------------------------
+  // GET /api/events/stream — Server-Sent Events for real-time task state
+  // updates. v0.2 of the matrix-connector adapter consumes this endpoint
+  // instead of polling /api/events every 5 seconds.
+  //
+  // Design notes (§1.5 — shortest path):
+  //   - Fastify v5 `reply.hijack()` opens the raw socket so we can write the
+  //     SSE envelope directly.
+  //   - A per-connection setInterval polls flow_log / progress_log every
+  //     500 ms and emits new rows. This adds ~500 ms latency vs an in-memory
+  //     event bus, but keeps the boundary clean: db packages stay pure,
+  //     server composition stays the only place that knows about both
+  //     repos and HTTP.
+  //   - No new event-bus package, no @fastify/sse dep — both would violate
+  //     §1 (Core / adapters don't carry HTTP semantics).
+  // -------------------------------------------------------------------------
+  app.get('/api/events/stream', async (request, reply) => {
+    if (!flowLogRepository || !progressLogRepository) {
+      return reply.status(503).send({ message: 'Task event repositories are not configured' });
+    }
+    const query = request.query as {
+      task_id?: string;
+      project_id?: string;
+      since?: string;
+    } | undefined;
+    const taskId = typeof query?.task_id === 'string' ? query.task_id.trim() : '';
+    const projectId = typeof query?.project_id === 'string' ? query.project_id.trim() : '';
+    if (!taskId && !projectId) {
+      return reply.status(400).send({ message: 'task_id or project_id query parameter is required' });
+    }
+    let sinceNum = Number.parseInt(query?.since ?? '0', 10);
+    sinceNum = Number.isFinite(sinceNum) && sinceNum >= 0 ? sinceNum : 0;
+
+    try {
+      // Resolve the set of task_ids once at open time. The stream emits
+      // events for these tasks only — new tasks created mid-stream are not
+      // retroactively picked up. The adapter is expected to open a fresh
+      // stream when it dispatches a new task.
+      let taskIds: string[];
+      if (taskId) {
+        taskIds = [taskId];
+      } else if (projectService && taskService) {
+        taskIds = taskService.listTasks(undefined, projectId).map((task) => task.id);
+      } else {
+        return reply.status(503).send({ message: 'project_id fan-out requires projectService + taskService' });
+      }
+
+      reply.hijack();
+      const raw = reply.raw;
+      raw.setHeader('content-type', 'text/event-stream');
+      raw.setHeader('cache-control', 'no-cache');
+      raw.setHeader('connection', 'keep-alive');
+      raw.writeHead(200);
+      raw.write(`retry: 1000\n\n`);
+      raw.write(`event: open\ndata: ${JSON.stringify({ task_ids: taskIds, since: sinceNum })}\n\n`);
+
+      // Local cursor advances per pushed event so each row goes out exactly once.
+      let cursor = sinceNum;
+
+      const interval = setInterval(() => {
+        try {
+          const newRows: z.infer<typeof agoraEventSchema>[] = [];
+          for (const tid of taskIds) {
+            for (const entry of flowLogRepository.listByTask(tid)) {
+              if (entry.id <= cursor) continue;
+              newRows.push({
+                seq: entry.id,
+                type: entry.event,
+                task_id: entry.task_id,
+                state: entry.to_state,
+                stage_id: entry.stage_id,
+                from_state: entry.from_state,
+                to_state: entry.to_state,
+                actor: entry.actor,
+                detail: entry.detail ? safeJsonParse(entry.detail) : null,
+                progress_content: null,
+                created_at: entry.created_at,
+              });
+            }
+            for (const entry of progressLogRepository.listByTask(tid)) {
+              if (entry.id <= cursor) continue;
+              newRows.push({
+                seq: entry.id,
+                type: `progress:${entry.kind}`,
+                task_id: entry.task_id,
+                state: null,
+                stage_id: entry.stage_id,
+                from_state: null,
+                to_state: null,
+                actor: entry.actor,
+                detail: null,
+                progress_content: entry.content,
+                created_at: entry.created_at,
+              });
+            }
+          }
+          newRows.sort((a, b) => a.seq - b.seq);
+          for (const row of newRows) {
+            raw.write(`event: tick\ndata: ${JSON.stringify(row)}\n\n`);
+            cursor = Math.max(cursor, row.seq);
+          }
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.error('[agora] events-stream tick failed', error);
+          raw.write(`event: error\ndata: ${JSON.stringify({ message: 'tick failed' })}\n\n`);
+        }
+      }, 500);
+
+      // Keep-alive comment frame every 15s so reverse-proxies don't kill the
+      // connection on idle.
+      const keepAlive = setInterval(() => {
+        try {
+          raw.write(`:keep-alive\n\n`);
+        } catch {
+          /* socket may already be closed; cleanup runs in 'close' handler */
+        }
+      }, 15000);
+
+      const cleanup = () => {
+        clearInterval(interval);
+        clearInterval(keepAlive);
+      };
+
+      raw.on('close', cleanup);
+      raw.on('error', cleanup);
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
   app.post('/api/memories', async (request, reply) => {
     if (!memoryService) return reply.status(503).send({ message: 'Memory service is not configured' });
     try {
