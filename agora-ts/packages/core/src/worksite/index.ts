@@ -22,14 +22,25 @@ export {
   type WorksiteMetadata,
   type WorksiteRef,
   type WorksiteResolutionContext,
+  type Permission,
+  type Posture,
+  type ScopeAuthorization,
 } from './types.js';
 
 export {
   RESOLVE_MAX_DEPTH,
   WorksiteResolverRegistry,
+  resolveScopeAuthorization,
   type WorksitePersister,
   type WorksiteResolver,
 } from './resolver.js';
+
+export {
+  decideBorrow,
+  scopeCovers,
+  type BorrowDecision,
+  type BorrowRequest,
+} from './borrow.js';
 
 export {
   TaskWorksiteResolver,

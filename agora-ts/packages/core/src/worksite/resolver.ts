@@ -15,10 +15,20 @@ import {
   type WorksiteUri,
 } from './uri.js';
 import type {
+  ScopeAuthorization,
   WorkSite,
   WorksiteResolutionContext,
 } from './types.js';
 import { WorksiteNotFoundError, WorksiteNotImplementedError } from './types.js';
+
+/**
+ * Phase 3 (U4=A): look up a work site's scope authorization — scope +
+ * posture + permissions resolved together in one lookup. Absent scope
+ * authorization → undefined (borrow decisions then fail-safe to deny).
+ */
+export function resolveScopeAuthorization(worksite: WorkSite): ScopeAuthorization | undefined {
+  return worksite.scopeAuthorization;
+}
 
 /** Bound to one type. Implementations fetch WorkSite objects. */
 export interface WorksiteResolver {
