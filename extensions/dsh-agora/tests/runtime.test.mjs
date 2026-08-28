@@ -58,7 +58,8 @@ test('Harness runtime creates a Session and tracks the exact dispatched turn', a
     fetch,
   })
   const result = await runtime.execute({
-    id: 'dispatch-1', node_id: 'node-b', status: 'claimed', claimed_by: 'instance-b', claim_expires_at: null,
+    id: 'dispatch-1', node_id: 'node-b', status: 'claimed', claimed_by: 'instance-b', claim_token: 'claim-1', claim_expires_at: null,
+    attempt: 1, claimed_at: '', claim_renewed_at: '',
     runtime_target_ref: 'dsh:node-b:developer', prompt: 'Implement it', idempotency_key: 'once',
     task_id: null, participant_binding_id: null, session_id: null, workspace_alias: null, agent_preset: null,
     metadata: null, result: null, error: null, created_at: '', updated_at: '', completed_at: null,

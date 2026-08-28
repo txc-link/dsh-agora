@@ -28,7 +28,7 @@ export const name = 'dsh-agora'
 // node worker. Declaring it here also makes Cordis delay apply() until the web
 // host is initialized instead of silently starting in command-only mode.
 export const inject = ['commands', 'tools', 'webServer']
-const PLUGIN_VERSION = '0.3.2'
+const PLUGIN_VERSION = '0.4.0'
 
 export interface Config {
   readonly serverUrl?: string
@@ -45,6 +45,9 @@ export interface Config {
   readonly dispatchPollIntervalMs?: number
   readonly nodeLeaseSeconds?: number
   readonly dispatchLeaseSeconds?: number
+  readonly dispatchRenewIntervalMs?: number
+  readonly deliveryPollIntervalMs?: number
+  readonly deliveryLeaseSeconds?: number
   readonly maxConcurrent?: number
   readonly runtimeReplyTimeoutMs?: number
   readonly runtimeAgents?: readonly ConfiguredDshAgent[]
@@ -178,6 +181,9 @@ export function apply(ctx: DshAgoraContext, config: Config = {}): void {
       ...(config.dispatchPollIntervalMs === undefined ? {} : { dispatchPollIntervalMs: config.dispatchPollIntervalMs }),
       ...(config.nodeLeaseSeconds === undefined ? {} : { leaseSeconds: config.nodeLeaseSeconds }),
       ...(config.dispatchLeaseSeconds === undefined ? {} : { dispatchLeaseSeconds: config.dispatchLeaseSeconds }),
+      ...(config.dispatchRenewIntervalMs === undefined ? {} : { dispatchRenewIntervalMs: config.dispatchRenewIntervalMs }),
+      ...(config.deliveryPollIntervalMs === undefined ? {} : { deliveryPollIntervalMs: config.deliveryPollIntervalMs }),
+      ...(config.deliveryLeaseSeconds === undefined ? {} : { deliveryLeaseSeconds: config.deliveryLeaseSeconds }),
       ...(config.maxConcurrent === undefined ? {} : { maxConcurrent: config.maxConcurrent }),
       imBridge: activeImBridge,
       ...(config.nodeMetadata === undefined ? {} : { metadata: config.nodeMetadata }),

@@ -1,11 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import {
   type CompleteRuntimeNodeDispatchRequestDto,
+  type CompleteRuntimeNodeDeliveryRequestDto,
   type CreateRuntimeNodeDispatchRequestDto,
   type RuntimeNodeDispatchDto,
+  type RuntimeNodeDeliveryDto,
   type RuntimeNodeDto,
   type RuntimeNodeHeartbeatRequestDto,
+  type RenewRuntimeNodeDispatchRequestDto,
   runtimeNodeDispatchSchema,
+  runtimeNodeDeliverySchema,
   runtimeNodeSchema,
 } from '@agora-ts/contracts';
 import type { AgoraDatabase } from '../database.js';
@@ -122,11 +126,13 @@ export class RuntimeNodeRepository {
   claimDispatch(nodeId: string, instanceId: string, leaseSeconds: number, now = new Date()): RuntimeNodeDispatchDto | null {
     const timestamp = now.toISOString();
     const expiresAt = new Date(now.getTime() + leaseSeconds * 1_000).toISOString();
+    const claimToken = randomUUID();
     this.db.exec('BEGIN IMMEDIATE');
     try {
       this.db.prepare(`
         UPDATE runtime_node_dispatches
-        SET status = 'pending', claimed_by = NULL, claim_expires_at = NULL, updated_at = ?
+        SET status = 'pending', claimed_by = NULL, claim_token = NULL,
+            claim_expires_at = NULL, claimed_at = NULL, claim_renewed_at = NULL, updated_at = ?
         WHERE node_id = ? AND status = 'claimed' AND claim_expires_at <= ?
       `).run(timestamp, nodeId, timestamp);
       const row = this.db.prepare(`
@@ -141,15 +147,41 @@ export class RuntimeNodeRepository {
       }
       this.db.prepare(`
         UPDATE runtime_node_dispatches
-        SET status = 'claimed', claimed_by = ?, claim_expires_at = ?, updated_at = ?
+        SET status = 'claimed', claimed_by = ?, claim_token = ?, claim_expires_at = ?,
+            attempt = attempt + 1, claimed_at = ?, claim_renewed_at = ?, updated_at = ?
         WHERE id = ? AND status = 'pending'
-      `).run(instanceId, expiresAt, timestamp, row.id);
+      `).run(instanceId, claimToken, expiresAt, timestamp, timestamp, timestamp, row.id);
       this.db.exec('COMMIT');
       return this.getDispatch(row.id);
     } catch (error) {
       this.db.exec('ROLLBACK');
       throw error;
     }
+  }
+
+  renewDispatch(
+    nodeId: string,
+    dispatchId: string,
+    input: RenewRuntimeNodeDispatchRequestDto,
+    now = new Date(),
+  ): RuntimeNodeDispatchDto | null {
+    const timestamp = now.toISOString();
+    const expiresAt = new Date(now.getTime() + input.lease_seconds * 1_000).toISOString();
+    const result = this.db.prepare(`
+      UPDATE runtime_node_dispatches
+      SET claim_expires_at = ?, claim_renewed_at = ?
+      WHERE id = ? AND node_id = ? AND status = 'claimed'
+        AND claimed_by = ? AND claim_token = ? AND claim_expires_at > ?
+    `).run(
+      expiresAt,
+      timestamp,
+      dispatchId,
+      nodeId,
+      input.instance_id,
+      input.claim_token,
+      timestamp,
+    );
+    return Number(result.changes ?? 0) === 1 ? this.getDispatch(dispatchId) : null;
   }
 
   completeDispatch(
@@ -160,26 +192,171 @@ export class RuntimeNodeRepository {
   ): RuntimeNodeDispatchDto | null {
     const existing = this.getDispatch(dispatchId);
     if (!existing || existing.node_id !== nodeId) return null;
-    if (existing.status === 'completed' || existing.status === 'failed') return existing;
-    if (existing.status !== 'claimed' || existing.claimed_by !== input.instance_id) return null;
     const timestamp = now.toISOString();
-    this.db.prepare(`
-      UPDATE runtime_node_dispatches
-      SET status = ?, session_id = COALESCE(?, session_id), result = ?, error = ?,
-          completed_at = ?, updated_at = ?, claim_expires_at = NULL
-      WHERE id = ? AND node_id = ? AND claimed_by = ? AND status = 'claimed'
+    if (existing.status === 'completed' || existing.status === 'failed') {
+      return existing.claimed_by === input.instance_id && existing.claim_token === input.claim_token
+        ? existing
+        : null;
+    }
+    if (
+      existing.status !== 'claimed'
+      || existing.claimed_by !== input.instance_id
+      || existing.claim_token !== input.claim_token
+      || existing.claim_expires_at === null
+      || existing.claim_expires_at <= timestamp
+    ) return null;
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const updated = this.db.prepare(`
+        UPDATE runtime_node_dispatches
+        SET status = ?, session_id = COALESCE(?, session_id), result = ?, error = ?,
+            completed_at = ?, updated_at = ?, claim_expires_at = NULL
+        WHERE id = ? AND node_id = ? AND claimed_by = ? AND claim_token = ?
+          AND claim_expires_at > ? AND status = 'claimed'
+      `).run(
+        input.status,
+        input.session_id ?? null,
+        stringifyJsonValue(input.result ?? null),
+        input.error ?? null,
+        timestamp,
+        timestamp,
+        dispatchId,
+        nodeId,
+        input.instance_id,
+        input.claim_token,
+        timestamp,
+      );
+      if (Number(updated.changes ?? 0) !== 1) {
+        this.db.exec('ROLLBACK');
+        return null;
+      }
+      if (input.status === 'completed' && input.delivery_payload) {
+        this.db.prepare(`
+          INSERT INTO runtime_node_deliveries (
+            id, dispatch_id, node_id, payload, status, next_attempt_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)
+        `).run(
+          `delivery-${randomUUID()}`,
+          dispatchId,
+          nodeId,
+          stringifyJsonValue(input.delivery_payload),
+          timestamp,
+          timestamp,
+          timestamp,
+        );
+      }
+      this.db.exec('COMMIT');
+      return this.getDispatch(dispatchId);
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  claimDelivery(
+    nodeId: string,
+    instanceId: string,
+    leaseSeconds: number,
+    now = new Date(),
+  ): RuntimeNodeDeliveryDto | null {
+    const timestamp = now.toISOString();
+    const expiresAt = new Date(now.getTime() + leaseSeconds * 1_000).toISOString();
+    const claimToken = randomUUID();
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.db.prepare(`
+        UPDATE runtime_node_deliveries
+        SET status = 'pending', claimed_by = NULL, claim_token = NULL,
+            claim_expires_at = NULL, updated_at = ?
+        WHERE node_id = ? AND status = 'claimed' AND claim_expires_at <= ?
+      `).run(timestamp, nodeId, timestamp);
+      const row = this.db.prepare(`
+        SELECT id FROM runtime_node_deliveries
+        WHERE node_id = ? AND status = 'pending' AND next_attempt_at <= ?
+        ORDER BY created_at ASC
+        LIMIT 1
+      `).get(nodeId, timestamp) as { id: string } | undefined;
+      if (!row) {
+        this.db.exec('COMMIT');
+        return null;
+      }
+      this.db.prepare(`
+        UPDATE runtime_node_deliveries
+        SET status = 'claimed', attempt = attempt + 1, claimed_by = ?,
+            claim_token = ?, claim_expires_at = ?, updated_at = ?
+        WHERE id = ? AND status = 'pending'
+      `).run(instanceId, claimToken, expiresAt, timestamp, row.id);
+      this.db.exec('COMMIT');
+      return this.getDelivery(row.id);
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  completeDelivery(
+    nodeId: string,
+    deliveryId: string,
+    input: CompleteRuntimeNodeDeliveryRequestDto,
+    now = new Date(),
+  ): RuntimeNodeDeliveryDto | null {
+    const timestamp = now.toISOString();
+    const existing = this.getDelivery(deliveryId);
+    if (!existing || existing.node_id !== nodeId) return null;
+    if (existing.status === 'delivered' || existing.status === 'failed') {
+      return existing.claimed_by === input.instance_id && existing.claim_token === input.claim_token
+        ? existing
+        : null;
+    }
+    if (
+      existing.status !== 'claimed'
+      || existing.claimed_by !== input.instance_id
+      || existing.claim_token !== input.claim_token
+      || existing.claim_expires_at === null
+      || existing.claim_expires_at <= timestamp
+    ) return null;
+
+    if (input.status === 'retry') {
+      const nextAttemptAt = new Date(now.getTime() + input.retry_delay_seconds * 1_000).toISOString();
+      const result = this.db.prepare(`
+        UPDATE runtime_node_deliveries
+        SET status = 'pending', claimed_by = NULL, claim_token = NULL, claim_expires_at = NULL,
+            next_attempt_at = ?, receipt = NULL, error = ?, updated_at = ?
+        WHERE id = ? AND node_id = ? AND status = 'claimed'
+          AND claimed_by = ? AND claim_token = ? AND claim_expires_at > ?
+      `).run(
+        nextAttemptAt, input.error, timestamp, deliveryId, nodeId,
+        input.instance_id, input.claim_token, timestamp,
+      );
+      return Number(result.changes ?? 0) === 1 ? this.getDelivery(deliveryId) : null;
+    }
+
+    const result = this.db.prepare(`
+      UPDATE runtime_node_deliveries
+      SET status = ?, claim_expires_at = NULL, receipt = ?, error = ?,
+          delivered_at = ?, updated_at = ?
+      WHERE id = ? AND node_id = ? AND status = 'claimed'
+        AND claimed_by = ? AND claim_token = ? AND claim_expires_at > ?
     `).run(
       input.status,
-      input.session_id ?? null,
-      stringifyJsonValue(input.result ?? null),
-      input.error ?? null,
+      stringifyJsonValue(input.status === 'delivered' ? input.receipt ?? null : null),
+      input.status === 'failed' ? input.error : null,
+      input.status === 'delivered' ? timestamp : null,
       timestamp,
-      timestamp,
-      dispatchId,
+      deliveryId,
       nodeId,
       input.instance_id,
+      input.claim_token,
+      timestamp,
     );
-    return this.getDispatch(dispatchId);
+    return Number(result.changes ?? 0) === 1 ? this.getDelivery(deliveryId) : null;
+  }
+
+  private getDelivery(deliveryId: string): RuntimeNodeDeliveryDto | null {
+    const row = this.db.prepare(
+      'SELECT * FROM runtime_node_deliveries WHERE id = ?',
+    ).get(deliveryId) as Record<string, unknown> | undefined;
+    return row ? this.parseDelivery(row) : null;
   }
 
   private parseNode(row: Record<string, unknown>, now: Date): RuntimeNodeDto {
@@ -217,12 +394,36 @@ export class RuntimeNodeRepository {
       metadata: row.metadata ? parseJsonValue(row.metadata, null) : null,
       status: String(row.status),
       claimed_by: row.claimed_by === null ? null : String(row.claimed_by),
+      claim_token: row.claim_token === null ? null : String(row.claim_token),
       claim_expires_at: row.claim_expires_at === null ? null : String(row.claim_expires_at),
+      attempt: Number(row.attempt),
+      claimed_at: row.claimed_at === null ? null : String(row.claimed_at),
+      claim_renewed_at: row.claim_renewed_at === null ? null : String(row.claim_renewed_at),
       result: row.result ? parseJsonValue(row.result, null) : null,
       error: row.error === null ? null : String(row.error),
       created_at: String(row.created_at),
       updated_at: String(row.updated_at),
       completed_at: row.completed_at === null ? null : String(row.completed_at),
+    });
+  }
+
+  private parseDelivery(row: Record<string, unknown>): RuntimeNodeDeliveryDto {
+    return runtimeNodeDeliverySchema.parse({
+      id: String(row.id),
+      dispatch_id: String(row.dispatch_id),
+      node_id: String(row.node_id),
+      payload: parseJsonValue(row.payload, {}),
+      status: String(row.status),
+      attempt: Number(row.attempt),
+      claimed_by: row.claimed_by === null ? null : String(row.claimed_by),
+      claim_token: row.claim_token === null ? null : String(row.claim_token),
+      claim_expires_at: row.claim_expires_at === null ? null : String(row.claim_expires_at),
+      next_attempt_at: String(row.next_attempt_at),
+      receipt: row.receipt ? parseJsonValue(row.receipt, null) : null,
+      error: row.error === null ? null : String(row.error),
+      created_at: String(row.created_at),
+      updated_at: String(row.updated_at),
+      delivered_at: row.delivered_at === null ? null : String(row.delivered_at),
     });
   }
 }

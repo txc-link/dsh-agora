@@ -70,7 +70,7 @@ curl -fsS http://127.0.0.1:18008/api/health
 
 其他机器上的 DSH 必须能够访问 Agora API。推荐使用私网、VPN 或带 TLS 的反向代理；也可以使用 FRP/SSH 隧道。传给插件的 `serverUrl` 是 API origin，例如 `https://agora.example.com` 或 `http://10.0.0.10:18008`，不要追加 `/api`。
 
-如果 API 暴露到非可信网络，请在 `~/.agora/agora.json` 启用 bearer auth：
+只要 API 能被 loopback 之外的机器访问（包括 FRP 映射），就必须在 `~/.agora/agora.json` 启用 bearer auth：
 
 ```json
 {
@@ -82,6 +82,18 @@ curl -fsS http://127.0.0.1:18008/api/health
 ```
 
 重启 Agora Server，并把同一个 token 通过各 DSH 节点的 `AGORA_API_TOKEN` 环境变量注入。不要把 token、Bot Token 或模型密钥提交到 Git。
+
+重启后 `/api/health` 仍可匿名访问，但下面的无 token 探针必须返回 `401`：
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' https://agora.example.com/api/runtime-nodes
+```
+
+### 0.4 运行时安全升级
+
+`dsh-agora` 0.4 起，派发带 fencing token，执行期间自动续租；过期或已被替换的 worker 不能再写入旧结果。Agent 结果与通用 delivery intent 在中央事务中一起提交，Discord/IM 发送从持久 outbox 单独 claim，失败后使用相同消息幂等键重试。因此 IM 故障不会阻塞或回滚 Agent 结果。
+
+这是一次中央 Server 与节点插件需要同步升级的协议变更。升级时先停止新派发并等待 active 归零，再升级中央 Server、迁移数据库、升级所有 DSH 节点并重启。旧插件不能完成新的 fenced dispatch。
 
 ## 第二步：在每个 DSH 节点安装插件
 
@@ -155,6 +167,7 @@ workspace: 'C:/Users/example/workspace'
 - `runtimeAgents[].id`：节点内唯一；完整目标格式为 `dsh:<nodeId>:<agentId>`；
 - `workspace`：目标 DSH 可以访问的绝对路径；省略 Agent 清单时使用一个 `default` Agent 和当前工作目录；
 - `maxConcurrent`：该节点允许同时执行的派发数；
+- `dispatchLeaseSeconds`：默认 120 秒；worker 会在约三分之一租约时自动续租，不要再用 dispatch `updated_at` 判断 Agent 是否存活；
 - profile config 的优先级高于同名环境变量。
 
 也可使用环境变量。只有在 profile 没有写死相应字段时，它们才会生效：
@@ -356,7 +369,8 @@ presentation_mode 使用 destination_bot，等待 120 秒。
 
 - dsh-im 记录 IM conversation/thread 到本机 DSH Session 的绑定；
 - Agora 保存 task participant 到目标 runtime Session 的持久绑定；
-- 派发记录保存目标节点、Agent、Session、结果和错误；claim 有过期租约，进程异常退出后可重新领取。
+- 派发记录保存目标节点、Agent、Session、结果和错误；claim 具有自动续租和 fencing，进程异常退出后可安全重新领取；
+- 主动 IM 呈现保存在中央 delivery outbox，发送失败不会改变 dispatch 的完成状态，并会以相同幂等键重试。
 
 `attach_session` 可以把已有 Session 绑定到任务参与者，而不复制聊天历史。后续 dispatch 传入该 `session_id` 即可继续上下文。重启 Discord Gateway、dsh-im、dsh-agora 或某个 DSH 节点不会删除中央任务和派发记录；节点恢复心跳后继续接单。
 

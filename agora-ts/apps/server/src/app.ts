@@ -105,8 +105,12 @@ import {
   runtimeNodeSchema,
   createRuntimeNodeDispatchRequestSchema,
   claimRuntimeNodeDispatchRequestSchema,
+  renewRuntimeNodeDispatchRequestSchema,
   completeRuntimeNodeDispatchRequestSchema,
   runtimeNodeDispatchSchema,
+  claimRuntimeNodeDeliveryRequestSchema,
+  completeRuntimeNodeDeliveryRequestSchema,
+  runtimeNodeDeliverySchema,
   updateProjectRuntimePolicyRequestSchema,
   upsertRuntimeTargetOverlayRequestSchema,
   type HealthResponse,
@@ -141,6 +145,7 @@ import { RuntimeRepoShimWritebackService } from '@agora-ts/adapters-materializat
 import {
   CcConnectInspectionService,
   CcConnectManagementService,
+  ConflictError,
   NotFoundError,
   PermissionDeniedError,
   type DashboardQueryService,
@@ -413,6 +418,9 @@ function resolveCurrentImHumanReviewGate(
 }
 
 function translateError(error: unknown) {
+  if (error instanceof ConflictError) {
+    return { statusCode: 409, body: { message: error.message } };
+  }
   if (error instanceof PermissionDeniedError) {
     return { statusCode: 403, body: { message: error.message } };
   }
@@ -4644,6 +4652,22 @@ export function buildApp(options: BuildAppOptions = {}) {
     }
   });
 
+  app.post('/api/runtime-nodes/:nodeId/dispatches/:dispatchId/renew', async (request, reply) => {
+    if (!runtimeNodeRegistryService) {
+      return reply.status(503).send({ message: 'Runtime node registry service is not configured' });
+    }
+    try {
+      const { nodeId, dispatchId } = request.params as { nodeId: string; dispatchId: string };
+      const input = renewRuntimeNodeDispatchRequestSchema.parse(request.body);
+      return reply.send(runtimeNodeDispatchSchema.parse(
+        runtimeNodeRegistryService.renewDispatch(nodeId, dispatchId, input),
+      ));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
   app.post('/api/runtime-nodes/:nodeId/dispatches/:dispatchId/complete', async (request, reply) => {
     if (!runtimeNodeRegistryService) {
       return reply.status(503).send({ message: 'Runtime node registry service is not configured' });
@@ -4653,6 +4677,41 @@ export function buildApp(options: BuildAppOptions = {}) {
       const input = completeRuntimeNodeDispatchRequestSchema.parse(request.body);
       return reply.send(runtimeNodeDispatchSchema.parse(
         runtimeNodeRegistryService.completeDispatch(nodeId, dispatchId, input),
+      ));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/runtime-nodes/:nodeId/deliveries/claim', async (request, reply) => {
+    if (!runtimeNodeRegistryService) {
+      return reply.status(503).send({ message: 'Runtime node registry service is not configured' });
+    }
+    try {
+      const { nodeId } = request.params as { nodeId: string };
+      const input = claimRuntimeNodeDeliveryRequestSchema.parse(request.body);
+      const delivery = runtimeNodeRegistryService.claimDelivery(
+        nodeId,
+        input.instance_id,
+        input.lease_seconds,
+      );
+      return reply.send({ delivery: delivery ? runtimeNodeDeliverySchema.parse(delivery) : null });
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/runtime-nodes/:nodeId/deliveries/:deliveryId/complete', async (request, reply) => {
+    if (!runtimeNodeRegistryService) {
+      return reply.status(503).send({ message: 'Runtime node registry service is not configured' });
+    }
+    try {
+      const { nodeId, deliveryId } = request.params as { nodeId: string; deliveryId: string };
+      const input = completeRuntimeNodeDeliveryRequestSchema.parse(request.body);
+      return reply.send(runtimeNodeDeliverySchema.parse(
+        runtimeNodeRegistryService.completeDelivery(nodeId, deliveryId, input),
       ));
     } catch (error) {
       const translated = translateError(error);

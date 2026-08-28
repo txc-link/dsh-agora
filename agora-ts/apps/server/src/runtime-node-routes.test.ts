@@ -41,12 +41,34 @@ const pendingDispatch = {
   metadata: null,
   status: 'pending' as const,
   claimed_by: null,
+  claim_token: null,
   claim_expires_at: null,
+  attempt: 0,
+  claimed_at: null,
+  claim_renewed_at: null,
   result: null,
   error: null,
   created_at: '2026-08-26T01:00:01.000Z',
   updated_at: '2026-08-26T01:00:01.000Z',
   completed_at: null,
+};
+
+const pendingDelivery = {
+  id: 'delivery-1',
+  dispatch_id: 'dispatch-1',
+  node_id: 'web-1',
+  payload: { protocol: 'dsh-agora.presentation/v1', text: 'done' },
+  status: 'pending' as const,
+  attempt: 0,
+  claimed_by: null,
+  claim_token: null,
+  claim_expires_at: null,
+  next_attempt_at: '2026-08-26T01:00:05.000Z',
+  receipt: null,
+  error: null,
+  created_at: '2026-08-26T01:00:05.000Z',
+  updated_at: '2026-08-26T01:00:05.000Z',
+  delivered_at: null,
 };
 
 describe('runtime node routes', () => {
@@ -61,7 +83,11 @@ describe('runtime node routes', () => {
       ...pendingDispatch,
       status: 'claimed' as const,
       claimed_by: 'instance-1',
+      claim_token: 'claim-1',
       claim_expires_at: '2026-08-26T01:02:01.000Z',
+      attempt: 1,
+      claimed_at: '2026-08-26T01:00:01.000Z',
+      claim_renewed_at: '2026-08-26T01:00:01.000Z',
     };
     const completed = {
       ...claimed,
@@ -70,6 +96,21 @@ describe('runtime node routes', () => {
       claim_expires_at: null,
       result: { answer: 'done' },
       completed_at: '2026-08-26T01:00:05.000Z',
+    };
+    const claimedDelivery = {
+      ...pendingDelivery,
+      status: 'claimed' as const,
+      attempt: 1,
+      claimed_by: 'instance-1',
+      claim_token: 'delivery-claim-1',
+      claim_expires_at: '2026-08-26T01:03:05.000Z',
+    };
+    const delivered = {
+      ...claimedDelivery,
+      status: 'delivered' as const,
+      claim_expires_at: null,
+      receipt: { provider_message_refs: ['message-1'] },
+      delivered_at: '2026-08-26T01:00:06.000Z',
     };
     const service = {
       heartbeat: vi.fn(() => node),
@@ -80,7 +121,10 @@ describe('runtime node routes', () => {
       listDispatches: vi.fn(() => [pendingDispatch]),
       getDispatch: vi.fn(() => pendingDispatch),
       claimDispatch: vi.fn(() => claimed),
+      renewDispatch: vi.fn(() => claimed),
       completeDispatch: vi.fn(() => completed),
+      claimDelivery: vi.fn(() => claimedDelivery),
+      completeDelivery: vi.fn(() => delivered),
     };
     const app = buildApp({ runtimeNodeRegistryService: service as never });
 
@@ -110,11 +154,22 @@ describe('runtime node routes', () => {
     });
     expect(claimedResponse.json()).toEqual({ dispatch: claimed });
 
+    const renewedResponse = await app.inject({
+      method: 'POST',
+      url: '/api/runtime-nodes/web-1/dispatches/dispatch-1/renew',
+      payload: { instance_id: 'instance-1', claim_token: 'claim-1', lease_seconds: 120 },
+    });
+    expect(renewedResponse.statusCode).toBe(200);
+    expect(service.renewDispatch).toHaveBeenCalledWith('web-1', 'dispatch-1', {
+      instance_id: 'instance-1', claim_token: 'claim-1', lease_seconds: 120,
+    });
+
     const completedResponse = await app.inject({
       method: 'POST',
       url: '/api/runtime-nodes/web-1/dispatches/dispatch-1/complete',
       payload: {
         instance_id: 'instance-1',
+        claim_token: 'claim-1',
         status: 'completed',
         session_id: 'session-1',
         result: { answer: 'done' },
@@ -122,5 +177,25 @@ describe('runtime node routes', () => {
     });
     expect(completedResponse.statusCode).toBe(200);
     expect(completedResponse.json()).toMatchObject({ status: 'completed', session_id: 'session-1' });
+
+    const claimedDeliveryResponse = await app.inject({
+      method: 'POST',
+      url: '/api/runtime-nodes/web-1/deliveries/claim',
+      payload: { instance_id: 'instance-1', lease_seconds: 60 },
+    });
+    expect(claimedDeliveryResponse.json()).toEqual({ delivery: claimedDelivery });
+
+    const deliveredResponse = await app.inject({
+      method: 'POST',
+      url: '/api/runtime-nodes/web-1/deliveries/delivery-1/complete',
+      payload: {
+        instance_id: 'instance-1',
+        claim_token: 'delivery-claim-1',
+        status: 'delivered',
+        receipt: { provider_message_refs: ['message-1'] },
+      },
+    });
+    expect(deliveredResponse.statusCode).toBe(200);
+    expect(deliveredResponse.json()).toMatchObject({ status: 'delivered' });
   });
 });

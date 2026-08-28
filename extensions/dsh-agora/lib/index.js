@@ -25,7 +25,7 @@ export const name = 'dsh-agora';
 // node worker. Declaring it here also makes Cordis delay apply() until the web
 // host is initialized instead of silently starting in command-only mode.
 export const inject = ['commands', 'tools', 'webServer'];
-const PLUGIN_VERSION = '0.3.2';
+const PLUGIN_VERSION = '0.4.0';
 export function apply(ctx, config = {}) {
     const commandName = normalizeCommandName(config.commandName ?? 'agora');
     const nodeId = normalizeNodeId(config.nodeId ?? process.env.DSH_AGORA_NODE_ID ?? hostname());
@@ -135,6 +135,9 @@ export function apply(ctx, config = {}) {
             ...(config.dispatchPollIntervalMs === undefined ? {} : { dispatchPollIntervalMs: config.dispatchPollIntervalMs }),
             ...(config.nodeLeaseSeconds === undefined ? {} : { leaseSeconds: config.nodeLeaseSeconds }),
             ...(config.dispatchLeaseSeconds === undefined ? {} : { dispatchLeaseSeconds: config.dispatchLeaseSeconds }),
+            ...(config.dispatchRenewIntervalMs === undefined ? {} : { dispatchRenewIntervalMs: config.dispatchRenewIntervalMs }),
+            ...(config.deliveryPollIntervalMs === undefined ? {} : { deliveryPollIntervalMs: config.deliveryPollIntervalMs }),
+            ...(config.deliveryLeaseSeconds === undefined ? {} : { deliveryLeaseSeconds: config.deliveryLeaseSeconds }),
             ...(config.maxConcurrent === undefined ? {} : { maxConcurrent: config.maxConcurrent }),
             imBridge: activeImBridge,
             ...(config.nodeMetadata === undefined ? {} : { metadata: config.nodeMetadata }),

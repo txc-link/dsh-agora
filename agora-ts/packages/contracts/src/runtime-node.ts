@@ -89,7 +89,11 @@ export const runtimeNodeDispatchSchema = createRuntimeNodeDispatchRequestSchema.
   node_id: z.string().min(1),
   status: runtimeNodeDispatchStatusSchema,
   claimed_by: z.string().nullable(),
+  claim_token: z.string().nullable(),
   claim_expires_at: z.string().nullable(),
+  attempt: z.number().int().nonnegative(),
+  claimed_at: z.string().nullable(),
+  claim_renewed_at: z.string().nullable(),
   result: z.record(z.string(), z.unknown()).nullable(),
   error: z.string().nullable(),
   created_at: z.string(),
@@ -103,11 +107,75 @@ export const claimRuntimeNodeDispatchRequestSchema = z.object({
   lease_seconds: z.number().int().min(15).max(600).default(120),
 }).strict();
 
+export const renewRuntimeNodeDispatchRequestSchema = z.object({
+  instance_id: z.string().min(1),
+  claim_token: z.string().min(1),
+  lease_seconds: z.number().int().min(15).max(600).default(120),
+}).strict();
+export type RenewRuntimeNodeDispatchRequestDto = z.infer<typeof renewRuntimeNodeDispatchRequestSchema>;
+
 export const completeRuntimeNodeDispatchRequestSchema = z.object({
   instance_id: z.string().min(1),
+  claim_token: z.string().min(1),
   status: z.enum(['completed', 'failed']),
   session_id: z.string().min(1).nullable().optional(),
   result: z.record(z.string(), z.unknown()).nullable().optional(),
   error: z.string().min(1).nullable().optional(),
+  delivery_payload: z.record(z.string(), z.unknown()).nullable().optional(),
 }).strict();
 export type CompleteRuntimeNodeDispatchRequestDto = z.infer<typeof completeRuntimeNodeDispatchRequestSchema>;
+
+export const runtimeNodeDeliveryStatusSchema = z.enum([
+  'pending',
+  'claimed',
+  'delivered',
+  'failed',
+]);
+export type RuntimeNodeDeliveryStatusDto = z.infer<typeof runtimeNodeDeliveryStatusSchema>;
+
+export const runtimeNodeDeliverySchema = z.object({
+  id: z.string().min(1),
+  dispatch_id: z.string().min(1),
+  node_id: z.string().min(1),
+  payload: z.record(z.string(), z.unknown()),
+  status: runtimeNodeDeliveryStatusSchema,
+  attempt: z.number().int().nonnegative(),
+  claimed_by: z.string().nullable(),
+  claim_token: z.string().nullable(),
+  claim_expires_at: z.string().nullable(),
+  next_attempt_at: z.string(),
+  receipt: z.record(z.string(), z.unknown()).nullable(),
+  error: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  delivered_at: z.string().nullable(),
+}).strict();
+export type RuntimeNodeDeliveryDto = z.infer<typeof runtimeNodeDeliverySchema>;
+
+export const claimRuntimeNodeDeliveryRequestSchema = z.object({
+  instance_id: z.string().min(1),
+  lease_seconds: z.number().int().min(15).max(600).default(60),
+}).strict();
+
+export const completeRuntimeNodeDeliveryRequestSchema = z.discriminatedUnion('status', [
+  z.object({
+    instance_id: z.string().min(1),
+    claim_token: z.string().min(1),
+    status: z.literal('delivered'),
+    receipt: z.record(z.string(), z.unknown()).nullable().optional(),
+  }).strict(),
+  z.object({
+    instance_id: z.string().min(1),
+    claim_token: z.string().min(1),
+    status: z.literal('retry'),
+    error: z.string().min(1),
+    retry_delay_seconds: z.number().int().min(1).max(3_600),
+  }).strict(),
+  z.object({
+    instance_id: z.string().min(1),
+    claim_token: z.string().min(1),
+    status: z.literal('failed'),
+    error: z.string().min(1),
+  }).strict(),
+]);
+export type CompleteRuntimeNodeDeliveryRequestDto = z.infer<typeof completeRuntimeNodeDeliveryRequestSchema>;

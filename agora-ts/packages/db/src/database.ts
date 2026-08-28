@@ -97,6 +97,8 @@ export function runMigrations(db: AgoraDatabase): void {
     '026_project_write_locks.sql',
     '027_runtime_target_overlays.sql',
     '028_runtime_nodes.sql',
+    '029_runtime_dispatch_leases.sql',
+    '030_runtime_dispatch_delivery_outbox.sql',
   ];
   const migrationsDir = resolveMigrationsDir();
 

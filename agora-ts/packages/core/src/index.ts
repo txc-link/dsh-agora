@@ -76,7 +76,7 @@ export type { RuntimeNodeRepositoryPort } from './runtime-node-registry-service.
 export { RuntimeNodeRegistryService, runtimeTargetRefFor } from './runtime-node-registry-service.js';
 export { isDeveloperRegressionEnabled, isRegressionOperatorProxyEnabled } from './dev-regression-mode.js';
 export { ActivityKind, AgentRole, CollaborationMode, CraftsmanType, DispatchStatus, EscalationLevel, GateType, GovernancePreset, SubtaskState, TaskPriority, TaskState, TaskType } from './enums.js';
-export { NotFoundError, PermissionDeniedError } from './errors.js';
+export { ConflictError, NotFoundError, PermissionDeniedError } from './errors.js';
 export { GateService } from './gate-service.js';
 export type { BuildAttentionRoutingPlanInput, AttentionRoutingServiceOptions } from './attention-routing-service.js';
 export { AttentionRoutingService } from './attention-routing-service.js';

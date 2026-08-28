@@ -1,11 +1,14 @@
 import type {
   CompleteRuntimeNodeDispatchRequestDto,
+  CompleteRuntimeNodeDeliveryRequestDto,
   CreateRuntimeNodeDispatchRequestDto,
   RuntimeNodeDispatchDto,
+  RuntimeNodeDeliveryDto,
   RuntimeNodeDto,
   RuntimeNodeHeartbeatRequestDto,
+  RenewRuntimeNodeDispatchRequestDto,
 } from '@agora-ts/contracts';
-import { NotFoundError } from './errors.js';
+import { ConflictError, NotFoundError } from './errors.js';
 import type {
   AgentInventorySource,
   AgentPresenceSnapshot,
@@ -22,13 +25,20 @@ export interface RuntimeNodeRepositoryPort {
   getDispatch(dispatchId: string): RuntimeNodeDispatchDto | null;
   listDispatches(nodeId: string, limit?: number): RuntimeNodeDispatchDto[];
   claimDispatch(nodeId: string, instanceId: string, leaseSeconds: number, now?: Date): RuntimeNodeDispatchDto | null;
+  renewDispatch(nodeId: string, dispatchId: string, input: RenewRuntimeNodeDispatchRequestDto, now?: Date): RuntimeNodeDispatchDto | null;
   completeDispatch(nodeId: string, dispatchId: string, input: CompleteRuntimeNodeDispatchRequestDto, now?: Date): RuntimeNodeDispatchDto | null;
+  claimDelivery(nodeId: string, instanceId: string, leaseSeconds: number, now?: Date): RuntimeNodeDeliveryDto | null;
+  completeDelivery(nodeId: string, deliveryId: string, input: CompleteRuntimeNodeDeliveryRequestDto, now?: Date): RuntimeNodeDeliveryDto | null;
 }
 
 export class RuntimeNodeRegistryService implements AgentInventorySource, PresenceSource {
   constructor(private readonly repository: RuntimeNodeRepositoryPort) {}
 
   heartbeat(nodeId: string, input: RuntimeNodeHeartbeatRequestDto): RuntimeNodeDto {
+    const current = this.repository.getNode(nodeId);
+    if (current?.presence === 'online' && current.instance_id !== input.instance_id) {
+      throw new ConflictError(`Runtime node ${nodeId} is owned by another live instance`);
+    }
     return this.repository.upsertNode(nodeId, input);
   }
 
@@ -67,17 +77,49 @@ export class RuntimeNodeRegistryService implements AgentInventorySource, Presenc
   }
 
   claimDispatch(nodeId: string, instanceId: string, leaseSeconds: number): RuntimeNodeDispatchDto | null {
-    const node = this.getNode(nodeId);
-    if (node.instance_id !== instanceId) {
-      throw new TypeError('instance_id does not own the current runtime node lease');
-    }
+    this.assertOwner(nodeId, instanceId);
     return this.repository.claimDispatch(nodeId, instanceId, leaseSeconds);
   }
 
-  completeDispatch(nodeId: string, dispatchId: string, input: CompleteRuntimeNodeDispatchRequestDto): RuntimeNodeDispatchDto {
-    const dispatch = this.repository.completeDispatch(nodeId, dispatchId, input);
-    if (!dispatch) throw new NotFoundError(`Claimed runtime dispatch ${dispatchId} not found`);
+  renewDispatch(
+    nodeId: string,
+    dispatchId: string,
+    input: RenewRuntimeNodeDispatchRequestDto,
+  ): RuntimeNodeDispatchDto {
+    this.assertOwner(nodeId, input.instance_id);
+    const dispatch = this.repository.renewDispatch(nodeId, dispatchId, input);
+    if (!dispatch) throw new ConflictError(`Runtime dispatch ${dispatchId} lease is expired or fenced`);
     return dispatch;
+  }
+
+  completeDispatch(nodeId: string, dispatchId: string, input: CompleteRuntimeNodeDispatchRequestDto): RuntimeNodeDispatchDto {
+    this.assertOwner(nodeId, input.instance_id);
+    const dispatch = this.repository.completeDispatch(nodeId, dispatchId, input);
+    if (!dispatch) throw new ConflictError(`Runtime dispatch ${dispatchId} lease is expired or fenced`);
+    return dispatch;
+  }
+
+  claimDelivery(nodeId: string, instanceId: string, leaseSeconds: number): RuntimeNodeDeliveryDto | null {
+    this.assertOwner(nodeId, instanceId);
+    return this.repository.claimDelivery(nodeId, instanceId, leaseSeconds);
+  }
+
+  completeDelivery(
+    nodeId: string,
+    deliveryId: string,
+    input: CompleteRuntimeNodeDeliveryRequestDto,
+  ): RuntimeNodeDeliveryDto {
+    this.assertOwner(nodeId, input.instance_id);
+    const delivery = this.repository.completeDelivery(nodeId, deliveryId, input);
+    if (!delivery) throw new ConflictError(`Runtime delivery ${deliveryId} lease is expired or fenced`);
+    return delivery;
+  }
+
+  private assertOwner(nodeId: string, instanceId: string): void {
+    const node = this.getNode(nodeId);
+    if (node.instance_id !== instanceId) {
+      throw new ConflictError('instance_id does not own the current runtime node lease');
+    }
   }
 
   listAgents(): RegisteredAgent[] {

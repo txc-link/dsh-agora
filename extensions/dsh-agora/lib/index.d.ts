@@ -28,6 +28,9 @@ export interface Config {
     readonly dispatchPollIntervalMs?: number;
     readonly nodeLeaseSeconds?: number;
     readonly dispatchLeaseSeconds?: number;
+    readonly dispatchRenewIntervalMs?: number;
+    readonly deliveryPollIntervalMs?: number;
+    readonly deliveryLeaseSeconds?: number;
     readonly maxConcurrent?: number;
     readonly runtimeReplyTimeoutMs?: number;
     readonly runtimeAgents?: readonly ConfiguredDshAgent[];

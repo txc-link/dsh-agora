@@ -31,13 +31,27 @@ export class HarnessRuntimeAdapter {
             agentPreset: dispatch.agent_preset ?? agent.preset,
             signal,
         });
-        const result = await this.client.runPrompt(sessionId, formatDispatchPrompt(dispatch), this.replyTimeoutMs, signal, `agora-dispatch-${dispatch.id}`);
-        return {
-            sessionId,
-            answer: result.answer,
-            reason: result.reason,
-            metadata: { agent_ref: agent.id, runtime_target_ref: dispatch.runtime_target_ref },
-        };
+        try {
+            const result = await this.client.runPrompt(sessionId, formatDispatchPrompt(dispatch), this.replyTimeoutMs, signal, `agora-dispatch-${dispatch.id}`);
+            return {
+                sessionId,
+                answer: result.answer,
+                reason: result.reason,
+                metadata: { agent_ref: agent.id, runtime_target_ref: dispatch.runtime_target_ref },
+            };
+        }
+        catch (error) {
+            if (signal.aborted) {
+                try {
+                    await this.cancel(sessionId, AbortSignal.timeout(30_000));
+                }
+                catch {
+                    // Preserve the original lease-loss or shutdown error. The central
+                    // fencing token still prevents this abandoned execution from writing.
+                }
+            }
+            throw error;
+        }
     }
     async cancel(sessionId, signal) {
         await this.client.rpc('session.cancel', { sessionId, keepInbox: true }, 30_000, signal);

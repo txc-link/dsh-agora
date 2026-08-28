@@ -12,6 +12,9 @@ export interface RuntimeNodeWorkerOptions {
     readonly dispatchPollIntervalMs?: number;
     readonly leaseSeconds?: number;
     readonly dispatchLeaseSeconds?: number;
+    readonly dispatchRenewIntervalMs?: number;
+    readonly deliveryPollIntervalMs?: number;
+    readonly deliveryLeaseSeconds?: number;
     readonly maxConcurrent?: number;
     readonly imBridge?: DshImBridgeV1 | null;
     readonly metadata?: Readonly<Record<string, unknown>>;
@@ -22,6 +25,7 @@ export declare class RuntimeNodeWorker {
     private readonly abortController;
     private heartbeatTimer;
     private dispatchTimer;
+    private deliveryTimer;
     private active;
     private started;
     private imBridge;
@@ -32,11 +36,17 @@ export declare class RuntimeNodeWorker {
     private heartbeatLoop;
     private dispatchLoop;
     private execute;
+    private deliveryLoop;
+    private renewLease;
     private fail;
-    private present;
+    private presentationPayload;
+    private deliver;
     private listBots;
     private setStatus;
     private get leaseSeconds();
     private get maxConcurrent();
+    private get dispatchLeaseSeconds();
+    private get dispatchRenewIntervalMs();
+    private get deliveryLeaseSeconds();
 }
 //# sourceMappingURL=node-worker.d.ts.map

@@ -79,8 +79,25 @@ export class AgoraClient {
     claimRuntimeDispatch(nodeId, instanceId, leaseSeconds, signal) {
         return this.request(`/api/runtime-nodes/${encodeURIComponent(requireValue(nodeId, 'node id'))}/dispatches/claim`, { method: 'POST', body: { instance_id: instanceId, lease_seconds: leaseSeconds }, signal }).then(value => value.dispatch);
     }
+    renewRuntimeDispatch(nodeId, dispatchId, instanceId, claimToken, leaseSeconds, signal) {
+        return this.request(`/api/runtime-nodes/${encodeURIComponent(requireValue(nodeId, 'node id'))}/dispatches/${encodeURIComponent(requireValue(dispatchId, 'dispatch id'))}/renew`, {
+            method: 'POST',
+            body: {
+                instance_id: requireValue(instanceId, 'instance id'),
+                claim_token: requireValue(claimToken, 'claim token'),
+                lease_seconds: leaseSeconds,
+            },
+            signal,
+        });
+    }
     completeRuntimeDispatch(nodeId, dispatchId, input, signal) {
         return this.request(`/api/runtime-nodes/${encodeURIComponent(requireValue(nodeId, 'node id'))}/dispatches/${encodeURIComponent(requireValue(dispatchId, 'dispatch id'))}/complete`, { method: 'POST', body: input, signal });
+    }
+    claimRuntimeDelivery(nodeId, instanceId, leaseSeconds, signal) {
+        return this.request(`/api/runtime-nodes/${encodeURIComponent(requireValue(nodeId, 'node id'))}/deliveries/claim`, { method: 'POST', body: { instance_id: instanceId, lease_seconds: leaseSeconds }, signal }).then(value => value.delivery);
+    }
+    completeRuntimeDelivery(nodeId, deliveryId, input, signal) {
+        return this.request(`/api/runtime-nodes/${encodeURIComponent(requireValue(nodeId, 'node id'))}/deliveries/${encodeURIComponent(requireValue(deliveryId, 'delivery id'))}/complete`, { method: 'POST', body: input, signal });
     }
     bindRuntimeSession(taskId, participantBindingId, sessionId, agentRef, signal) {
         return this.request(`/api/tasks/${encodeURIComponent(requireValue(taskId, 'task id'))}/runtime-session-bindings/${encodeURIComponent(requireValue(participantBindingId, 'participant binding id'))}`, {

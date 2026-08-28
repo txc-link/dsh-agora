@@ -44,7 +44,7 @@ Defaults:
 
 Every DSH host must be able to reach the API origin. Prefer a private network, VPN, or TLS reverse proxy. FRP and SSH tunnels are also valid transports. Configure the origin only; do not append `/api` to `serverUrl`.
 
-If the API crosses an untrusted network, enable bearer authentication in `~/.agora/agora.json` and provide the same value to each DSH process as `AGORA_API_TOKEN`:
+If anything other than loopback can reach the API (including FRP), bearer authentication is mandatory. Enable it in `~/.agora/agora.json` and provide the same value to each DSH process as `AGORA_API_TOKEN`:
 
 ```json
 {
@@ -56,6 +56,22 @@ If the API crosses an untrusted network, enable bearer authentication in `~/.ago
 ```
 
 Never commit API tokens, model keys, or Bot Tokens.
+
+After restart, `/api/health` remains public, while this probe must return `401` without credentials:
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' https://agora.example.com/api/runtime-nodes
+```
+
+## Runtime safety in `dsh-agora` 0.4+
+
+- Claimed dispatches carry a fencing token and are renewed while the destination Agent is running.
+- An expired or superseded owner cannot commit a stale result.
+- A live `nodeId` cannot be silently replaced by a different process instance.
+- The Agent result and an optional provider-neutral delivery intent are committed atomically.
+- IM delivery is claimed from a durable outbox and retried with the same message idempotency key.
+
+The 0.4 protocol is intentionally coordinated: upgrade Agora Server and all DSH nodes together while no dispatch is active. Existing completed records migrate in place; an old plugin cannot complete a newly fenced dispatch.
 
 ## 2. Install `dsh-agora` on every DSH node
 
@@ -113,6 +129,7 @@ Configuration rules:
 - Agent ids are unique within a node. A target is addressed as `dsh:<nodeId>:<agentId>`.
 - `workspace` must be an absolute path accessible to the destination DSH.
 - `maxConcurrent` limits simultaneous dispatch execution on that node.
+- `dispatchLeaseSeconds` defaults to 120 seconds; the worker renews at one third of the lease and callers must not treat `updated_at` as execution progress.
 - Profile config takes precedence over environment variables.
 
 Environment alternatives, when the corresponding profile fields are absent:

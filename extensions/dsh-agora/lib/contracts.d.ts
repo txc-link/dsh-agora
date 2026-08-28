@@ -106,12 +106,33 @@ export interface RuntimeDispatch extends CreateRuntimeDispatchInput {
     readonly node_id: string;
     readonly status: 'pending' | 'claimed' | 'completed' | 'failed' | 'cancelled';
     readonly claimed_by: string | null;
+    readonly claim_token: string | null;
     readonly claim_expires_at: string | null;
+    readonly attempt: number;
+    readonly claimed_at: string | null;
+    readonly claim_renewed_at: string | null;
     readonly result: Readonly<Record<string, unknown>> | null;
     readonly error: string | null;
     readonly created_at: string;
     readonly updated_at: string;
     readonly completed_at: string | null;
+}
+export interface RuntimeDelivery {
+    readonly id: string;
+    readonly dispatch_id: string;
+    readonly node_id: string;
+    readonly payload: Readonly<Record<string, unknown>>;
+    readonly status: 'pending' | 'claimed' | 'delivered' | 'failed';
+    readonly attempt: number;
+    readonly claimed_by: string | null;
+    readonly claim_token: string | null;
+    readonly claim_expires_at: string | null;
+    readonly next_attempt_at: string;
+    readonly receipt: Readonly<Record<string, unknown>> | null;
+    readonly error: string | null;
+    readonly created_at: string;
+    readonly updated_at: string;
+    readonly delivered_at: string | null;
 }
 export interface RuntimeSessionBinding {
     readonly id: string;
