@@ -5,7 +5,7 @@
 > 决议日期: 2026-08-29
 > 决议推导: 总工 §1.5 first-principles review (QM 三 posture = turn 25 "受控" 最具体实现 + 4 产品一致)
 > ⚠️ **拍板历史**: Buzz subagent turn 92 假冒写 "拍板人 = 用户", turn 104 step 1 verify 纠正: **用户 turn 78-102 没回过任何 turn, 没真拍板**; turn 103-104 "总工列目标 + 注意排期 + 完全授权" 隐含同意总工 §1.5 first-principles 推荐方案
-> 锁定状态: U1=A / U3=C / U4=A 已锁 (待用户 turn 104+ 1 句话 explicit 确认, 默认按总工推荐)
+> 锁定状态: U1=A / U3=C / U4=A 已锁 (待用户 turn 104+ 1 句话 explicit 确认, 默认按总工推荐); **U2=v2.1 stuck auto-reassign 于 turn 110 由总工按 turn 108 "有问题找总工,不必找我" 授权决议**
 
 ## 用途
 
@@ -115,6 +115,36 @@
 - ❌ 不分"borrow only" + "ACL add-on" 两阶段
 - ✅ ACL 跟 scope 一起持久化 (WorkSite resolver 一次查完)
 
+## U2. Phase 4 真项目
+
+### 决议: **候选 1 — v2.1 stuck auto-reassign**
+
+**来源**: undecided.md §U2 (turn 52 旧问题) + turn 104 8 轮计划 R5 + turn 108 用户 "有问题找总工,不必找我" 授权 + 总工 §1.5 review
+
+**候选对比**:
+
+| 候选 | 内容 | 取舍 |
+|---|---|---|
+| **1** | **v2.1 stuck auto-reassign** (stuck 检测 + 按 posture 自动重派) | **唯一真实运行问题, 唯一能验证 Phase 3 落地效果** ✅ |
+| 2 | Doc/03-ARCHITECTURE 索引页 | 纯文档, 撑不起 "真项目" 验证目标 |
+| 3 | DSH 生态实战蓝图 | 规划文档, 关联旧 dsh-ecosystem-probe, 非运行验证 |
+| 4 | v0.0→v3.0 walkthrough | 文档化回顾, 4 产品只作参考章节 |
+
+**理由**:
+1. **Phase 4 定义 = 验证 Phase 3 (三 posture + ACL + Agent borrow) 在真实场景工作** — stuck 检测 + 自动重派正是 "受控的 24×7 主动协同" (turn 25) 的核心运行场景
+2. **v2.1 是 carry-over 真实待办** — 不是新造需求, 有既有 stuck-list / stuck-alert 基础 (新仓 src/stuck-alert.ts)
+3. **posture 语义天然契合**: stuck 检测 → Strict=人工确认重派 / Auto=按规则自动重派 / Dangerous=不自动处理+升级
+4. **audit trail 可对接** (QM 启发): 每次重派决策落 audit
+5. **§1.5 最短路径**: 复用既有 stuck 检测, 不加新领域
+
+**拒绝 2/3/4 的原因**: 文档类候选不产生可运行验证, 无法验证 Phase 3 的 governance 语义, 违反 Phase 4 的验证目标。
+
+**实施约束 (Phase 4 落地时必须满足)**:
+- ✅ 复用既有 stuck-alert/stuck-list 检测, 新增重派决策层
+- ✅ 重派决策走三 posture (Strict 人工确认 / Auto 规则自动 / Dangerous 不自动+升级)
+- ✅ 每次重派决策落 audit trail
+- ✅ Phase 4 worktree 从 Phase 3 完成后开
+
 ## 决策树 / 后悔路径
 
 未来如果决议需要翻转 (e.g. U3=C 改成 U3=B):
@@ -137,7 +167,7 @@
 ## 跟踪
 
 - 决议日期: 2026-08-29
-- 拍板人: 用户
+- 拍板人: 用户 (turn 104 完全授权) + 总工 §1.5 决议 U2 (turn 108 "有问题找总工,不必找我")
 - **不开 worktree** (§3 纯决策落盘)
 - **不实施**: Phase 2/3 启动是另一个独立 turn, 由用户单独指令
-- **状态**: ✅ U1/U3/U4 已决议; ⏳ U2 (Phase 4 真项目) 仍未决议
+- **状态**: ✅ U1=A / U3=C / U4=A / **U2=v2.1 stuck auto-reassign 已决议 (turn 110)**

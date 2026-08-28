@@ -9,8 +9,8 @@
 - ✅ U1 = 候选 A (单 scheme `agora://<type>/<id>`) — **已决议**
 - ✅ U3 = 候选 C (QM 三 posture + audit trail + governance gate 保留) — **已决议**
 - ✅ U4 = 候选 A (ACL 跟 scope + posture 一起做) — **已决议**
-- ⏳ U2 (Phase 4 真项目) — **仍未决议**, 等用户单独拍
-- ⏳ Phase 2 启动决策 — **等用户单独拍** (开 worktree 实施是下一步, 不在本 turn 范围)
+- ✅ U2 (Phase 4 真项目) — **已决议 turn 110: 候选 1 v2.1 stuck auto-reassign** (总工 §1.5 + turn 108 授权, 见 [decisions.md §U2](./decisions.md#u2-phase-4-真项目))
+- ✅ Phase 2 启动决策 — **已决议 turn 104 8 轮计划, 自主推进中** (R4 已完成)
 
 > §1.5 立场: **决议落盘 ≠ 实施**, 不主动开 Phase 2 worktree
 
