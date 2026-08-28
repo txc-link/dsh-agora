@@ -12,6 +12,8 @@ export function createAppFromRuntime(runtime: ReturnType<typeof createServerRunt
     contextRetrievalService: runtime.contextRetrievalService,
     contextMaterializationService: runtime.contextMaterializationService,
     projectBrainDoctorService: runtime.projectBrainDoctorService,
+    flowLogRepository: runtime.flowLogRepository,
+    progressLogRepository: runtime.progressLogRepository,
     citizenService: runtime.citizenService,
     dashboardQueryService: runtime.dashboardQueryService,
     runtimeTargetService: runtime.runtimeTargetService,
