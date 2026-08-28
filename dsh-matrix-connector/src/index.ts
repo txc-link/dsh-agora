@@ -29,6 +29,8 @@ import { ThreadRegistry, buildThreadKey } from './thread-registry.js';
 import { buildPostMortem } from './post-mortem.js';
 import { buildStatusPanel } from './status-panel.js';
 import { renderRollup } from './rollup.js';
+import { buildStuckAlert } from './stuck-alert.js';
+import { renderStuckList } from './stuck-list.js';
 
 export interface CordisContext {
   on: (event: string, handler: (...args: unknown[]) => void) => void;
@@ -100,6 +102,31 @@ export function createMatrixConnectorPlugin(opts: PluginOptions): CordisPlugin {
     },
     roomForTask: (taskId) => registry.resolveTaskId(taskId)?.roomId,
     posted: postedPostMortem,
+  });
+
+  // v2.0.1 — stuck alert. Subscribes to inbox_escalated events from
+  // the background observation scheduler and posts a one-shot
+  // summary to the originating room. The plugin does NOT
+  // auto-reassign; that would require a Core endpoint we do not have.
+  const alertedStuck = new Set<string>();
+  const stuckTasksList: Array<{ taskId: string; idleMs: number; stage: string; agentId: string; roomId: string }> = [];
+  const stuckAlert = buildStuckAlert({
+    matrix,
+    taskBridge: {
+      show: async (taskId) => {
+        const raw = await agora.getTask(taskId) as unknown as Record<string, unknown>;
+        return {
+          id: String(raw.id ?? taskId),
+          state: String(raw.state ?? 'unknown'),
+          current_stage: typeof raw.current_stage === 'string' ? raw.current_stage : null,
+          creator: typeof raw.creator === 'string' ? raw.creator : undefined,
+          team: (raw.team as { members: Array<{ role: string; agentId: string }> }) ?? { members: [] },
+          subtasks: Array.isArray(raw.subtasks) ? raw.subtasks as Array<{ status: string }> : [],
+        };
+      },
+    },
+    roomForTask: (taskId) => registry.resolveTaskId(taskId)?.roomId,
+    alerted: alertedStuck,
   });
 
   // v0.3.3 — per-room status panel. Each room gets a panel that is
@@ -211,6 +238,17 @@ export function createMatrixConnectorPlugin(opts: PluginOptions): CordisPlugin {
         await matrix.sendText(input.roomId, reply);
         return;
       }
+      case 'stuck': {
+        // v2.0.2 — list tasks the plugin has observed stuck in this
+        // session (via SSE inbox_escalated). Session-local data; a
+        // fresh restart rebuilds the list from SSE replay.
+        const reply = renderStuckList({
+          stuckTasks: stuckTasksList,
+          rooms: new Set([input.roomId]),
+        });
+        await matrix.sendText(input.roomId, reply);
+        return;
+      }
       case 'im': {
         if (decision.subVerb === 'health') {
           const h = await agora.health();
@@ -238,6 +276,32 @@ export function createMatrixConnectorPlugin(opts: PluginOptions): CordisPlugin {
     // v1.0.1 — update the in-memory task summary used by /agora rollup.
     const agent = typeof evt.actor === 'string' && evt.actor.length > 0 ? evt.actor : 'unknown';
     registry.rememberTask(taskId, binding.roomId, status, agent);
+    // v2.0.1 — react to inbox_escalated events from the background
+    // observation scheduler by posting a one-shot stuck alert to the
+    // room. The plugin does NOT auto-reassign; that would require a
+    // Core endpoint we don't have today.
+    await stuckAlert.handleEvent(evt as AgoraEvent);
+    // v2.0.2 — also keep an in-memory list of stuck tasks so
+    // /agora stuck can render them on demand.
+    if ((evt as AgoraEvent).type === 'inbox_escalated') {
+      const detail = (evt as { detail?: { kind?: string; idle_ms?: number } }).detail;
+      const idleMs = typeof detail?.idle_ms === 'number' ? detail.idle_ms : 0;
+      try {
+        const raw = await agora.getTask(taskId) as unknown as Record<string, unknown>;
+        const team = (raw.team as { members?: Array<{ role: string; agentId: string }> }) ?? { members: [] };
+        const agent = (team.members ?? []).find((m: { role: string; agentId: string }) => m.role === 'executor')?.agentId ?? 'unknown';
+        const stage = typeof raw.current_stage === 'string' ? raw.current_stage : '-';
+        stuckTasksList.push({
+          taskId,
+          idleMs,
+          stage,
+          agentId: agent,
+          roomId: binding.roomId,
+        });
+      } catch {
+        /* task record unavailable — skip list update */
+      }
+    }
     // v0.3.1 — also try to post the war-room post-mortem summary if
     // the task has a subtask with output (see post-mortem.ts).
     await postMortem.handleTick(evt);
