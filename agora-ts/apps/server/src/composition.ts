@@ -73,7 +73,7 @@ import { loadOpenClawDiscordAccountTokens, OpenClawAgentRegistry, OpenClawCitize
 import { DiscordGatewayPresenceService, DiscordIMMessagingAdapter, DiscordIMProvisioningAdapter } from '@agora-ts/adapters-discord';
 import { ObsidianContextSourceRetrievalAdapter } from '@agora-ts/adapters-obsidian';
 import { agoraDataDirPath, hasInstalledBrainPack, refineProjectNomosDraftFromSpec, resolveAgoraProjectStateLayout, resolveProjectNomosRuntimePaths, resolveProjectNomosState, syncBundledBrainPackContents, type AgoraConfig } from '@agora-ts/config';
-import type { LiveSessionDto } from '@agora-ts/contracts';
+import type { IFlowLogRepository, IProgressLogRepository, LiveSessionDto } from '@agora-ts/contracts';
 import {
   type AgoraDatabase,
   ApprovalRequestRepository,
@@ -169,6 +169,8 @@ export interface ServerComposition {
   ccConnectBridgeRuntimeService?: CcConnectBridgeRuntimeController;
   discordPresenceService?: DiscordGatewayPresenceService;
   discordThreadIngressService?: DiscordThreadIngressController;
+  flowLogRepository: Pick<IFlowLogRepository, 'listByTask'>;
+  progressLogRepository: Pick<IProgressLogRepository, 'listByTask'>;
 }
 
 export interface ServerCompositionFactories {
@@ -835,6 +837,12 @@ export function buildServerComposition(
     runtimeThreadMessageRouter,
     ...createCraftsmanTransportDeps(craftsmanMode, legacyRuntimeService, acpRuntime),
   });
+  // Expose the same repositories that TaskService's createTaskService factory
+  // constructs internally, so buildApp() can wire them to the /api/events route.
+  // SQLite connection-sharing: same db handle, two repo instances reading the
+  // same tables — read-only flows so no cross-instance contention.
+  const flowLogRepository: Pick<IFlowLogRepository, 'listByTask'> = new FlowLogRepository(context.db);
+  const progressLogRepository: Pick<IProgressLogRepository, 'listByTask'> = new ProgressLogRepository(context.db);
   const projectContextDeliveryService = factories.createProjectContextDeliveryService(context, {
     contextMaterializationService,
     taskBrainBindingService,
@@ -913,6 +921,8 @@ export function buildServerComposition(
     ...(ccConnectBridgeRuntimeService ? { ccConnectBridgeRuntimeService } : {}),
     ...(discordPresenceService ? { discordPresenceService } : {}),
     ...(discordThreadIngressService ? { discordThreadIngressService } : {}),
+    flowLogRepository,
+    progressLogRepository,
   };
 }
 

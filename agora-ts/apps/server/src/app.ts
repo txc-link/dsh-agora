@@ -2,6 +2,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { resolve, sep } from 'node:path';
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
+import { z } from 'zod';
 import {
   BUILT_IN_AGORA_NOMOS_PACK,
   DEFAULT_AGORA_NOMOS_ID,
@@ -157,6 +158,9 @@ import {
   type CreateTaskRequestDto,
   subtaskLifecycleRequestSchema,
   subtaskDoneRequestSchema,
+  listCitizensResponseSchema,
+  IFlowLogRepository,
+  IProgressLogRepository,
   taskNoteRequestSchema,
   unblockTaskRequestSchema,
   templateValidationRequestSchema,
@@ -253,6 +257,8 @@ export interface BuildAppOptions {
   projectBrainDoctorService?: ProjectBrainDoctorServiceContract;
   workspaceBootstrapService?: WorkspaceBootstrapService;
   citizenService?: CitizenService;
+  flowLogRepository?: Pick<IFlowLogRepository, 'listByTask'>;
+  progressLogRepository?: Pick<IProgressLogRepository, 'listByTask'>;
   dashboardQueryService?: DashboardQueryService;
   runtimeTargetService?: RuntimeTargetService;
   runtimeNodeRegistryService?: RuntimeNodeRegistryService;
@@ -482,6 +488,14 @@ function parseOptionalInt(value: string | number | undefined) {
   }
   const parsed = Number.parseInt(trimmed, 10);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function safeJsonParse(raw: string): unknown {
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 function buildCcConnectManagementInput(input: {
@@ -1162,6 +1176,8 @@ export function buildApp(options: BuildAppOptions = {}) {
   const projectBrainService = options.projectBrainService;
   const contextRetrievalService = options.contextRetrievalService;
   const citizenService = options.citizenService;
+  const flowLogRepository = options.flowLogRepository;
+  const progressLogRepository = options.progressLogRepository;
   const dashboardQueryService = options.dashboardQueryService;
   const runtimeTargetService = options.runtimeTargetService;
   const runtimeNodeRegistryService = options.runtimeNodeRegistryService;
@@ -4957,6 +4973,270 @@ export function buildApp(options: BuildAppOptions = {}) {
       const { artifactId } = request.params as { artifactId: string };
       const artifact = artifactService.get(artifactId);
       return reply.type(artifact.media_type).send(artifactService.content(artifactId));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  // v0.1 matrix entry facade — citizens list/show.
+  // Per §1 Core constitution: citizens are Core abstractions; the IM adapter
+  // (dsh-matrix-connector) reads them via this facade. The opaque threadKey is
+  // NOT included in the payload — it is owned by the IM adapter.
+  app.get('/api/citizens', async (request, reply) => {
+    if (!citizenService) return reply.status(503).send({ message: 'Citizen service is not configured' });
+    const query = request.query as { project_id?: string; status?: string } | undefined;
+    const projectId = typeof query?.project_id === 'string' ? query.project_id.trim() : '';
+    if (!projectId) {
+      return reply.status(400).send({ message: 'project_id query parameter is required' });
+    }
+    try {
+      const status = query?.status === 'archived' ? 'archived' : 'active';
+      const citizens = citizenService.listCitizens(projectId, status);
+      return reply.send(listCitizensResponseSchema.parse({ citizens }));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/citizens/:citizenId', async (request, reply) => {
+    if (!citizenService) return reply.status(503).send({ message: 'Citizen service is not configured' });
+    try {
+      const { citizenId } = request.params as { citizenId: string };
+      const citizen = citizenService.getCitizen(citizenId);
+      if (!citizen) return reply.status(404).send({ message: `citizen not found: ${citizenId}` });
+      return reply.send(citizen);
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  // v0.1 matrix entry facade — task lifecycle events.
+  // Per §1 Core constitution: events are Core concerns, IM adapters consume them.
+  // Payload MUST NOT include any IM-specific key (threadKey / room_id); those are
+  // adapter-owned opaque identifiers.
+  const agoraEventSchema = z.object({
+    seq: z.number().int().nonnegative(),
+    type: z.string().min(1),
+    task_id: z.string().min(1),
+    state: z.string().nullable(),
+    stage_id: z.string().nullable(),
+    from_state: z.string().nullable(),
+    to_state: z.string().nullable(),
+    actor: z.string().nullable(),
+    detail: z.unknown().nullable(),
+    progress_content: z.string().nullable(),
+    created_at: z.string(),
+  }).strict();
+
+  const agoraEventsResponseSchema = z.object({
+    events: z.array(agoraEventSchema),
+    next_since: z.number().int().nonnegative(),
+  }).strict();
+
+  app.get('/api/events', async (request, reply) => {
+    if (!flowLogRepository || !progressLogRepository) {
+      return reply.status(503).send({ message: 'Task event repositories are not configured' });
+    }
+    const query = request.query as {
+      task_id?: string;
+      project_id?: string;
+      since?: string;
+      limit?: string;
+    } | undefined;
+    const taskId = typeof query?.task_id === 'string' ? query.task_id.trim() : '';
+    const projectId = typeof query?.project_id === 'string' ? query.project_id.trim() : '';
+    if (!taskId && !projectId) {
+      return reply.status(400).send({ message: 'task_id or project_id query parameter is required' });
+    }
+    const since = Number.parseInt(query?.since ?? '0', 10);
+    const sinceNum = Number.isFinite(since) && since >= 0 ? since : 0;
+    const limit = Math.min(Math.max(Number.parseInt(query?.limit ?? '50', 10) || 50, 1), 500);
+
+    try {
+      let taskIds: string[];
+      if (taskId) {
+        taskIds = [taskId];
+      } else if (projectService && taskService) {
+        taskIds = taskService.listTasks(undefined, projectId).map((task) => task.id);
+      } else {
+        return reply.status(503).send({ message: 'project_id fan-out requires projectService + taskService' });
+      }
+
+      type EventRow = z.infer<typeof agoraEventSchema>;
+      const all: EventRow[] = [];
+      for (const tid of taskIds) {
+        for (const entry of flowLogRepository.listByTask(tid)) {
+          if (entry.id <= sinceNum) continue;
+          all.push({
+            seq: entry.id,
+            type: entry.event,
+            task_id: entry.task_id,
+            state: entry.to_state,
+            stage_id: entry.stage_id,
+            from_state: entry.from_state,
+            to_state: entry.to_state,
+            actor: entry.actor,
+            detail: entry.detail ? safeJsonParse(entry.detail) : null,
+            progress_content: null,
+            created_at: entry.created_at,
+          });
+        }
+        for (const entry of progressLogRepository.listByTask(tid)) {
+          if (entry.id <= sinceNum) continue;
+          all.push({
+            seq: entry.id,
+            type: `progress:${entry.kind}`,
+            task_id: entry.task_id,
+            state: null,
+            stage_id: entry.stage_id,
+            from_state: null,
+            to_state: null,
+            actor: entry.actor,
+            detail: null,
+            progress_content: entry.content,
+            created_at: entry.created_at,
+          });
+        }
+      }
+      all.sort((a, b) => a.seq - b.seq);
+      const events = all.slice(0, limit);
+      const lastEvent = events.length > 0 ? events[events.length - 1] : undefined;
+      const nextSince = lastEvent ? lastEvent.seq : sinceNum;
+      return reply.send(agoraEventsResponseSchema.parse({ events, next_since: nextSince }));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/events/stream — Server-Sent Events for real-time task state
+  // updates. v0.2 of the matrix-connector adapter consumes this endpoint
+  // instead of polling /api/events every 5 seconds.
+  //
+  // Design notes (§1.5 — shortest path):
+  //   - Fastify v5 `reply.hijack()` opens the raw socket so we can write the
+  //     SSE envelope directly.
+  //   - A per-connection setInterval polls flow_log / progress_log every
+  //     500 ms and emits new rows. This adds ~500 ms latency vs an in-memory
+  //     event bus, but keeps the boundary clean: db packages stay pure,
+  //     server composition stays the only place that knows about both
+  //     repos and HTTP.
+  //   - No new event-bus package, no @fastify/sse dep — both would violate
+  //     §1 (Core / adapters don't carry HTTP semantics).
+  // -------------------------------------------------------------------------
+  app.get('/api/events/stream', async (request, reply) => {
+    if (!flowLogRepository || !progressLogRepository) {
+      return reply.status(503).send({ message: 'Task event repositories are not configured' });
+    }
+    const query = request.query as {
+      task_id?: string;
+      project_id?: string;
+      since?: string;
+    } | undefined;
+    const taskId = typeof query?.task_id === 'string' ? query.task_id.trim() : '';
+    const projectId = typeof query?.project_id === 'string' ? query.project_id.trim() : '';
+    if (!taskId && !projectId) {
+      return reply.status(400).send({ message: 'task_id or project_id query parameter is required' });
+    }
+    let sinceNum = Number.parseInt(query?.since ?? '0', 10);
+    sinceNum = Number.isFinite(sinceNum) && sinceNum >= 0 ? sinceNum : 0;
+
+    try {
+      // Resolve the set of task_ids once at open time. The stream emits
+      // events for these tasks only — new tasks created mid-stream are not
+      // retroactively picked up. The adapter is expected to open a fresh
+      // stream when it dispatches a new task.
+      let taskIds: string[];
+      if (taskId) {
+        taskIds = [taskId];
+      } else if (projectService && taskService) {
+        taskIds = taskService.listTasks(undefined, projectId).map((task) => task.id);
+      } else {
+        return reply.status(503).send({ message: 'project_id fan-out requires projectService + taskService' });
+      }
+
+      reply.hijack();
+      const raw = reply.raw;
+      raw.setHeader('content-type', 'text/event-stream');
+      raw.setHeader('cache-control', 'no-cache');
+      raw.setHeader('connection', 'keep-alive');
+      raw.writeHead(200);
+      raw.write(`retry: 1000\n\n`);
+      raw.write(`event: open\ndata: ${JSON.stringify({ task_ids: taskIds, since: sinceNum })}\n\n`);
+
+      // Local cursor advances per pushed event so each row goes out exactly once.
+      let cursor = sinceNum;
+
+      const interval = setInterval(() => {
+        try {
+          const newRows: z.infer<typeof agoraEventSchema>[] = [];
+          for (const tid of taskIds) {
+            for (const entry of flowLogRepository.listByTask(tid)) {
+              if (entry.id <= cursor) continue;
+              newRows.push({
+                seq: entry.id,
+                type: entry.event,
+                task_id: entry.task_id,
+                state: entry.to_state,
+                stage_id: entry.stage_id,
+                from_state: entry.from_state,
+                to_state: entry.to_state,
+                actor: entry.actor,
+                detail: entry.detail ? safeJsonParse(entry.detail) : null,
+                progress_content: null,
+                created_at: entry.created_at,
+              });
+            }
+            for (const entry of progressLogRepository.listByTask(tid)) {
+              if (entry.id <= cursor) continue;
+              newRows.push({
+                seq: entry.id,
+                type: `progress:${entry.kind}`,
+                task_id: entry.task_id,
+                state: null,
+                stage_id: entry.stage_id,
+                from_state: null,
+                to_state: null,
+                actor: entry.actor,
+                detail: null,
+                progress_content: entry.content,
+                created_at: entry.created_at,
+              });
+            }
+          }
+          newRows.sort((a, b) => a.seq - b.seq);
+          for (const row of newRows) {
+            raw.write(`event: tick\ndata: ${JSON.stringify(row)}\n\n`);
+            cursor = Math.max(cursor, row.seq);
+          }
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.error('[agora] events-stream tick failed', error);
+          raw.write(`event: error\ndata: ${JSON.stringify({ message: 'tick failed' })}\n\n`);
+        }
+      }, 500);
+
+      // Keep-alive comment frame every 15s so reverse-proxies don't kill the
+      // connection on idle.
+      const keepAlive = setInterval(() => {
+        try {
+          raw.write(`:keep-alive\n\n`);
+        } catch {
+          /* socket may already be closed; cleanup runs in 'close' handler */
+        }
+      }, 15000);
+
+      const cleanup = () => {
+        clearInterval(interval);
+        clearInterval(keepAlive);
+      };
+
+      raw.on('close', cleanup);
+      raw.on('error', cleanup);
     } catch (error) {
       const translated = translateError(error);
       return reply.status(translated.statusCode).send(translated.body);
