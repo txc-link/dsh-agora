@@ -43,6 +43,14 @@ export {
 } from './borrow.js';
 
 export {
+  decideReassign,
+  type ReassignAuditEvent,
+  type ReassignDecision,
+  type ReassignResult,
+  type StuckSignal,
+} from './stuck.js';
+
+export {
   TaskWorksiteResolver,
   type TaskWorksiteResolverOptions,
 } from './task-resolver.js';
