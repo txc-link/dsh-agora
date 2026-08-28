@@ -99,6 +99,7 @@ export function runMigrations(db: AgoraDatabase): void {
     '028_runtime_nodes.sql',
     '029_runtime_dispatch_leases.sql',
     '030_runtime_dispatch_delivery_outbox.sql',
+    '031_runtime_dispatch_progress.sql',
   ];
   const migrationsDir = resolveMigrationsDir();
 

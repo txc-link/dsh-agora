@@ -14,6 +14,7 @@ import type {
   DshAgoraSnapshot,
   DshAgoraNodeStatus,
   RuntimeDispatch,
+  RuntimeDispatchProgress,
   RuntimeNode,
   RuntimeSessionBinding,
   RuntimeTarget,
@@ -91,6 +92,10 @@ export class DshAgoraService implements DshAgoraServiceApi {
 
   getRuntimeDispatch(dispatchId: string, signal?: AbortSignal): Promise<RuntimeDispatch> {
     return this.options.client.getRuntimeDispatch(dispatchId, signal)
+  }
+
+  listRuntimeDispatchProgress(dispatchId: string, signal?: AbortSignal): Promise<RuntimeDispatchProgress[]> {
+    return this.options.client.listRuntimeDispatchProgress(dispatchId, signal)
   }
 
   async dispatchAgent(input: DispatchAgentInput, signal?: AbortSignal): Promise<RuntimeDispatch> {

@@ -247,11 +247,26 @@ window.__ModuleLoader__.load({ id: 'dsh-agora', factory: (require) => {
             Badge({ value: agent.enabled === false ? 'disabled' : 'enabled' }))
         }) : React.createElement('small', { className: 'da-muted' }, '没有在线 Agent')),
       props.dispatches.length ? React.createElement('div', { className: 'da-card' },
-        SectionTitle({ title: '本页派发记录', note: '刷新页面后仍可从任务记录查询' }),
+        SectionTitle({ title: '本页派发记录', note: '租约心跳与工作进度分开显示' }),
         props.dispatches.map(function (item, index) {
-          return React.createElement('div', { className: 'da-row', key: item?.id || index },
-            React.createElement('span', null, React.createElement('b', null, text(item?.runtime_target_ref, 'dispatch')), React.createElement('code', null, text(item?.id))),
-            Badge({ value: item?.status || 'submitted' }))
+          const progress = item?.latest_progress
+          const envelope = item?.result_envelope
+          const percent = Number(progress?.percent)
+          return React.createElement('article', { className: 'da-dispatch', key: item?.id || index },
+            React.createElement('div', { className: 'da-card-head' },
+              React.createElement('div', null, React.createElement('strong', null, text(item?.runtime_target_ref, 'dispatch')), React.createElement('code', null, text(item?.id))),
+              Badge({ value: item?.status || 'submitted' })),
+            React.createElement('div', { className: 'da-dispatch-signals' },
+              React.createElement('span', null, '租约心跳 ', React.createElement('b', null, shortTime(item?.claim_renewed_at))),
+              React.createElement('span', null, '工作进度 ', React.createElement('b', null, progress ? text(progress.phase) : '尚未报告'))),
+            progress ? React.createElement('div', { className: 'da-progress' },
+              React.createElement('div', { className: 'da-progress-track' }, React.createElement('i', { style: { width: Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) + '%' : '0%' } })),
+              React.createElement('small', null, text(progress.message, '阶段 #' + progress.attempt + '.' + progress.sequence) + (Number.isFinite(percent) ? ' · ' + percent + '%' : ''))) : null,
+            envelope ? React.createElement('div', { className: 'da-evidence' },
+              React.createElement('span', null, list(envelope.claims).length + ' 条主张'),
+              React.createElement('span', null, list(envelope.evidence).length + ' 项证据'),
+              typeof envelope.confidence === 'number' ? React.createElement('span', null, '置信度 ' + Math.round(envelope.confidence * 100) + '%') : null) : null,
+            envelope?.answer ? React.createElement('p', { className: 'da-result' }, envelope.answer) : null)
         })) : null)
   }
 
@@ -265,6 +280,7 @@ window.__ModuleLoader__.load({ id: 'dsh-agora', factory: (require) => {
     const [loading, setLoading] = React.useState(true)
     const [error, setError] = React.useState('')
     const [updatedAt, setUpdatedAt] = React.useState(null)
+    const dispatchIds = dispatches.map(function (item) { return item?.id }).filter(Boolean).join('|')
 
     const load = React.useCallback(async function (quiet) {
       if (!quiet) setLoading(true)
@@ -282,6 +298,28 @@ window.__ModuleLoader__.load({ id: 'dsh-agora', factory: (require) => {
       const timer = setInterval(function () { load(true) }, POLL_MS)
       return function () { clearInterval(timer) }
     }, [props.visible, load])
+
+    React.useEffect(function () {
+      if (props.visible === false || !dispatchIds) return
+      let cancelled = false
+      let timer
+      const refresh = async function () {
+        try {
+          const values = await Promise.all(dispatchIds.split('|').map(function (dispatchId) {
+            return rpc('dispatch-status', { dispatchId: dispatchId })
+          }))
+          if (cancelled) return
+          setDispatches(values)
+          if (values.some(function (item) { return !['completed', 'failed', 'cancelled'].includes(item?.status) })) {
+            timer = setTimeout(refresh, 2000)
+          }
+        } catch (reason) {
+          if (!cancelled) onError(reason)
+        }
+      }
+      refresh()
+      return function () { cancelled = true; if (timer) clearTimeout(timer) }
+    }, [props.visible, dispatchIds])
 
     function onError(reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     const tabs = [['overview', '总览'], ['nodes', '节点'], ['tasks', '任务'], ['agents', '派发']]
@@ -322,6 +360,7 @@ window.__ModuleLoader__.load({ id: 'dsh-agora', factory: (require) => {
     '.da-flow{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.da-flow span{padding:5px 7px;border-radius:6px;background:var(--dsw-alias-interactive-bg-hover);font-size:10px}.da-flow i{font-style:normal;color:var(--dsw-alias-label-dimmed)}',
     '.da-inline-meta{display:flex;gap:8px;flex-wrap:wrap;color:var(--dsw-alias-label-dimmed);font-size:10px;margin:8px 0}.da-subtitle{margin:8px 0 3px;text-transform:uppercase;letter-spacing:.08em;font-size:9px;color:var(--dsw-alias-label-dimmed)}',
     '.da-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0;border-top:1px solid var(--dsw-alias-border-l1)}.da-row>span:first-child{display:flex;min-width:0;flex-direction:column}.da-row b{font-size:11px;font-weight:550}.da-row small{font-size:10px;color:var(--dsw-alias-label-dimmed);text-align:right}',
+    '.da-dispatch{padding:9px 0;border-top:1px solid var(--dsw-alias-border-l1)}.da-dispatch:first-of-type{border-top:0}.da-dispatch code{font:9px var(--dsh-font-mono,ui-monospace,monospace);color:var(--dsw-alias-label-dimmed)}.da-dispatch-signals{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin:7px 0;color:var(--dsw-alias-label-dimmed);font-size:9px}.da-dispatch-signals b{display:block;color:var(--dsw-alias-label-secondary);font-weight:500}.da-progress-track{height:4px;border-radius:999px;background:var(--dsw-alias-interactive-bg-hover);overflow:hidden}.da-progress-track i{display:block;height:100%;background:var(--dsw-alias-brand-primary);border-radius:inherit}.da-progress small{display:block;margin-top:4px;color:var(--dsw-alias-label-secondary);font-size:9px}.da-evidence{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}.da-evidence span{padding:2px 5px;border-radius:5px;background:var(--dsw-alias-interactive-bg-hover);font-size:9px;color:var(--dsw-alias-label-secondary)}.da-result{margin:7px 0 0;max-height:64px;overflow:auto;white-space:pre-wrap;color:var(--dsw-alias-label-secondary);font-size:10px;line-height:15px}',
     '.da-form{display:flex;flex-direction:column;gap:7px}.da-form label{display:flex;flex-direction:column;gap:4px;color:var(--dsw-alias-label-secondary);font-size:11px}.da-form input,.da-form textarea,.da-form select{width:100%;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-layer-1,var(--dsw-alias-bg-base));color:var(--dsw-alias-label-primary);padding:7px 8px;font:inherit;font-size:12px;outline:none;resize:vertical}.da-form input:focus,.da-form textarea:focus,.da-form select:focus{border-color:var(--dsw-alias-brand-primary)}',
     '.da-primary{height:30px;border:0;border-radius:7px;background:var(--dsw-alias-brand-primary);color:white;font:inherit;font-size:12px;cursor:pointer}.da-primary:disabled{opacity:.5;cursor:not-allowed}.da-task{cursor:pointer}.da-task:hover{border-color:var(--dsw-alias-brand-primary)}.da-task p{margin:7px 0;color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px}.da-task>small{color:var(--dsw-alias-label-dimmed);font-size:9px}',
     '.da-empty{flex:1;min-height:120px;display:flex;align-items:center;justify-content:center;padding:24px;color:var(--dsw-alias-label-dimmed);text-align:center}.da-error{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px 6px 10px;background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 12%,transparent);color:var(--dsw-alias-state-error-primary);font-size:11px}.da-error span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',

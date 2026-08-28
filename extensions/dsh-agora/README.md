@@ -95,6 +95,19 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://agora.example.com/api/runtime-
 
 这是一次中央 Server 与节点插件需要同步升级的协议变更。升级时先停止新派发并等待 active 归零，再升级中央 Server、迁移数据库、升级所有 DSH 节点并重启。旧插件不能完成新的 fenced dispatch。
 
+### 0.5 进度账本与证据化结果
+
+`dsh-agora` 0.5 把“worker 仍持有租约”和“Agent 有实际工作进展”拆成两种信号：
+
+- `claim_renewed_at` 只表示 worker 仍存活并持有 fencing token；
+- `latest_progress` / `progress_updated_at` 表示最近一个实际执行阶段；
+- `/api/runtime-dispatches/:dispatchId/progress` 保存按 `attempt + sequence` 排序的追加式历史；
+- `result_envelope` 将自然语言答案、可核验主张、证据、置信度和执行环境分开保存。
+
+内置 DSH runtime 会报告 `claimed`、`session_ready`、`prompt_accepted`、`response_started`、`response_completed`、`finalizing`。被重新领取的 dispatch 会开始新的 attempt，旧 attempt 的进度仍可审计，但不会冒充新 worker 的当前进度。证据块格式错误或 Agent 没有提供证据时，答案仍会正常完成，信封中的 claims/evidence 为空。
+
+升级顺序是：先升级中央 Agora Server 并执行数据库迁移，再升级各 DSH 节点到 0.5。0。0.4 节点仍可连接升级后的 Server，只是不会产生新进度与证据字段；不要先把 0.5 节点连接到尚未升级的严格旧 Server。
+
 ## 第二步：在每个 DSH 节点安装插件
 
 在每一台 DSH 机器上取得本仓库，然后构建和测试：
@@ -167,7 +180,7 @@ workspace: 'C:/Users/example/workspace'
 - `runtimeAgents[].id`：节点内唯一；完整目标格式为 `dsh:<nodeId>:<agentId>`；
 - `workspace`：目标 DSH 可以访问的绝对路径；省略 Agent 清单时使用一个 `default` Agent 和当前工作目录；
 - `maxConcurrent`：该节点允许同时执行的派发数；
-- `dispatchLeaseSeconds`：默认 120 秒；worker 会在约三分之一租约时自动续租，不要再用 dispatch `updated_at` 判断 Agent 是否存活；
+- `dispatchLeaseSeconds`：默认 120 秒；worker 会在约三分之一租约时自动续租；用 `claim_renewed_at` 判断租约存活，用 `latest_progress` 判断实际工作推进，不要再用 dispatch `updated_at` 混淆两者；
 - profile config 的优先级高于同名环境变量。
 
 也可使用环境变量。只有在 profile 没有写死相应字段时，它们才会生效：
@@ -328,7 +341,7 @@ imBridge: connected — dsh-im.bridge/v1
 - 总览：中央服务、本机节点、bridge、节点/Agent/Bot 数量和容量；
 - 节点：心跳、Agent、能力标签、Bot 在线状态；
 - 任务：创建和查看持久任务；
-- 派发：选择目标、创建或续接 DSH Session、选择结果呈现方式。
+- 派发：选择目标、创建或续接 DSH Session、选择结果呈现方式，并分别显示租约心跳、实际工作阶段、证据数量和最终结果。
 
 界面只访问同源 `/dsh-agora/api`，Agora API Token 和 Discord Bot Token 始终留在 Host。派发默认 `silent`；只有明确选择“由目标 Bot 回帖”时才请求主动呈现。没有 sidebar 时 Host、工具、API 和节点 Worker 仍正常运行，只是不显示面板。
 
@@ -351,7 +364,7 @@ imBridge: connected — dsh-im.bridge/v1
 /agora dispatch-status <dispatch-id>
 ```
 
-验收标准：状态最终为 `completed`，结果包含 `REMOTE_AGORA_OK`，执行目标为 `dsh:node-b:default`。
+验收标准：状态最终为 `completed`，工作进度至少经过 `prompt_accepted` 和 `response_completed`，结果包含 `REMOTE_AGORA_OK`，执行目标为 `dsh:node-b:default`。如果回答包含可核验事实，`dispatch-status` 还应显示 claims/evidence 数量。
 
 需要测试 Discord 回帖时，不要依赖尚未实现的 IM `/agora` command gateway。向源 Bot 发送自然语言：
 
@@ -369,7 +382,7 @@ presentation_mode 使用 destination_bot，等待 120 秒。
 
 - dsh-im 记录 IM conversation/thread 到本机 DSH Session 的绑定；
 - Agora 保存 task participant 到目标 runtime Session 的持久绑定；
-- 派发记录保存目标节点、Agent、Session、结果和错误；claim 具有自动续租和 fencing，进程异常退出后可安全重新领取；
+- 派发记录保存目标节点、Agent、Session、结果和错误；claim 具有自动续租和 fencing，进程异常退出后可安全重新领取；进度按 attempt 单独留痕；
 - 主动 IM 呈现保存在中央 delivery outbox，发送失败不会改变 dispatch 的完成状态，并会以相同幂等键重试。
 
 `attach_session` 可以把已有 Session 绑定到任务参与者，而不复制聊天历史。后续 dispatch 传入该 `session_id` 即可继续上下文。重启 Discord Gateway、dsh-im、dsh-agora 或某个 DSH 节点不会删除中央任务和派发记录；节点恢复心跳后继续接单。
@@ -434,7 +447,7 @@ MINIMAX_CN_API_KEY: '...'
 
 第三方插件可以导入 `dsh-agora/sdk` 并注册 `dsh-agora.extension/v1`。当前内置 `runtime` 扩展负责 Agent 描述、Session 创建/恢复和 prompt 执行；新的 provider、策略或观察器应沿注册表扩展，不依赖 dsh-im 私有实现。
 
-`POST /dsh-agora/api/{snapshot,health,nodes,agents,tasks,task,status,create,dispatch,dispatch-status,attach-session,command}` 返回统一 JSON envelope。它只是面板和本地 adapter 的薄代理，不保存 Agora 领域状态。
+`POST /dsh-agora/api/{snapshot,health,nodes,agents,tasks,task,status,create,dispatch,dispatch-status,dispatch-progress,attach-session,command}` 返回统一 JSON envelope。`dispatch-status` 返回含最新进度和结构化结果的 dispatch；`dispatch-progress` 接收 `dispatchId` 并返回完整进度历史。该 Host API 只是面板和本地 adapter 的薄代理，不保存 Agora 领域状态。
 
 ## 开发验证
 

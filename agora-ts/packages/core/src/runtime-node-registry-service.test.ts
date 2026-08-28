@@ -49,4 +49,19 @@ describe('RuntimeNodeRegistryService node ownership', () => {
     expect(service.heartbeat('web-1', heartbeat)).toBe(next);
     expect(repository.upsertNode).toHaveBeenCalledWith('web-1', heartbeat);
   });
+
+  it('fences progress from a stale dispatch owner', () => {
+    const repository = {
+      getNode: vi.fn(() => node('online')),
+      recordDispatchProgress: vi.fn(() => null),
+    };
+    const service = new RuntimeNodeRegistryService(repository as never);
+
+    expect(() => service.recordDispatchProgress('web-1', 'dispatch-1', {
+      instance_id: 'instance-current',
+      claim_token: 'stale-token',
+      sequence: 1,
+      phase: 'response_started',
+    })).toThrow(/expired or fenced/);
+  });
 });

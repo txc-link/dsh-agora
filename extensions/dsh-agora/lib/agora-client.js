@@ -76,6 +76,9 @@ export class AgoraClient {
     getRuntimeDispatch(dispatchId, signal) {
         return this.request(`/api/runtime-dispatches/${encodeURIComponent(requireValue(dispatchId, 'dispatch id'))}`, { signal });
     }
+    listRuntimeDispatchProgress(dispatchId, signal) {
+        return this.request(`/api/runtime-dispatches/${encodeURIComponent(requireValue(dispatchId, 'dispatch id'))}/progress`, { signal }).then(value => value.events);
+    }
     claimRuntimeDispatch(nodeId, instanceId, leaseSeconds, signal) {
         return this.request(`/api/runtime-nodes/${encodeURIComponent(requireValue(nodeId, 'node id'))}/dispatches/claim`, { method: 'POST', body: { instance_id: instanceId, lease_seconds: leaseSeconds }, signal }).then(value => value.dispatch);
     }
@@ -89,6 +92,9 @@ export class AgoraClient {
             },
             signal,
         });
+    }
+    recordRuntimeDispatchProgress(nodeId, dispatchId, input, signal) {
+        return this.request(`/api/runtime-nodes/${encodeURIComponent(requireValue(nodeId, 'node id'))}/dispatches/${encodeURIComponent(requireValue(dispatchId, 'dispatch id'))}/progress`, { method: 'POST', body: input, signal });
     }
     completeRuntimeDispatch(nodeId, dispatchId, input, signal) {
         return this.request(`/api/runtime-nodes/${encodeURIComponent(requireValue(nodeId, 'node id'))}/dispatches/${encodeURIComponent(requireValue(dispatchId, 'dispatch id'))}/complete`, { method: 'POST', body: input, signal });

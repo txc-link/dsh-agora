@@ -84,6 +84,70 @@ export const createRuntimeNodeDispatchRequestSchema = z.object({
 }).strict();
 export type CreateRuntimeNodeDispatchRequestDto = z.infer<typeof createRuntimeNodeDispatchRequestSchema>;
 
+export const runtimeResultEvidenceSchema = z.object({
+  id: z.string().min(1).max(128),
+  kind: z.enum(['file', 'url', 'commit', 'measurement', 'log', 'command', 'other']),
+  label: z.string().min(1).max(512).nullable().optional(),
+  uri: z.string().min(1).max(4_096).nullable().optional(),
+  content_hash: z.string().min(1).max(256).nullable().optional(),
+  revision: z.string().min(1).max(256).nullable().optional(),
+  line_start: z.number().int().positive().nullable().optional(),
+  line_end: z.number().int().positive().nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+}).strict();
+export type RuntimeResultEvidenceDto = z.infer<typeof runtimeResultEvidenceSchema>;
+
+export const runtimeResultClaimSchema = z.object({
+  id: z.string().min(1).max(128),
+  statement: z.string().min(1).max(10_000),
+  evidence_ids: z.array(z.string().min(1).max(128)).default([]),
+  confidence: z.number().min(0).max(1).nullable().optional(),
+}).strict();
+export type RuntimeResultClaimDto = z.infer<typeof runtimeResultClaimSchema>;
+
+export const runtimeResultEnvelopeSchema = z.object({
+  schema: z.literal('agora.runtime-result/v1'),
+  answer: z.string().max(200_000),
+  claims: z.array(runtimeResultClaimSchema).default([]),
+  evidence: z.array(runtimeResultEvidenceSchema).default([]),
+  confidence: z.number().min(0).max(1).nullable().optional(),
+  environment: z.object({
+    runtime_provider: z.string().min(1),
+    agent_ref: z.string().min(1).nullable().optional(),
+    model: z.string().min(1).nullable().optional(),
+    workspace_alias: z.string().min(1).nullable().optional(),
+    revision: z.string().min(1).nullable().optional(),
+    metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+  }).strict().nullable().optional(),
+}).strict();
+export type RuntimeResultEnvelopeDto = z.infer<typeof runtimeResultEnvelopeSchema>;
+
+export const recordRuntimeNodeDispatchProgressRequestSchema = z.object({
+  instance_id: z.string().min(1),
+  claim_token: z.string().min(1),
+  sequence: z.number().int().positive(),
+  phase: z.string().min(1).max(64),
+  message: z.string().min(1).max(4_000).nullable().optional(),
+  percent: z.number().min(0).max(100).nullable().optional(),
+  details: z.record(z.string(), z.unknown()).nullable().optional(),
+}).strict();
+export type RecordRuntimeNodeDispatchProgressRequestDto = z.infer<typeof recordRuntimeNodeDispatchProgressRequestSchema>;
+
+export const runtimeNodeDispatchProgressSchema = recordRuntimeNodeDispatchProgressRequestSchema.omit({
+  claim_token: true,
+}).extend({
+  id: z.string().min(1),
+  dispatch_id: z.string().min(1),
+  node_id: z.string().min(1),
+  attempt: z.number().int().positive(),
+  created_at: z.string(),
+});
+export type RuntimeNodeDispatchProgressDto = z.infer<typeof runtimeNodeDispatchProgressSchema>;
+
+export const runtimeNodeDispatchProgressListResponseSchema = z.object({
+  events: z.array(runtimeNodeDispatchProgressSchema),
+});
+
 export const runtimeNodeDispatchSchema = createRuntimeNodeDispatchRequestSchema.extend({
   id: z.string().min(1),
   node_id: z.string().min(1),
@@ -94,7 +158,10 @@ export const runtimeNodeDispatchSchema = createRuntimeNodeDispatchRequestSchema.
   attempt: z.number().int().nonnegative(),
   claimed_at: z.string().nullable(),
   claim_renewed_at: z.string().nullable(),
+  latest_progress: runtimeNodeDispatchProgressSchema.nullable(),
+  progress_updated_at: z.string().nullable(),
   result: z.record(z.string(), z.unknown()).nullable(),
+  result_envelope: runtimeResultEnvelopeSchema.nullable(),
   error: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
@@ -120,6 +187,7 @@ export const completeRuntimeNodeDispatchRequestSchema = z.object({
   status: z.enum(['completed', 'failed']),
   session_id: z.string().min(1).nullable().optional(),
   result: z.record(z.string(), z.unknown()).nullable().optional(),
+  result_envelope: runtimeResultEnvelopeSchema.nullable().optional(),
   error: z.string().min(1).nullable().optional(),
   delivery_payload: z.record(z.string(), z.unknown()).nullable().optional(),
 }).strict();

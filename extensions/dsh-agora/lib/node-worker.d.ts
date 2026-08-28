@@ -1,4 +1,4 @@
-import type { AgoraClient } from './agora-client.js';
+import { type AgoraClient } from './agora-client.js';
 import { type DshAgoraNodeStatus } from './contracts.js';
 import type { DshAgoraExtensionRegistry } from './extension-sdk.js';
 import type { DshImBridgeV1 } from './im-bridge-v1.js';

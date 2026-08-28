@@ -53,6 +53,9 @@ export class DshAgoraService {
     getRuntimeDispatch(dispatchId, signal) {
         return this.options.client.getRuntimeDispatch(dispatchId, signal);
     }
+    listRuntimeDispatchProgress(dispatchId, signal) {
+        return this.options.client.listRuntimeDispatchProgress(dispatchId, signal);
+    }
     async dispatchAgent(input, signal) {
         const { nodeId } = parseDshRuntimeTarget(input.runtime_target_ref);
         let metadata = input.metadata ?? null;

@@ -5,6 +5,9 @@ import type {
   CreateAgoraTaskInput,
   CreateRuntimeDispatchInput,
   RuntimeDispatch,
+  RecordRuntimeDispatchProgressInput,
+  RuntimeDispatchProgress,
+  RuntimeResultEnvelope,
   RuntimeDelivery,
   RuntimeNode,
   RuntimeNodeHeartbeatInput,
@@ -107,6 +110,13 @@ export class AgoraClient {
     return this.request(`/api/runtime-dispatches/${encodeURIComponent(requireValue(dispatchId, 'dispatch id'))}`, { signal })
   }
 
+  listRuntimeDispatchProgress(dispatchId: string, signal?: AbortSignal): Promise<RuntimeDispatchProgress[]> {
+    return this.request<{ events: RuntimeDispatchProgress[] }>(
+      `/api/runtime-dispatches/${encodeURIComponent(requireValue(dispatchId, 'dispatch id'))}/progress`,
+      { signal },
+    ).then(value => value.events)
+  }
+
   claimRuntimeDispatch(nodeId: string, instanceId: string, leaseSeconds: number, signal?: AbortSignal): Promise<RuntimeDispatch | null> {
     return this.request<{ dispatch: RuntimeDispatch | null }>(
       `/api/runtime-nodes/${encodeURIComponent(requireValue(nodeId, 'node id'))}/dispatches/claim`,
@@ -136,6 +146,18 @@ export class AgoraClient {
     )
   }
 
+  recordRuntimeDispatchProgress(
+    nodeId: string,
+    dispatchId: string,
+    input: RecordRuntimeDispatchProgressInput,
+    signal?: AbortSignal,
+  ): Promise<RuntimeDispatchProgress> {
+    return this.request(
+      `/api/runtime-nodes/${encodeURIComponent(requireValue(nodeId, 'node id'))}/dispatches/${encodeURIComponent(requireValue(dispatchId, 'dispatch id'))}/progress`,
+      { method: 'POST', body: input, signal },
+    )
+  }
+
   completeRuntimeDispatch(
     nodeId: string,
     dispatchId: string,
@@ -145,6 +167,7 @@ export class AgoraClient {
       readonly status: 'completed' | 'failed'
       readonly session_id?: string | null
       readonly result?: Readonly<Record<string, unknown>> | null
+      readonly result_envelope?: RuntimeResultEnvelope | null
       readonly error?: string | null
       readonly delivery_payload?: Readonly<Record<string, unknown>> | null
     },

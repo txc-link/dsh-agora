@@ -28,7 +28,7 @@ export const name = 'dsh-agora'
 // node worker. Declaring it here also makes Cordis delay apply() until the web
 // host is initialized instead of silently starting in command-only mode.
 export const inject = ['commands', 'tools', 'webServer']
-const PLUGIN_VERSION = '0.4.0'
+const PLUGIN_VERSION = '0.5.0'
 
 export interface Config {
   readonly serverUrl?: string

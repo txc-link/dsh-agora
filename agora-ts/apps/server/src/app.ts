@@ -106,6 +106,9 @@ import {
   createRuntimeNodeDispatchRequestSchema,
   claimRuntimeNodeDispatchRequestSchema,
   renewRuntimeNodeDispatchRequestSchema,
+  recordRuntimeNodeDispatchProgressRequestSchema,
+  runtimeNodeDispatchProgressSchema,
+  runtimeNodeDispatchProgressListResponseSchema,
   completeRuntimeNodeDispatchRequestSchema,
   runtimeNodeDispatchSchema,
   claimRuntimeNodeDeliveryRequestSchema,
@@ -4662,6 +4665,37 @@ export function buildApp(options: BuildAppOptions = {}) {
       return reply.send(runtimeNodeDispatchSchema.parse(
         runtimeNodeRegistryService.renewDispatch(nodeId, dispatchId, input),
       ));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/runtime-nodes/:nodeId/dispatches/:dispatchId/progress', async (request, reply) => {
+    if (!runtimeNodeRegistryService) {
+      return reply.status(503).send({ message: 'Runtime node registry service is not configured' });
+    }
+    try {
+      const { nodeId, dispatchId } = request.params as { nodeId: string; dispatchId: string };
+      const input = recordRuntimeNodeDispatchProgressRequestSchema.parse(request.body);
+      return reply.status(201).send(runtimeNodeDispatchProgressSchema.parse(
+        runtimeNodeRegistryService.recordDispatchProgress(nodeId, dispatchId, input),
+      ));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/runtime-dispatches/:dispatchId/progress', async (request, reply) => {
+    if (!runtimeNodeRegistryService) {
+      return reply.status(503).send({ message: 'Runtime node registry service is not configured' });
+    }
+    try {
+      const { dispatchId } = request.params as { dispatchId: string };
+      return reply.send(runtimeNodeDispatchProgressListResponseSchema.parse({
+        events: runtimeNodeRegistryService.listDispatchProgress(dispatchId),
+      }));
     } catch (error) {
       const translated = translateError(error);
       return reply.status(translated.statusCode).send(translated.body);

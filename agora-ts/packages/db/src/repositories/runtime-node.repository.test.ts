@@ -118,6 +118,52 @@ describe('runtime node repository', () => {
       renewedAt,
     )).toBeNull();
 
+    const started = repository.recordDispatchProgress('web-1', created.id, {
+      instance_id: 'instance-1',
+      claim_token: claimed!.claim_token!,
+      sequence: 1,
+      phase: 'session_ready',
+      message: 'DSH Session is ready',
+      percent: 10,
+      details: { session_id: 'session-1' },
+    }, new Date('2026-08-26T01:01:01.000Z'));
+    expect(started).toMatchObject({
+      dispatch_id: created.id,
+      node_id: 'web-1',
+      instance_id: 'instance-1',
+      attempt: 1,
+      sequence: 1,
+      phase: 'session_ready',
+      percent: 10,
+    });
+    const duplicate = repository.recordDispatchProgress('web-1', created.id, {
+      instance_id: 'instance-1',
+      claim_token: claimed!.claim_token!,
+      sequence: 1,
+      phase: 'session_ready',
+      message: 'DSH Session is ready',
+      percent: 10,
+      details: { session_id: 'session-1' },
+    }, new Date('2026-08-26T01:01:02.000Z'));
+    expect(duplicate?.id).toBe(started?.id);
+    expect(repository.recordDispatchProgress('web-1', created.id, {
+      instance_id: 'instance-1',
+      claim_token: 'stale-token',
+      sequence: 2,
+      phase: 'response_started',
+    }, new Date('2026-08-26T01:01:03.000Z'))).toBeNull();
+
+    const responding = repository.recordDispatchProgress('web-1', created.id, {
+      instance_id: 'instance-1',
+      claim_token: claimed!.claim_token!,
+      sequence: 2,
+      phase: 'response_started',
+      message: 'Agent started responding',
+      percent: 60,
+    }, new Date('2026-08-26T01:01:04.000Z'));
+    expect(repository.listDispatchProgress(created.id)).toEqual([started, responding]);
+    expect(repository.getDispatch(created.id)?.latest_progress).toEqual(responding);
+
     expect(repository.completeDispatch('web-1', created.id, {
       instance_id: 'instance-2',
       claim_token: claimed!.claim_token!,
@@ -131,6 +177,14 @@ describe('runtime node repository', () => {
       status: 'completed',
       session_id: 'session-1',
       result: { answer: 'done' },
+      result_envelope: {
+        schema: 'agora.runtime-result/v1',
+        answer: 'done',
+        claims: [{ id: 'claim-1', statement: 'Checks passed', evidence_ids: ['evidence-1'], confidence: 0.9 }],
+        evidence: [{ id: 'evidence-1', kind: 'measurement', label: 'test suite', metadata: { passed: 42 } }],
+        confidence: 0.9,
+        environment: { runtime_provider: 'dsh', agent_ref: 'default', revision: 'abc123' },
+      },
       delivery_payload: {
         protocol: 'dsh-agora.presentation/v1',
         text: 'done',
@@ -141,6 +195,11 @@ describe('runtime node repository', () => {
       status: 'completed',
       session_id: 'session-1',
       result: { answer: 'done' },
+      result_envelope: expect.objectContaining({
+        schema: 'agora.runtime-result/v1',
+        claims: [expect.objectContaining({ evidence_ids: ['evidence-1'] })],
+      }),
+      latest_progress: expect.objectContaining({ phase: 'response_started', sequence: 2 }),
     });
 
     const delivery = repository.claimDelivery(
@@ -214,6 +273,13 @@ describe('runtime node repository', () => {
     }, new Date('2026-08-26T01:00:00.000Z'));
     const first = repository.claimDispatch('web-1', 'instance-1', 120, new Date('2026-08-26T01:00:00.000Z'))!;
 
+    repository.recordDispatchProgress('web-1', created.id, {
+      instance_id: 'instance-1',
+      claim_token: first.claim_token!,
+      sequence: 1,
+      phase: 'prompt_accepted',
+    }, new Date('2026-08-26T01:00:01.000Z'));
+
     expect(repository.completeDispatch('web-1', created.id, {
       instance_id: 'instance-1',
       claim_token: first.claim_token!,
@@ -224,6 +290,8 @@ describe('runtime node repository', () => {
     const second = repository.claimDispatch('web-1', 'instance-1', 120, new Date('2026-08-26T01:02:01.000Z'))!;
     expect(second.attempt).toBe(2);
     expect(second.claim_token).not.toBe(first.claim_token);
+    expect(second.latest_progress).toBeNull();
+    expect(repository.listDispatchProgress(created.id)).toHaveLength(1);
     expect(repository.completeDispatch('web-1', created.id, {
       instance_id: 'instance-1',
       claim_token: first.claim_token!,

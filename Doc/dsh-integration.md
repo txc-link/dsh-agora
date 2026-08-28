@@ -73,6 +73,10 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://agora.example.com/api/runtime-
 
 The 0.4 protocol is intentionally coordinated: upgrade Agora Server and all DSH nodes together while no dispatch is active. Existing completed records migrate in place; an old plugin cannot complete a newly fenced dispatch.
 
+Version 0.5 adds an append-only progress ledger and an evidence-first result envelope. Lease renewal (`claim_renewed_at`) now answers only whether a worker still owns the claim. Meaningful execution is reported separately as ordered `attempt + sequence` events, with `latest_progress` cached on the dispatch for inexpensive polling. A reclaimed dispatch starts a new attempt and clears only the latest summary; prior attempt history remains auditable.
+
+Upgrade the central Server and apply migration 031 before upgrading nodes to 0.5. Existing 0.4 nodes remain accepted by the new Server but do not emit progress or structured evidence.
+
 ## 2. Install `dsh-agora` on every DSH node
 
 ```bash
@@ -129,7 +133,7 @@ Configuration rules:
 - Agent ids are unique within a node. A target is addressed as `dsh:<nodeId>:<agentId>`.
 - `workspace` must be an absolute path accessible to the destination DSH.
 - `maxConcurrent` limits simultaneous dispatch execution on that node.
-- `dispatchLeaseSeconds` defaults to 120 seconds; the worker renews at one third of the lease and callers must not treat `updated_at` as execution progress.
+- `dispatchLeaseSeconds` defaults to 120 seconds; the worker renews at one third of the lease. Use `claim_renewed_at` for claim liveness and `latest_progress` for meaningful execution; do not treat `updated_at` as either signal.
 - Profile config takes precedence over environment variables.
 
 Environment alternatives, when the corresponding profile fields are absent:
@@ -242,7 +246,7 @@ The global `agora_task` tool adds `dispatch`, `dispatch_status`, and `attach_ses
 4. Prompt: `Reply with REMOTE_AGORA_OK and nothing else.`
 5. Copy the dispatch id and run `/agora dispatch-status <dispatch-id>`.
 
-The dispatch should reach `completed` on node B and contain `REMOTE_AGORA_OK`.
+The dispatch should reach `completed` on node B, pass through at least `prompt_accepted` and `response_completed`, and contain `REMOTE_AGORA_OK`. Verifiable answers also expose claims and evidence in `result_envelope`.
 
 For Discord delivery, send a natural-language request to the source Bot:
 

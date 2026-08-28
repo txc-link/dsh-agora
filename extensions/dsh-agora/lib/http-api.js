@@ -50,6 +50,9 @@ export async function handleHttpRequest(request, response, service, options) {
             case 'dispatch-status':
                 value = await service.getRuntimeDispatch(requiredString(payload.dispatchId, 'dispatchId'), signal);
                 break;
+            case 'dispatch-progress':
+                value = await service.listRuntimeDispatchProgress(requiredString(payload.dispatchId, 'dispatchId'), signal);
+                break;
             case 'dispatch': {
                 const taskId = optionalString(payload.taskId);
                 const participantBindingId = optionalString(payload.participantBindingId);

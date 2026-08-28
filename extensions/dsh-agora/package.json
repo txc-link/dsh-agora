@@ -1,6 +1,6 @@
 {
   "name": "dsh-agora",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "DSH-native adapter for an Agora governance server",
   "private": true,
   "type": "module",

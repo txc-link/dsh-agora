@@ -1,5 +1,5 @@
 import type { RuntimeDispatch, RuntimeNodeAgent } from './contracts.js';
-import { type DshAgoraRuntimeAdapterV1, type RuntimeExecutionResult } from './extension-sdk.js';
+import { type DshAgoraRuntimeAdapterV1, type RuntimeExecutionResult, type RuntimeExecutionContext } from './extension-sdk.js';
 export interface ConfiguredDshAgent {
     readonly id: string;
     readonly displayName?: string;
@@ -23,7 +23,7 @@ export declare class HarnessRuntimeAdapter implements DshAgoraRuntimeAdapterV1 {
     private readonly replyTimeoutMs;
     constructor(options: HarnessRuntimeOptions);
     describeAgents(): readonly RuntimeNodeAgent[];
-    execute(dispatch: RuntimeDispatch, signal: AbortSignal): Promise<RuntimeExecutionResult>;
+    execute(dispatch: RuntimeDispatch, signal: AbortSignal, context?: RuntimeExecutionContext): Promise<RuntimeExecutionResult>;
     cancel(sessionId: string, signal: AbortSignal): Promise<boolean>;
 }
 //# sourceMappingURL=harness-runtime.d.ts.map

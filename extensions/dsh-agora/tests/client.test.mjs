@@ -8,6 +8,9 @@ test('browser client registers an Agora dashboard and visible launcher', async (
   assert.equal(manifest.exports['./client'], './lib/client.js')
   assert.equal(manifest.dsh.client.platform, 'web')
   const source = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
+  assert.match(source, /latest_progress/)
+  assert.match(source, /result_envelope/)
+  assert.match(source, /租约心跳与工作进度分开显示/)
   let registration
   const storage = new Map()
   const nodes = []

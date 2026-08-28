@@ -48,6 +48,7 @@ export async function handleHttpRequest(
       case 'task': value = await service.getTask(requiredString(payload.taskId, 'taskId'), signal); break
       case 'status': value = await service.taskStatus(requiredString(payload.taskId, 'taskId'), signal); break
       case 'dispatch-status': value = await service.getRuntimeDispatch(requiredString(payload.dispatchId, 'dispatchId'), signal); break
+      case 'dispatch-progress': value = await service.listRuntimeDispatchProgress(requiredString(payload.dispatchId, 'dispatchId'), signal); break
       case 'dispatch': {
         const taskId = optionalString(payload.taskId)
         const participantBindingId = optionalString(payload.participantBindingId)

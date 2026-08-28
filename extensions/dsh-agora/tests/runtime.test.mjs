@@ -29,6 +29,7 @@ test('extension registry versions, isolates, and disposes runtime adapters', () 
 
 test('Harness runtime creates a Session and tracks the exact dispatched turn', async () => {
   const calls = []
+  const progress = []
   let historyCount = 0
   const fetch = async (_url, options) => {
     const request = JSON.parse(options.body)
@@ -43,7 +44,7 @@ test('Harness runtime creates a Session and tracks the exact dispatched turn', a
         events: [
           { event: { seq: 1, type: 'turn/start', data: { turn: 9 } } },
           { event: { seq: 2, type: 'user/message', data: { turn: 9, source: { rpcId: 'agora-dispatch-dispatch-1' } } } },
-          { event: { seq: 3, type: 'assistant/message', data: { turn: 9, message: { content: [{ type: 'text', text: 'remote result' }] } } } },
+          { event: { seq: 3, type: 'assistant/message', data: { turn: 9, message: { content: [{ type: 'text', text: 'remote result\n\n<agora-evidence>{"claims":[{"id":"claim-1","statement":"Tests passed","evidence_ids":["evidence-1"],"confidence":0.95}],"evidence":[{"id":"evidence-1","kind":"measurement","label":"test suite","metadata":{"passed":42}}],"confidence":0.95,"revision":"abc123"}</agora-evidence>' }] } } } },
           { event: { seq: 4, type: 'turn/end', data: { turn: 9, reason: 'completed' } } },
         ],
       }
@@ -63,8 +64,16 @@ test('Harness runtime creates a Session and tracks the exact dispatched turn', a
     runtime_target_ref: 'dsh:node-b:developer', prompt: 'Implement it', idempotency_key: 'once',
     task_id: null, participant_binding_id: null, session_id: null, workspace_alias: null, agent_preset: null,
     metadata: null, result: null, error: null, created_at: '', updated_at: '', completed_at: null,
-  }, AbortSignal.timeout(5_000))
+  }, AbortSignal.timeout(5_000), {
+    reportProgress: async event => { progress.push(event) },
+  })
   assert.equal(result.sessionId, 'session-1')
   assert.equal(result.answer, 'remote result')
+  assert.deepEqual(progress.map(event => event.phase), ['session_ready', 'prompt_accepted', 'response_started', 'response_completed'])
+  assert.equal(result.resultEnvelope.schema, 'agora.runtime-result/v1')
+  assert.equal(result.resultEnvelope.claims[0].statement, 'Tests passed')
+  assert.equal(result.resultEnvelope.evidence[0].metadata.passed, 42)
+  assert.equal(result.resultEnvelope.environment.revision, 'abc123')
+  assert.equal(result.resultEnvelope.environment.agent_ref, 'developer')
   assert.equal(calls.find(call => call.method === 'session.prompt').rpcId, 'agora-dispatch-dispatch-1')
 })

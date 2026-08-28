@@ -12,6 +12,7 @@ test('node worker heartbeats, executes a durable dispatch, binds its Session, an
   const completed = []
   const bindings = []
   const sends = []
+  const progress = []
   const order = []
   let claimed = false
   let deliveryClaimed = false
@@ -27,6 +28,10 @@ test('node worker heartbeats, executes a durable dispatch, binds its Session, an
     heartbeatRuntimeNode: async (_nodeId, input) => ({ ...input, node_id: 'node-b' }),
     claimRuntimeDispatch: async () => claimed ? null : (claimed = true, dispatch),
     renewRuntimeDispatch: async () => dispatch,
+    recordRuntimeDispatchProgress: async (_node, _id, input) => {
+      progress.push(input)
+      return { id: `progress-${input.sequence}`, dispatch_id: dispatch.id, node_id: 'node-b', attempt: 1, created_at: '', ...input }
+    },
     bindRuntimeSession: async (...args) => { bindings.push(args); return {} },
     completeRuntimeDispatch: async (_node, _id, input) => {
       order.push('complete-dispatch')
@@ -56,7 +61,20 @@ test('node worker heartbeats, executes a durable dispatch, binds its Session, an
     runtime: {
       protocol: DSH_AGORA_RUNTIME_PROTOCOL,
       describeAgents: () => [{ agent_ref: 'developer', roles: [], capabilities: [] }],
-      execute: async () => ({ sessionId: 'session-b', answer: 'Reviewed' }),
+      execute: async (_dispatch, _signal, context) => {
+        await context.reportProgress({ phase: 'response_started', message: 'Agent started responding', percent: 60 })
+        return {
+          sessionId: 'session-b',
+          answer: 'Reviewed',
+          resultEnvelope: {
+            schema: 'agora.runtime-result/v1',
+            answer: 'Reviewed',
+            claims: [{ id: 'claim-1', statement: 'Review completed', evidence_ids: ['evidence-1'] }],
+            evidence: [{ id: 'evidence-1', kind: 'file', uri: '/repo/src/main.ts' }],
+            environment: { runtime_provider: 'dsh', agent_ref: 'developer' },
+          },
+        }
+      },
     },
   })
   const bridge = {
@@ -83,6 +101,10 @@ test('node worker heartbeats, executes a durable dispatch, binds its Session, an
   assert.equal(sends[0].bot_ref, 'bot-b')
   assert.equal(sends[0].thread_ref, 'thread-1')
   assert.equal(completed[0].delivery_payload.protocol, 'dsh-agora.presentation/v1')
+  assert.deepEqual(progress.map(event => event.phase), ['claimed', 'response_started', 'finalizing'])
+  assert.deepEqual(progress.map(event => event.sequence), [1, 2, 3])
+  assert.equal(completed[0].result_envelope.schema, 'agora.runtime-result/v1')
+  assert.equal(completed[0].result_envelope.evidence[0].uri, '/repo/src/main.ts')
   assert.deepEqual(order, ['complete-dispatch', 'send', 'complete-delivery'])
 })
 
@@ -102,6 +124,7 @@ test('node worker renews a long-running dispatch before its claim expires', asyn
     heartbeatRuntimeNode: async (_nodeId, input) => ({ ...input, node_id: 'node-b' }),
     claimRuntimeDispatch: async () => claimed ? null : (claimed = true, dispatch),
     renewRuntimeDispatch: async (...args) => { renewals.push(args); return dispatch },
+    recordRuntimeDispatchProgress: async (_node, _id, input) => ({ id: `progress-${input.sequence}`, ...input }),
     completeRuntimeDispatch: async (_node, _id, input) => { completions.push(input); return { ...dispatch, status: input.status } },
     claimRuntimeDelivery: async () => null,
     completeRuntimeDelivery: async () => { throw new Error('unexpected delivery completion') },
@@ -136,6 +159,7 @@ test('node worker returns a failed IM delivery to the durable outbox for retry',
     heartbeatRuntimeNode: async (_nodeId, input) => ({ ...input, node_id: 'node-b' }),
     claimRuntimeDispatch: async () => null,
     renewRuntimeDispatch: async () => { throw new Error('unexpected renewal') },
+    recordRuntimeDispatchProgress: async () => { throw new Error('unexpected progress') },
     completeRuntimeDispatch: async () => { throw new Error('unexpected dispatch completion') },
     claimRuntimeDelivery: async () => {
       if (deliveryClaimed) return null

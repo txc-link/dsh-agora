@@ -8,7 +8,10 @@ import {
   type RuntimeNodeDto,
   type RuntimeNodeHeartbeatRequestDto,
   type RenewRuntimeNodeDispatchRequestDto,
+  type RecordRuntimeNodeDispatchProgressRequestDto,
+  type RuntimeNodeDispatchProgressDto,
   runtimeNodeDispatchSchema,
+  runtimeNodeDispatchProgressSchema,
   runtimeNodeDeliverySchema,
   runtimeNodeSchema,
 } from '@agora-ts/contracts';
@@ -148,7 +151,8 @@ export class RuntimeNodeRepository {
       this.db.prepare(`
         UPDATE runtime_node_dispatches
         SET status = 'claimed', claimed_by = ?, claim_token = ?, claim_expires_at = ?,
-            attempt = attempt + 1, claimed_at = ?, claim_renewed_at = ?, updated_at = ?
+            attempt = attempt + 1, claimed_at = ?, claim_renewed_at = ?,
+            latest_progress = NULL, progress_updated_at = NULL, updated_at = ?
         WHERE id = ? AND status = 'pending'
       `).run(instanceId, claimToken, expiresAt, timestamp, timestamp, timestamp, row.id);
       this.db.exec('COMMIT');
@@ -184,6 +188,100 @@ export class RuntimeNodeRepository {
     return Number(result.changes ?? 0) === 1 ? this.getDispatch(dispatchId) : null;
   }
 
+  recordDispatchProgress(
+    nodeId: string,
+    dispatchId: string,
+    input: RecordRuntimeNodeDispatchProgressRequestDto,
+    now = new Date(),
+  ): RuntimeNodeDispatchProgressDto | null {
+    const timestamp = now.toISOString();
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const dispatch = this.db.prepare(`
+        SELECT attempt FROM runtime_node_dispatches
+        WHERE id = ? AND node_id = ? AND status = 'claimed'
+          AND claimed_by = ? AND claim_token = ? AND claim_expires_at > ?
+      `).get(
+        dispatchId,
+        nodeId,
+        input.instance_id,
+        input.claim_token,
+        timestamp,
+      ) as { attempt: number } | undefined;
+      if (!dispatch) {
+        this.db.exec('ROLLBACK');
+        return null;
+      }
+      const existing = this.db.prepare(`
+        SELECT * FROM runtime_node_dispatch_progress
+        WHERE dispatch_id = ? AND attempt = ? AND sequence = ?
+      `).get(dispatchId, dispatch.attempt, input.sequence) as Record<string, unknown> | undefined;
+      if (existing) {
+        this.db.exec('COMMIT');
+        return this.parseDispatchProgress(existing);
+      }
+      const latest = this.db.prepare(`
+        SELECT MAX(sequence) AS sequence FROM runtime_node_dispatch_progress
+        WHERE dispatch_id = ? AND attempt = ?
+      `).get(dispatchId, dispatch.attempt) as { sequence: number | null };
+      if (latest.sequence !== null && input.sequence <= Number(latest.sequence)) {
+        this.db.exec('ROLLBACK');
+        return null;
+      }
+      const event = runtimeNodeDispatchProgressSchema.parse({
+        id: `progress-${randomUUID()}`,
+        dispatch_id: dispatchId,
+        node_id: nodeId,
+        instance_id: input.instance_id,
+        attempt: Number(dispatch.attempt),
+        sequence: input.sequence,
+        phase: input.phase,
+        message: input.message ?? null,
+        percent: input.percent ?? null,
+        details: input.details ?? null,
+        created_at: timestamp,
+      });
+      this.db.prepare(`
+        INSERT INTO runtime_node_dispatch_progress (
+          id, dispatch_id, node_id, instance_id, attempt, sequence,
+          phase, message, percent, details, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        event.id,
+        event.dispatch_id,
+        event.node_id,
+        event.instance_id,
+        event.attempt,
+        event.sequence,
+        event.phase,
+        event.message ?? null,
+        event.percent ?? null,
+        stringifyJsonValue(event.details ?? null),
+        event.created_at,
+      );
+      this.db.prepare(`
+        UPDATE runtime_node_dispatches
+        SET latest_progress = ?, progress_updated_at = ?
+        WHERE id = ?
+      `).run(stringifyJsonValue(event), timestamp, dispatchId);
+      this.db.exec('COMMIT');
+      return event;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  listDispatchProgress(dispatchId: string, limit = 200): RuntimeNodeDispatchProgressDto[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM runtime_node_dispatch_progress
+      WHERE dispatch_id = ?
+      ORDER BY attempt ASC, sequence ASC
+      LIMIT ?
+    `).all(dispatchId, limit) as Record<string, unknown>[];
+    return rows.map((row) => this.parseDispatchProgress(row));
+  }
+
   completeDispatch(
     nodeId: string,
     dispatchId: string,
@@ -209,7 +307,7 @@ export class RuntimeNodeRepository {
     try {
       const updated = this.db.prepare(`
         UPDATE runtime_node_dispatches
-        SET status = ?, session_id = COALESCE(?, session_id), result = ?, error = ?,
+        SET status = ?, session_id = COALESCE(?, session_id), result = ?, result_envelope = ?, error = ?,
             completed_at = ?, updated_at = ?, claim_expires_at = NULL
         WHERE id = ? AND node_id = ? AND claimed_by = ? AND claim_token = ?
           AND claim_expires_at > ? AND status = 'claimed'
@@ -217,6 +315,7 @@ export class RuntimeNodeRepository {
         input.status,
         input.session_id ?? null,
         stringifyJsonValue(input.result ?? null),
+        stringifyJsonValue(input.result_envelope ?? null),
         input.error ?? null,
         timestamp,
         timestamp,
@@ -399,11 +498,30 @@ export class RuntimeNodeRepository {
       attempt: Number(row.attempt),
       claimed_at: row.claimed_at === null ? null : String(row.claimed_at),
       claim_renewed_at: row.claim_renewed_at === null ? null : String(row.claim_renewed_at),
+      latest_progress: row.latest_progress ? parseJsonValue(row.latest_progress, null) : null,
+      progress_updated_at: row.progress_updated_at === null ? null : String(row.progress_updated_at),
       result: row.result ? parseJsonValue(row.result, null) : null,
+      result_envelope: row.result_envelope ? parseJsonValue(row.result_envelope, null) : null,
       error: row.error === null ? null : String(row.error),
       created_at: String(row.created_at),
       updated_at: String(row.updated_at),
       completed_at: row.completed_at === null ? null : String(row.completed_at),
+    });
+  }
+
+  private parseDispatchProgress(row: Record<string, unknown>): RuntimeNodeDispatchProgressDto {
+    return runtimeNodeDispatchProgressSchema.parse({
+      id: String(row.id),
+      dispatch_id: String(row.dispatch_id),
+      node_id: String(row.node_id),
+      instance_id: String(row.instance_id),
+      attempt: Number(row.attempt),
+      sequence: Number(row.sequence),
+      phase: String(row.phase),
+      message: row.message === null ? null : String(row.message),
+      percent: row.percent === null ? null : Number(row.percent),
+      details: row.details ? parseJsonValue(row.details, null) : null,
+      created_at: String(row.created_at),
     });
   }
 

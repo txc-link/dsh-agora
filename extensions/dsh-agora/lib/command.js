@@ -114,12 +114,22 @@ export async function executeAgoraCommand(service, rawInput, context = {}, signa
             case 'status': return { kind: 'success', text: formatStatus(await service.taskStatus(command.taskId, signal)) };
             case 'dispatch-status': {
                 const dispatch = await service.getRuntimeDispatch(command.dispatchId, signal);
+                const progress = await service.listRuntimeDispatchProgress(command.dispatchId, signal);
+                const latest = dispatch.latest_progress ?? progress.at(-1) ?? null;
+                const envelope = dispatch.result_envelope;
                 return {
                     kind: dispatch.status === 'failed' ? 'error' : 'success',
                     text: [
                         `${dispatch.id}: ${dispatch.status}`,
                         `Target: ${dispatch.runtime_target_ref}`,
                         `Session: ${dispatch.session_id ?? '-'}`,
+                        `Lease heartbeat: ${dispatch.claim_renewed_at ?? '-'}`,
+                        `Work progress: ${latest ? `${latest.phase} (#${latest.attempt}.${latest.sequence})${latest.percent === null || latest.percent === undefined ? '' : ` ${latest.percent}%`}` : '-'}`,
+                        ...(latest?.message ? [`Progress detail: ${latest.message}`] : []),
+                        ...(envelope ? [
+                            `Evidence: ${envelope.evidence.length} item(s), ${envelope.claims.length} claim(s)`,
+                            ...(envelope.confidence === null || envelope.confidence === undefined ? [] : [`Confidence: ${Math.round(envelope.confidence * 100)}%`]),
+                        ] : []),
                         ...(dispatch.error ? [`Error: ${dispatch.error}`] : []),
                     ].join('\n'),
                 };

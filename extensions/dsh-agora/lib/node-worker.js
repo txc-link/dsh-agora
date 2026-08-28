@@ -1,3 +1,4 @@
+import { AgoraApiError } from './agora-client.js';
 import { DSH_AGORA_NODE_PROTOCOL, } from './contracts.js';
 export class RuntimeNodeWorker {
     options;
@@ -117,8 +118,35 @@ export class RuntimeNodeWorker {
                 leaseLostAbort.abort(error);
             }
         });
+        let progressSequence = 0;
+        let progressSupported = true;
+        const reportProgress = async (event) => {
+            if (!progressSupported || !dispatch.claim_token)
+                return;
+            progressSequence += 1;
+            try {
+                await this.options.client.recordRuntimeDispatchProgress(this.options.nodeId, dispatch.id, {
+                    instance_id: this.options.instanceId,
+                    claim_token: dispatch.claim_token,
+                    sequence: progressSequence,
+                    ...event,
+                }, executionSignal);
+            }
+            catch (error) {
+                if (error instanceof AgoraApiError && (error.status === 404 || error.status === 405)) {
+                    progressSupported = false;
+                    return;
+                }
+                if (error instanceof AgoraApiError && error.status === 409)
+                    throw error;
+                // Progress telemetry must not make durable work fail during a transient
+                // network outage; the independently renewed lease remains authoritative.
+            }
+        };
         try {
-            const result = await runtime.execute(dispatch, executionSignal);
+            await reportProgress({ phase: 'claimed', message: 'Dispatch claimed by runtime node', percent: 0 });
+            const result = await runtime.execute(dispatch, executionSignal, { reportProgress });
+            await reportProgress({ phase: 'finalizing', message: 'Persisting the agent result', percent: 95 });
             renewalAbort.abort();
             await renewal;
             if (leaseLostAbort.signal.aborted)
@@ -134,6 +162,7 @@ export class RuntimeNodeWorker {
                     reason: result.reason ?? null,
                     ...(result.metadata ?? {}),
                 },
+                result_envelope: result.resultEnvelope ?? defaultResultEnvelope(dispatch, result.answer),
                 ...(deliveryPayload === null ? {} : { delivery_payload: deliveryPayload }),
             }, this.abortController.signal);
             if (dispatch.task_id && dispatch.participant_binding_id) {
@@ -326,5 +355,18 @@ function stringValue(value) {
 }
 function deliveryRetryDelaySeconds(attempt) {
     return Math.min(300, Math.max(5, 2 ** Math.min(Math.max(attempt, 1), 8)));
+}
+function defaultResultEnvelope(dispatch, answer) {
+    return {
+        schema: 'agora.runtime-result/v1',
+        answer,
+        claims: [],
+        evidence: [],
+        environment: {
+            runtime_provider: 'dsh',
+            agent_ref: dispatch.runtime_target_ref.split(':').at(-1) ?? null,
+            workspace_alias: dispatch.workspace_alias ?? null,
+        },
+    };
 }
 //# sourceMappingURL=node-worker.js.map

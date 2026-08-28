@@ -1,4 +1,4 @@
-import type { AgoraHealth, AgoraTask, AgoraTaskStatus, CreateAgoraTaskInput, CreateRuntimeDispatchInput, RuntimeDispatch, RuntimeDelivery, RuntimeNode, RuntimeNodeHeartbeatInput, RuntimeSessionBinding, RuntimeTarget } from './contracts.js';
+import type { AgoraHealth, AgoraTask, AgoraTaskStatus, CreateAgoraTaskInput, CreateRuntimeDispatchInput, RuntimeDispatch, RecordRuntimeDispatchProgressInput, RuntimeDispatchProgress, RuntimeResultEnvelope, RuntimeDelivery, RuntimeNode, RuntimeNodeHeartbeatInput, RuntimeSessionBinding, RuntimeTarget } from './contracts.js';
 export interface AgoraClientOptions {
     readonly serverUrl: string;
     readonly apiToken?: string | undefined;
@@ -27,14 +27,17 @@ export declare class AgoraClient {
     listRuntimeTargets(signal?: AbortSignal): Promise<RuntimeTarget[]>;
     createRuntimeDispatch(nodeId: string, input: CreateRuntimeDispatchInput, signal?: AbortSignal): Promise<RuntimeDispatch>;
     getRuntimeDispatch(dispatchId: string, signal?: AbortSignal): Promise<RuntimeDispatch>;
+    listRuntimeDispatchProgress(dispatchId: string, signal?: AbortSignal): Promise<RuntimeDispatchProgress[]>;
     claimRuntimeDispatch(nodeId: string, instanceId: string, leaseSeconds: number, signal?: AbortSignal): Promise<RuntimeDispatch | null>;
     renewRuntimeDispatch(nodeId: string, dispatchId: string, instanceId: string, claimToken: string, leaseSeconds: number, signal?: AbortSignal): Promise<RuntimeDispatch>;
+    recordRuntimeDispatchProgress(nodeId: string, dispatchId: string, input: RecordRuntimeDispatchProgressInput, signal?: AbortSignal): Promise<RuntimeDispatchProgress>;
     completeRuntimeDispatch(nodeId: string, dispatchId: string, input: {
         readonly instance_id: string;
         readonly claim_token: string;
         readonly status: 'completed' | 'failed';
         readonly session_id?: string | null;
         readonly result?: Readonly<Record<string, unknown>> | null;
+        readonly result_envelope?: RuntimeResultEnvelope | null;
         readonly error?: string | null;
         readonly delivery_payload?: Readonly<Record<string, unknown>> | null;
     }, signal?: AbortSignal): Promise<RuntimeDispatch>;

@@ -46,7 +46,10 @@ const pendingDispatch = {
   attempt: 0,
   claimed_at: null,
   claim_renewed_at: null,
+  latest_progress: null,
+  progress_updated_at: null,
   result: null,
+  result_envelope: null,
   error: null,
   created_at: '2026-08-26T01:00:01.000Z',
   updated_at: '2026-08-26T01:00:01.000Z',
@@ -97,6 +100,19 @@ describe('runtime node routes', () => {
       result: { answer: 'done' },
       completed_at: '2026-08-26T01:00:05.000Z',
     };
+    const progressEvent = {
+      id: 'progress-1',
+      dispatch_id: 'dispatch-1',
+      node_id: 'web-1',
+      instance_id: 'instance-1',
+      attempt: 1,
+      sequence: 1,
+      phase: 'response_started',
+      message: 'Agent started responding',
+      percent: 60,
+      details: null,
+      created_at: '2026-08-26T01:00:03.000Z',
+    };
     const claimedDelivery = {
       ...pendingDelivery,
       status: 'claimed' as const,
@@ -122,6 +138,8 @@ describe('runtime node routes', () => {
       getDispatch: vi.fn(() => pendingDispatch),
       claimDispatch: vi.fn(() => claimed),
       renewDispatch: vi.fn(() => claimed),
+      recordDispatchProgress: vi.fn(() => progressEvent),
+      listDispatchProgress: vi.fn(() => [progressEvent]),
       completeDispatch: vi.fn(() => completed),
       claimDelivery: vi.fn(() => claimedDelivery),
       completeDelivery: vi.fn(() => delivered),
@@ -163,6 +181,27 @@ describe('runtime node routes', () => {
     expect(service.renewDispatch).toHaveBeenCalledWith('web-1', 'dispatch-1', {
       instance_id: 'instance-1', claim_token: 'claim-1', lease_seconds: 120,
     });
+
+    const progressResponse = await app.inject({
+      method: 'POST',
+      url: '/api/runtime-nodes/web-1/dispatches/dispatch-1/progress',
+      payload: {
+        instance_id: 'instance-1',
+        claim_token: 'claim-1',
+        sequence: 1,
+        phase: 'response_started',
+        message: 'Agent started responding',
+        percent: 60,
+      },
+    });
+    expect(progressResponse.statusCode).toBe(201);
+    expect(progressResponse.json()).toEqual(progressEvent);
+
+    const progressHistoryResponse = await app.inject({
+      method: 'GET',
+      url: '/api/runtime-dispatches/dispatch-1/progress',
+    });
+    expect(progressHistoryResponse.json()).toEqual({ events: [progressEvent] });
 
     const completedResponse = await app.inject({
       method: 'POST',

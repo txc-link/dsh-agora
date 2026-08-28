@@ -1,5 +1,5 @@
 import { AgoraClient } from './agora-client.js';
-import type { AgoraCommandResult, AgoraHealth, AgoraRequestContext, AgoraTask, AgoraTaskStatus, CreateAgoraTaskInput, CreateRuntimeDispatchInput, DispatchAgentInput, DshAgoraImStatus, DshAgoraServiceApi, DshAgoraSnapshot, DshAgoraNodeStatus, RuntimeDispatch, RuntimeNode, RuntimeSessionBinding, RuntimeTarget } from './contracts.js';
+import type { AgoraCommandResult, AgoraHealth, AgoraRequestContext, AgoraTask, AgoraTaskStatus, CreateAgoraTaskInput, CreateRuntimeDispatchInput, DispatchAgentInput, DshAgoraImStatus, DshAgoraServiceApi, DshAgoraSnapshot, DshAgoraNodeStatus, RuntimeDispatch, RuntimeDispatchProgress, RuntimeNode, RuntimeSessionBinding, RuntimeTarget } from './contracts.js';
 import type { DshAgoraExtensionV1 } from './extension-sdk.js';
 import { DshAgoraExtensionRegistry } from './extension-sdk.js';
 import type { DshImBridgeV1 } from './im-bridge-v1.js';
@@ -29,6 +29,7 @@ export declare class DshAgoraService implements DshAgoraServiceApi {
     listRuntimeTargets(signal?: AbortSignal): Promise<RuntimeTarget[]>;
     createRuntimeDispatch(nodeId: string, input: CreateRuntimeDispatchInput, signal?: AbortSignal): Promise<RuntimeDispatch>;
     getRuntimeDispatch(dispatchId: string, signal?: AbortSignal): Promise<RuntimeDispatch>;
+    listRuntimeDispatchProgress(dispatchId: string, signal?: AbortSignal): Promise<RuntimeDispatchProgress[]>;
     dispatchAgent(input: DispatchAgentInput, signal?: AbortSignal): Promise<RuntimeDispatch>;
     bindRuntimeSession(taskId: string, participantBindingId: string, sessionId: string, agentRef?: string, signal?: AbortSignal): Promise<RuntimeSessionBinding>;
     registerExtension(extension: DshAgoraExtensionV1): () => void;

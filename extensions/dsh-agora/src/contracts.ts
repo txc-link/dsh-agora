@@ -120,11 +120,72 @@ export interface RuntimeDispatch extends CreateRuntimeDispatchInput {
   readonly attempt: number
   readonly claimed_at: string | null
   readonly claim_renewed_at: string | null
+  readonly latest_progress?: RuntimeDispatchProgress | null
+  readonly progress_updated_at?: string | null
   readonly result: Readonly<Record<string, unknown>> | null
+  readonly result_envelope?: RuntimeResultEnvelope | null
   readonly error: string | null
   readonly created_at: string
   readonly updated_at: string
   readonly completed_at: string | null
+}
+
+export interface RuntimeDispatchProgressInput {
+  readonly phase: string
+  readonly message?: string | null
+  readonly percent?: number | null
+  readonly details?: Readonly<Record<string, unknown>> | null
+}
+
+export interface RecordRuntimeDispatchProgressInput extends RuntimeDispatchProgressInput {
+  readonly instance_id: string
+  readonly claim_token: string
+  readonly sequence: number
+}
+
+export interface RuntimeDispatchProgress extends RuntimeDispatchProgressInput {
+  readonly id: string
+  readonly dispatch_id: string
+  readonly node_id: string
+  readonly instance_id: string
+  readonly attempt: number
+  readonly sequence: number
+  readonly created_at: string
+}
+
+export interface RuntimeResultEvidence {
+  readonly id: string
+  readonly kind: 'file' | 'url' | 'commit' | 'measurement' | 'log' | 'command' | 'other'
+  readonly label?: string | null
+  readonly uri?: string | null
+  readonly content_hash?: string | null
+  readonly revision?: string | null
+  readonly line_start?: number | null
+  readonly line_end?: number | null
+  readonly metadata?: Readonly<Record<string, unknown>> | null
+}
+
+export interface RuntimeResultClaim {
+  readonly id: string
+  readonly statement: string
+  readonly evidence_ids: readonly string[]
+  readonly confidence?: number | null
+}
+
+export interface RuntimeResultEnvelope {
+  readonly schema: 'agora.runtime-result/v1'
+  readonly answer: string
+  readonly claims: readonly RuntimeResultClaim[]
+  readonly evidence: readonly RuntimeResultEvidence[]
+  readonly confidence?: number | null
+  readonly environment?: {
+    readonly runtime_provider: string
+    readonly agent_ref?: string | null
+    readonly model?: string | null
+    readonly workspace_alias?: string | null
+    readonly revision?: string | null
+    readonly metadata?: Readonly<Record<string, unknown>> | null
+  } | null
 }
 
 export interface RuntimeDelivery {
@@ -225,6 +286,7 @@ export interface DshAgoraServiceApi {
   listRuntimeTargets(signal?: AbortSignal): Promise<RuntimeTarget[]>
   createRuntimeDispatch(nodeId: string, input: CreateRuntimeDispatchInput, signal?: AbortSignal): Promise<RuntimeDispatch>
   getRuntimeDispatch(dispatchId: string, signal?: AbortSignal): Promise<RuntimeDispatch>
+  listRuntimeDispatchProgress(dispatchId: string, signal?: AbortSignal): Promise<RuntimeDispatchProgress[]>
   dispatchAgent(input: DispatchAgentInput, signal?: AbortSignal): Promise<RuntimeDispatch>
   bindRuntimeSession(taskId: string, participantBindingId: string, sessionId: string, agentRef?: string, signal?: AbortSignal): Promise<RuntimeSessionBinding>
   executeCommand(rawInput: string, context?: AgoraRequestContext, signal?: AbortSignal): Promise<AgoraCommandResult>

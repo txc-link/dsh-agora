@@ -21,7 +21,7 @@ export class HarnessRuntimeAdapter {
             capabilities: agent.capabilities,
         }));
     }
-    async execute(dispatch, signal) {
+    async execute(dispatch, signal, context) {
         const agentRef = dispatch.runtime_target_ref.split(':').at(-1);
         const agent = this.agents.find(item => item.id === agentRef);
         if (!agent)
@@ -32,12 +32,36 @@ export class HarnessRuntimeAdapter {
             signal,
         });
         try {
-            const result = await this.client.runPrompt(sessionId, formatDispatchPrompt(dispatch), this.replyTimeoutMs, signal, `agora-dispatch-${dispatch.id}`);
+            await context?.reportProgress({
+                phase: 'session_ready',
+                message: dispatch.session_id ? 'Existing DSH Session resumed' : 'New DSH Session created',
+                percent: 10,
+                details: { session_id: sessionId },
+            });
+            const result = await this.client.runPrompt(sessionId, formatDispatchPrompt(dispatch), this.replyTimeoutMs, signal, `agora-dispatch-${dispatch.id}`, {
+                onPromptAccepted: () => context?.reportProgress({
+                    phase: 'prompt_accepted',
+                    message: 'Prompt accepted by DeepSeek Harness',
+                    percent: 25,
+                }),
+                onResponseStarted: () => context?.reportProgress({
+                    phase: 'response_started',
+                    message: 'Agent started responding',
+                    percent: 60,
+                }),
+            });
+            await context?.reportProgress({
+                phase: 'response_completed',
+                message: 'Agent response completed',
+                percent: 90,
+            });
+            const parsed = parseRuntimeResult(result.answer, agent, dispatch);
             return {
                 sessionId,
-                answer: result.answer,
+                answer: parsed.answer,
                 reason: result.reason,
                 metadata: { agent_ref: agent.id, runtime_target_ref: dispatch.runtime_target_ref },
+                resultEnvelope: parsed.envelope,
             };
         }
         catch (error) {
@@ -102,7 +126,7 @@ class HarnessRpcClient {
             throw new Error('DSH session.create returned no sessionId');
         return created.sessionId;
     }
-    async runPrompt(sessionId, prompt, timeoutMs, signal, promptRpcId = `agora-dispatch-${randomUUID()}`) {
+    async runPrompt(sessionId, prompt, timeoutMs, signal, promptRpcId = `agora-dispatch-${randomUUID()}`, callbacks = {}) {
         const timeout = AbortSignal.timeout(timeoutMs);
         const combined = AbortSignal.any([signal, timeout]);
         const initial = await this.rpc('session.history', { sessionId, maxMessages: 50 }, 30_000, combined);
@@ -114,10 +138,16 @@ class HarnessRpcClient {
             content: [{ type: 'text', text: prompt }],
             clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }, 30_000, combined, promptRpcId);
+        await callbacks.onPromptAccepted?.();
+        let responseStarted = false;
         while (!tracker.finished) {
             await sleep(350, combined);
             const history = await this.rpc('session.history', { sessionId, maxMessages: 50 }, 30_000, combined);
             tracker.consume(history.events ?? []);
+            if (!responseStarted && tracker.answer !== '') {
+                responseStarted = true;
+                await callbacks.onResponseStarted?.();
+            }
         }
         return { answer: tracker.answer, reason: tracker.reason };
     }
@@ -224,7 +254,109 @@ function formatDispatchPrompt(dispatch) {
         dispatch.prompt,
         '',
         'Return a concise final result suitable for the requesting agent. Do not approve or reject human governance gates.',
+        'For verifiable claims, append one machine-readable block after the answer:',
+        '<agora-evidence>{"claims":[{"id":"claim-1","statement":"...","evidence_ids":["evidence-1"],"confidence":0.9}],"evidence":[{"id":"evidence-1","kind":"file|url|commit|measurement|log|command|other","uri":"...","revision":"..."}],"confidence":0.9,"revision":"workspace commit if known"}</agora-evidence>',
+        'Use only evidence you actually observed. Omit unknown fields and do not put the evidence block inside Markdown fences.',
     ].join('\n');
+}
+function parseRuntimeResult(rawAnswer, agent, dispatch) {
+    const match = /<agora-evidence>([\s\S]*?)<\/agora-evidence>/u.exec(rawAnswer);
+    const answer = (match ? rawAnswer.replace(match[0], '') : rawAnswer).trim();
+    const payload = match ? parseJsonRecord(match[1] ?? '') : null;
+    const evidence = parseEvidence(payload?.evidence);
+    const evidenceIds = new Set(evidence.map(item => item.id));
+    const claims = parseClaims(payload?.claims, evidenceIds);
+    const confidence = confidenceValue(payload?.confidence);
+    const revision = stringValue(payload?.revision);
+    return {
+        answer,
+        envelope: {
+            schema: 'agora.runtime-result/v1',
+            answer,
+            claims,
+            evidence,
+            ...(confidence === null ? {} : { confidence }),
+            environment: {
+                runtime_provider: 'dsh',
+                agent_ref: agent.id,
+                model: agent.model,
+                workspace_alias: dispatch.workspace_alias ?? agent.workspaceAlias,
+                ...(revision === null ? {} : { revision }),
+            },
+        },
+    };
+}
+const evidenceKinds = new Set([
+    'file', 'url', 'commit', 'measurement', 'log', 'command', 'other',
+]);
+function parseEvidence(value) {
+    if (!Array.isArray(value))
+        return [];
+    const seen = new Set();
+    const parsed = [];
+    for (const item of value) {
+        if (!isRecord(item))
+            continue;
+        const id = stringValue(item.id);
+        const kind = stringValue(item.kind);
+        if (!id || !kind || !evidenceKinds.has(kind) || seen.has(id))
+            continue;
+        seen.add(id);
+        const metadata = isRecord(item.metadata) ? item.metadata : null;
+        parsed.push({
+            id,
+            kind,
+            ...(stringValue(item.label) === null ? {} : { label: stringValue(item.label) }),
+            ...(stringValue(item.uri) === null ? {} : { uri: stringValue(item.uri) }),
+            ...(stringValue(item.content_hash) === null ? {} : { content_hash: stringValue(item.content_hash) }),
+            ...(stringValue(item.revision) === null ? {} : { revision: stringValue(item.revision) }),
+            ...(positiveInteger(item.line_start) === null ? {} : { line_start: positiveInteger(item.line_start) }),
+            ...(positiveInteger(item.line_end) === null ? {} : { line_end: positiveInteger(item.line_end) }),
+            ...(metadata === null ? {} : { metadata }),
+        });
+    }
+    return parsed;
+}
+function parseClaims(value, evidenceIds) {
+    if (!Array.isArray(value))
+        return [];
+    const seen = new Set();
+    const parsed = [];
+    for (const item of value) {
+        if (!isRecord(item))
+            continue;
+        const id = stringValue(item.id);
+        const statement = stringValue(item.statement);
+        if (!id || !statement || seen.has(id))
+            continue;
+        seen.add(id);
+        const evidence_ids = Array.isArray(item.evidence_ids)
+            ? [...new Set(item.evidence_ids.filter((candidate) => (typeof candidate === 'string' && evidenceIds.has(candidate))))]
+            : [];
+        const confidence = confidenceValue(item.confidence);
+        parsed.push({
+            id,
+            statement,
+            evidence_ids,
+            ...(confidence === null ? {} : { confidence }),
+        });
+    }
+    return parsed;
+}
+function parseJsonRecord(value) {
+    try {
+        const parsed = JSON.parse(value);
+        return isRecord(parsed) ? parsed : null;
+    }
+    catch {
+        return null;
+    }
+}
+function confidenceValue(value) {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1 ? value : null;
+}
+function positiveInteger(value) {
+    return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
 }
 function maxSeq(entries) {
     return entries.reduce((maximum, entry) => {
@@ -272,5 +404,8 @@ function isRecord(value) {
 }
 function numberValue(value, fallback) {
     return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+function stringValue(value) {
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 //# sourceMappingURL=harness-runtime.js.map

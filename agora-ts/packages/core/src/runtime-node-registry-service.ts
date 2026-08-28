@@ -7,6 +7,8 @@ import type {
   RuntimeNodeDto,
   RuntimeNodeHeartbeatRequestDto,
   RenewRuntimeNodeDispatchRequestDto,
+  RecordRuntimeNodeDispatchProgressRequestDto,
+  RuntimeNodeDispatchProgressDto,
 } from '@agora-ts/contracts';
 import { ConflictError, NotFoundError } from './errors.js';
 import type {
@@ -26,6 +28,8 @@ export interface RuntimeNodeRepositoryPort {
   listDispatches(nodeId: string, limit?: number): RuntimeNodeDispatchDto[];
   claimDispatch(nodeId: string, instanceId: string, leaseSeconds: number, now?: Date): RuntimeNodeDispatchDto | null;
   renewDispatch(nodeId: string, dispatchId: string, input: RenewRuntimeNodeDispatchRequestDto, now?: Date): RuntimeNodeDispatchDto | null;
+  recordDispatchProgress(nodeId: string, dispatchId: string, input: RecordRuntimeNodeDispatchProgressRequestDto, now?: Date): RuntimeNodeDispatchProgressDto | null;
+  listDispatchProgress(dispatchId: string, limit?: number): RuntimeNodeDispatchProgressDto[];
   completeDispatch(nodeId: string, dispatchId: string, input: CompleteRuntimeNodeDispatchRequestDto, now?: Date): RuntimeNodeDispatchDto | null;
   claimDelivery(nodeId: string, instanceId: string, leaseSeconds: number, now?: Date): RuntimeNodeDeliveryDto | null;
   completeDelivery(nodeId: string, deliveryId: string, input: CompleteRuntimeNodeDeliveryRequestDto, now?: Date): RuntimeNodeDeliveryDto | null;
@@ -90,6 +94,22 @@ export class RuntimeNodeRegistryService implements AgentInventorySource, Presenc
     const dispatch = this.repository.renewDispatch(nodeId, dispatchId, input);
     if (!dispatch) throw new ConflictError(`Runtime dispatch ${dispatchId} lease is expired or fenced`);
     return dispatch;
+  }
+
+  recordDispatchProgress(
+    nodeId: string,
+    dispatchId: string,
+    input: RecordRuntimeNodeDispatchProgressRequestDto,
+  ): RuntimeNodeDispatchProgressDto {
+    this.assertOwner(nodeId, input.instance_id);
+    const event = this.repository.recordDispatchProgress(nodeId, dispatchId, input);
+    if (!event) throw new ConflictError(`Runtime dispatch ${dispatchId} lease is expired or fenced`);
+    return event;
+  }
+
+  listDispatchProgress(dispatchId: string, limit?: number): RuntimeNodeDispatchProgressDto[] {
+    this.getDispatch(dispatchId);
+    return this.repository.listDispatchProgress(dispatchId, limit);
   }
 
   completeDispatch(nodeId: string, dispatchId: string, input: CompleteRuntimeNodeDispatchRequestDto): RuntimeNodeDispatchDto {
