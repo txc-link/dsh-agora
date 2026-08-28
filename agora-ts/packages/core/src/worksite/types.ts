@@ -11,6 +11,25 @@ import type { WorksiteType } from './uri.js';
 
 export type { WorksiteType };
 
+/** Phase 3 (U3=C): three-posture governance. */
+export type Posture = 'Strict' | 'Auto' | 'Dangerous';
+
+/** Phase 3 (U4=A): permission names inside a scope authorization. */
+export type Permission = 'read' | 'write' | 'delete' | 'execute';
+
+/**
+ * Phase 3 (U3=C / U4=A): a work site's scope authorization.
+ *
+ * `scope` is a URI prefix (e.g. 'agora://workspace/repoA'); a borrow
+ * request must stay within it. Core only expresses the scope abstraction —
+ * no platform names (§1).
+ */
+export interface ScopeAuthorization {
+  readonly scope: string;
+  readonly posture: Posture;
+  readonly permissions: readonly Permission[];
+}
+
 /**
  * Reference to another WorkSite. Recursive but bounded: we cap depth in
  * the resolver at a small constant (RESOLVE_MAX_DEPTH, see resolver.ts)
@@ -29,9 +48,14 @@ export interface WorksiteRef {
  * §1 caveat: `adapterFields` is for adapter-side hints only and must
  * NOT be used for Core business decisions. Core decisions are made on
  * `type` + `id` + `refs` alone.
+ *
+ * Phase 3: `scopeAuthorization` binds this work site to a scope +
+ * posture + permission set (U3=C / U4=A). Absent = no authorization
+ * (borrow decisions fail-safe to deny/Strict).
  */
 export interface WorksiteMetadata {
   readonly adapterFields?: Readonly<Record<string, string>>;
+  readonly scopeAuthorization?: ScopeAuthorization;
 }
 
 /**
