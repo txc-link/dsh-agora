@@ -30,3 +30,5 @@ export type { TmuxRuntimeServiceOptions } from './tmux-runtime-service.js';
 export { TmuxRuntimeService } from './tmux-runtime-service.js';
 export type { CreateDefaultCraftsmanAdaptersOptions } from './default-craftsman-adapters.js';
 export { createDefaultCraftsmanAdapters } from './default-craftsman-adapters.js';
+export type { A2aGatewayServiceOptions } from './a2a-gateway-service.js';
+export { A2aGatewayService } from './a2a-gateway-service.js';

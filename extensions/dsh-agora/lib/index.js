@@ -15,6 +15,7 @@ export * from './contracts.js';
 export { API_PREFIX, handleHttpRequest, registerHttpApi } from './http-api.js';
 export * from './im-gateway.js';
 export * from './im-bridge-v1.js';
+export * from './command-adapter.js';
 export * from './extension-sdk.js';
 export * from './harness-runtime.js';
 export { RuntimeNodeWorker } from './node-worker.js';
@@ -25,7 +26,7 @@ export const name = 'dsh-agora';
 // node worker. Declaring it here also makes Cordis delay apply() until the web
 // host is initialized instead of silently starting in command-only mode.
 export const inject = ['commands', 'tools', 'webServer'];
-const PLUGIN_VERSION = '0.5.0';
+const PLUGIN_VERSION = '0.6.0';
 export function apply(ctx, config = {}) {
     const commandName = normalizeCommandName(config.commandName ?? 'agora');
     const nodeId = normalizeNodeId(config.nodeId ?? process.env.DSH_AGORA_NODE_ID ?? hostname());
@@ -33,10 +34,23 @@ export function apply(ctx, config = {}) {
     const imBridgeDiscovery = discoverImBridge(ctx, unique(config.imBridgeServices ?? ['dshImBridge', 'dshImAgoraBridge']));
     let activeImBridge = imBridgeDiscovery.bridge;
     let worker = null;
-    const registry = new DshAgoraExtensionRegistry();
+    const registry = new DshAgoraExtensionRegistry({
+        ...(config.extensionSecurity?.requireSignedThirdParty === undefined
+            ? {}
+            : { requireSignedThirdParty: config.extensionSecurity.requireSignedThirdParty }),
+        ...(config.extensionSecurity?.trustedPublicKeys === undefined
+            ? {}
+            : { trustedPublicKeys: config.extensionSecurity.trustedPublicKeys }),
+        builtInExtensionIds: ['dsh-runtime'],
+    });
     const client = new AgoraClient({
         serverUrl: config.serverUrl ?? process.env.AGORA_SERVER_URL ?? 'http://127.0.0.1:18008',
         apiToken: config.apiToken ?? process.env.AGORA_API_TOKEN,
+        timeoutMs: config.requestTimeoutMs,
+    });
+    const workerClient = new AgoraClient({
+        serverUrl: config.serverUrl ?? process.env.AGORA_SERVER_URL ?? 'http://127.0.0.1:18008',
+        apiToken: config.nodeApiToken ?? process.env.AGORA_NODE_API_TOKEN ?? config.apiToken ?? process.env.AGORA_API_TOKEN,
         timeoutMs: config.requestTimeoutMs,
     });
     const service = new DshAgoraService({
@@ -126,7 +140,7 @@ export function apply(ctx, config = {}) {
     }
     if (config.nodeEnabled !== false && isWebServer(webServer) && Number.isInteger(webServer.port)) {
         worker = new RuntimeNodeWorker({
-            client,
+            client: workerClient,
             registry,
             nodeId,
             instanceId: randomUUID(),
@@ -150,6 +164,7 @@ export function apply(ctx, config = {}) {
         service.setNodeStatus({ state: 'disabled', nodeId });
     }
     ctx.accessor?.('dshAgora', { get: () => service });
+    ctx.accessor?.('dshAgoraCommandAdapter', { get: () => service.commandAdapter });
 }
 function normalizeNodeId(value) {
     const nodeId = value.trim().toLowerCase().replace(/[^a-z0-9._-]+/gu, '-');

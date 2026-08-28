@@ -186,6 +186,113 @@ export interface RuntimeResultEnvelope {
     readonly revision?: string | null
     readonly metadata?: Readonly<Record<string, unknown>> | null
   } | null
+  readonly usage?: RuntimeUsage | null
+}
+
+export interface RuntimeUsage {
+  readonly input_tokens: number | null
+  readonly output_tokens: number | null
+  readonly total_tokens: number | null
+  readonly tool_calls: number | null
+  readonly cost_usd: number | null
+  readonly duration_ms: number | null
+}
+
+export type CoordinationMode = 'single' | 'fanout' | 'review' | 'debate' | 'council'
+export type CoordinationRunStatus = 'running' | 'verifying' | 'completed' | 'partial' | 'failed' | 'cancelled' | 'budget_exhausted'
+
+export interface CoordinationBudget {
+  readonly max_agents: number
+  readonly max_dispatches: number
+  readonly max_wall_clock_seconds: number
+  readonly max_tokens: number | null
+  readonly max_tool_calls: number | null
+  readonly max_cost_usd: number | null
+  readonly min_information_gain: number
+}
+
+export interface CreateCoordinationRunInput {
+  readonly task_id?: string | null
+  readonly task_type?: string
+  readonly prompt: string
+  readonly mode: CoordinationMode
+  readonly candidates: readonly {
+    readonly runtime_target_ref: string
+    readonly capabilities?: readonly string[]
+    readonly priority?: number
+  }[]
+  readonly verifier_target_ref?: string | null
+  readonly budget?: Partial<CoordinationBudget>
+  readonly memory_scopes?: readonly ('task' | 'agent_private' | 'project_shared' | 'decision' | 'episodic')[]
+  readonly idempotency_key: string
+  readonly metadata?: Readonly<Record<string, unknown>> | null
+}
+
+export interface CoordinationRun {
+  readonly id: string
+  readonly task_id: string | null
+  readonly task_type: string
+  readonly prompt: string
+  readonly mode: CoordinationMode
+  readonly status: CoordinationRunStatus
+  readonly budget: CoordinationBudget
+  readonly usage: RuntimeUsage
+  readonly synthesis: {
+    readonly answer: string
+    readonly agreements: readonly string[]
+    readonly conflicts: readonly {
+      readonly id: string
+      readonly kind: 'claim_conflict' | 'environment_drift' | 'unsupported_claim'
+      readonly key: string
+      readonly member_ids: readonly string[]
+      readonly statements: readonly string[]
+      readonly detail: string
+      readonly resolved: boolean
+    }[]
+    readonly evidence_ids: readonly string[]
+    readonly verified: boolean
+    readonly information_gain: number
+    readonly result_envelope: RuntimeResultEnvelope | null
+  } | null
+  readonly stop_reason: string | null
+  readonly deadline_at: string
+  readonly created_at: string
+  readonly updated_at: string
+  readonly completed_at: string | null
+  readonly members: readonly {
+    readonly id: string
+    readonly dispatch_id: string
+    readonly runtime_target_ref: string
+    readonly role: 'primary' | 'investigator' | 'reviewer' | 'verifier' | 'arbitrator'
+    readonly round: number
+    readonly status: 'dispatched' | 'claimed' | 'completed' | 'failed' | 'cancelled'
+    readonly selection_score: number
+    readonly selection_reason: readonly string[]
+    readonly result_envelope: RuntimeResultEnvelope | null
+    readonly usage: RuntimeUsage | null
+  }[]
+}
+
+export interface AgentScorecard {
+  readonly runtime_target_ref: string
+  readonly task_type: string
+  readonly observations: number
+  readonly success_rate: number | null
+  readonly failure_rate: number | null
+  readonly cancellation_rate: number | null
+  readonly retry_rate: number | null
+  readonly timeout_rate: number | null
+  readonly median_duration_ms: number | null
+  readonly p95_duration_ms: number | null
+  readonly evidence_yield: number | null
+  readonly verifier_acceptance_rate: number | null
+  readonly agreement_rate: number | null
+  readonly unique_information_rate: number | null
+  readonly environment_drift_rate: number | null
+  readonly total_tokens: number | null
+  readonly total_cost_usd: number | null
+  readonly score: number
+  readonly updated_at: string | null
 }
 
 export interface RuntimeDelivery {
@@ -258,6 +365,10 @@ export interface DshAgoraSnapshot {
   readonly command: string
   readonly im: DshAgoraImStatus
   readonly imBridge: DshAgoraImStatus
+  readonly commandAdapter: {
+    readonly state: 'ready'
+    readonly protocol: 'dsh-agora.command-adapter/v1'
+  }
   readonly node: DshAgoraNodeStatus
   readonly extensions: readonly DshAgoraExtensionSummary[]
 }
@@ -287,8 +398,16 @@ export interface DshAgoraServiceApi {
   createRuntimeDispatch(nodeId: string, input: CreateRuntimeDispatchInput, signal?: AbortSignal): Promise<RuntimeDispatch>
   getRuntimeDispatch(dispatchId: string, signal?: AbortSignal): Promise<RuntimeDispatch>
   listRuntimeDispatchProgress(dispatchId: string, signal?: AbortSignal): Promise<RuntimeDispatchProgress[]>
+  createCoordinationRun(input: CreateCoordinationRunInput, signal?: AbortSignal): Promise<CoordinationRun>
+  getCoordinationRun(runId: string, signal?: AbortSignal): Promise<CoordinationRun>
+  listCoordinationRuns(status?: CoordinationRunStatus, signal?: AbortSignal): Promise<CoordinationRun[]>
+  listAgentScorecards(taskType?: string, signal?: AbortSignal): Promise<AgentScorecard[]>
   dispatchAgent(input: DispatchAgentInput, signal?: AbortSignal): Promise<RuntimeDispatch>
   bindRuntimeSession(taskId: string, participantBindingId: string, sessionId: string, agentRef?: string, signal?: AbortSignal): Promise<RuntimeSessionBinding>
   executeCommand(rawInput: string, context?: AgoraRequestContext, signal?: AbortSignal): Promise<AgoraCommandResult>
+  executeCommandEvent(
+    event: import('./command-adapter.js').DshAgoraCommandEventV1,
+    signal?: AbortSignal,
+  ): Promise<import('./command-adapter.js').DshAgoraCommandEventResultV1>
   snapshot(): DshAgoraSnapshot
 }

@@ -26,6 +26,7 @@ export interface RuntimeNodeRepositoryPort {
   createDispatch(nodeId: string, input: CreateRuntimeNodeDispatchRequestDto, now?: Date): RuntimeNodeDispatchDto;
   getDispatch(dispatchId: string): RuntimeNodeDispatchDto | null;
   listDispatches(nodeId: string, limit?: number): RuntimeNodeDispatchDto[];
+  cancelDispatch(dispatchId: string, reason: string, now?: Date): RuntimeNodeDispatchDto | null;
   claimDispatch(nodeId: string, instanceId: string, leaseSeconds: number, now?: Date): RuntimeNodeDispatchDto | null;
   renewDispatch(nodeId: string, dispatchId: string, input: RenewRuntimeNodeDispatchRequestDto, now?: Date): RuntimeNodeDispatchDto | null;
   recordDispatchProgress(nodeId: string, dispatchId: string, input: RecordRuntimeNodeDispatchProgressRequestDto, now?: Date): RuntimeNodeDispatchProgressDto | null;
@@ -78,6 +79,12 @@ export class RuntimeNodeRegistryService implements AgentInventorySource, Presenc
   listDispatches(nodeId: string, limit?: number): RuntimeNodeDispatchDto[] {
     this.getNode(nodeId);
     return this.repository.listDispatches(nodeId, limit);
+  }
+
+  cancelDispatch(dispatchId: string, reason: string): RuntimeNodeDispatchDto {
+    const dispatch = this.repository.cancelDispatch(dispatchId, reason);
+    if (!dispatch) throw new NotFoundError(`Runtime dispatch ${dispatchId} not found`);
+    return dispatch;
   }
 
   claimDispatch(nodeId: string, instanceId: string, leaseSeconds: number): RuntimeNodeDispatchDto | null {

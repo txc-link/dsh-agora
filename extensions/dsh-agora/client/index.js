@@ -270,12 +270,86 @@ window.__ModuleLoader__.load({ id: 'dsh-agora', factory: (require) => {
         })) : null)
   }
 
+  function Coordination(props) {
+    const [mode, setMode] = React.useState('fanout')
+    const [prompt, setPrompt] = React.useState('')
+    const [selected, setSelected] = React.useState([])
+    const [saving, setSaving] = React.useState(false)
+    React.useEffect(function () {
+      if (!selected.length && props.agents.length) {
+        setSelected(props.agents.slice(0, 3).map(function (agent) { return agent.runtime_target_ref }))
+      }
+    }, [props.agents, selected.length])
+    function toggle(target) {
+      setSelected(function (items) { return items.includes(target) ? items.filter(function (item) { return item !== target }) : items.concat(target) })
+    }
+    async function createRun(event) {
+      event.preventDefault()
+      if (!prompt.trim() || !selected.length || saving) return
+      setSaving(true)
+      try {
+        const run = await rpc('coordination-create', {
+          mode: mode,
+          prompt: prompt.trim(),
+          runtimeTargetRefs: selected,
+          budget: { max_agents: selected.length, max_dispatches: Math.max(selected.length, mode === 'fanout' || mode === 'single' ? selected.length : selected.length + 1), max_wall_clock_seconds: 1800 },
+          idempotencyKey: 'dsh-agora-ui-run-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+        })
+        setPrompt(''); props.onCreated(run); await props.reload()
+      } catch (error) { props.onError(error) } finally { setSaving(false) }
+    }
+    return React.createElement('div', { className: 'da-scroll da-stack' },
+      React.createElement('form', { className: 'da-card da-form', onSubmit: createRun },
+        SectionTitle({ title: '新建协同运行', note: '自动选 Agent、限制预算、汇总冲突与证据' }),
+        React.createElement('label', null, '策略', React.createElement('select', { value: mode, onChange: function (event) { setMode(event.target.value) } },
+          React.createElement('option', { value: 'single' }, 'Single · 单 Agent'),
+          React.createElement('option', { value: 'fanout' }, 'Fan-out · 并行调查'),
+          React.createElement('option', { value: 'review' }, 'Review · 执行 + 复核'),
+          React.createElement('option', { value: 'debate' }, 'Debate · 冲突仲裁'),
+          React.createElement('option', { value: 'council' }, 'Council · 委员会裁决'))),
+        React.createElement('div', { className: 'da-agent-picker' }, props.agents.map(function (agent) {
+          const target = agent.runtime_target_ref
+          return React.createElement('label', { key: target, className: selected.includes(target) ? 'selected' : '' },
+            React.createElement('input', { type: 'checkbox', checked: selected.includes(target), onChange: function () { toggle(target) } }),
+            React.createElement('span', null, text(agent.display_name, target)), React.createElement('code', null, target))
+        })),
+        React.createElement('textarea', { value: prompt, rows: 5, placeholder: '描述需要多个 Agent 协同完成的目标和验收标准…', onChange: function (event) { setPrompt(event.target.value) } }),
+        React.createElement('button', { className: 'da-primary', type: 'submit', disabled: saving || !prompt.trim() || !selected.length }, saving ? '创建中…' : '开始协同')),
+      React.createElement('div', { className: 'da-card' },
+        SectionTitle({ title: '协同运行', note: props.runs.length + ' 条' }),
+        props.runs.length ? props.runs.map(function (run) {
+          const completed = list(run.members).filter(function (member) { return member.status === 'completed' }).length
+          return React.createElement('article', { className: 'da-run', key: run.id },
+            React.createElement('div', { className: 'da-card-head' }, React.createElement('div', null,
+              React.createElement('strong', null, text(run.mode).toUpperCase()), React.createElement('code', null, text(run.id))), Badge({ value: run.status })),
+            React.createElement('div', { className: 'da-inline-meta' },
+              React.createElement('span', null, '成员 ', completed + '/' + list(run.members).length),
+              React.createElement('span', null, '证据 ', list(run.synthesis?.evidence_ids).length),
+              React.createElement('span', null, '冲突 ', list(run.synthesis?.conflicts).length),
+              React.createElement('span', null, 'Token ', run.usage?.total_tokens ?? '—')),
+            run.stop_reason ? React.createElement('small', { className: 'da-muted' }, run.stop_reason) : null,
+            list(run.synthesis?.conflicts).slice(0, 3).map(function (conflict) {
+              return React.createElement('div', { className: 'da-conflict', key: conflict.id }, text(conflict.kind) + ': ' + text(conflict.detail))
+            }),
+            run.synthesis?.answer ? React.createElement('p', { className: 'da-result' }, run.synthesis.answer) : null)
+        }) : React.createElement('small', { className: 'da-muted' }, '暂无协同运行')),
+      React.createElement('div', { className: 'da-card' },
+        SectionTitle({ title: 'Agent Scorecard', note: '历史成功率、时延、证据增益与环境漂移' }),
+        props.scorecards.length ? props.scorecards.map(function (card) {
+          return React.createElement('div', { className: 'da-row', key: card.runtime_target_ref + ':' + card.task_type },
+            React.createElement('span', null, React.createElement('b', null, card.runtime_target_ref), React.createElement('code', null, card.task_type + ' · ' + card.observations + ' 次观测')),
+            React.createElement('small', null, '评分 ' + Math.round(card.score) + ' · 成功 ' + (card.success_rate == null ? '—' : Math.round(card.success_rate * 100) + '%') + ' · 漂移 ' + (card.environment_drift_rate == null ? '—' : Math.round(card.environment_drift_rate * 100) + '%')))
+        }) : React.createElement('small', { className: 'da-muted' }, '完成一次协同运行后生成评分')))
+  }
+
   function AgoraPanel(props) {
     const [tab, setTab] = React.useState('overview')
     const [snapshot, setSnapshot] = React.useState(null)
     const [nodes, setNodes] = React.useState([])
     const [agents, setAgents] = React.useState([])
     const [tasks, setTasks] = React.useState([])
+    const [runs, setRuns] = React.useState([])
+    const [scorecards, setScorecards] = React.useState([])
     const [dispatches, setDispatches] = React.useState([])
     const [loading, setLoading] = React.useState(true)
     const [error, setError] = React.useState('')
@@ -285,8 +359,8 @@ window.__ModuleLoader__.load({ id: 'dsh-agora', factory: (require) => {
     const load = React.useCallback(async function (quiet) {
       if (!quiet) setLoading(true)
       try {
-        const values = await Promise.all([rpc('snapshot'), rpc('nodes'), rpc('agents'), rpc('tasks')])
-        setSnapshot(values[0]); setNodes(list(values[1])); setAgents(list(values[2])); setTasks(list(values[3]))
+        const values = await Promise.all([rpc('snapshot'), rpc('nodes'), rpc('agents'), rpc('tasks'), rpc('coordination-runs'), rpc('scorecards')])
+        setSnapshot(values[0]); setNodes(list(values[1])); setAgents(list(values[2])); setTasks(list(values[3])); setRuns(list(values[4])); setScorecards(list(values[5]))
         setError(''); setUpdatedAt(new Date())
       } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
       finally { if (!quiet) setLoading(false) }
@@ -322,12 +396,13 @@ window.__ModuleLoader__.load({ id: 'dsh-agora', factory: (require) => {
     }, [props.visible, dispatchIds])
 
     function onError(reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
-    const tabs = [['overview', '总览'], ['nodes', '节点'], ['tasks', '任务'], ['agents', '派发']]
+    const tabs = [['overview', '总览'], ['nodes', '节点'], ['tasks', '任务'], ['agents', '派发'], ['coordination', '协同']]
     let body
     if (loading && !snapshot) body = React.createElement(Empty, null, '正在连接 Agora…')
     else if (tab === 'nodes') body = React.createElement(Nodes, { nodes: nodes })
     else if (tab === 'tasks') body = React.createElement(Tasks, { tasks: tasks, reload: function () { return load(true) }, onError: onError, onSelect: function () {} })
     else if (tab === 'agents') body = React.createElement(Agents, { agents: agents, dispatches: dispatches, onError: onError, onDispatch: function (value) { setDispatches(function (items) { return [value].concat(items).slice(0, 12) }) } })
+    else if (tab === 'coordination') body = React.createElement(Coordination, { agents: agents, runs: runs, scorecards: scorecards, reload: function () { return load(true) }, onError: onError, onCreated: function (run) { setRuns(function (items) { return [run].concat(items).slice(0, 100) }) } })
     else body = React.createElement(Overview, { snapshot: snapshot, nodes: nodes, agents: agents })
 
     return React.createElement('div', { className: 'da-root' },
@@ -351,7 +426,7 @@ window.__ModuleLoader__.load({ id: 'dsh-agora', factory: (require) => {
     '.da-header{height:44px;flex:none;padding:0 9px 0 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--dsw-alias-border-l1)}',
     '.da-header>div{display:flex;flex-direction:column;line-height:17px}.da-header strong{font-size:14px}.da-header small,.da-muted{color:var(--dsw-alias-label-dimmed);font-size:11px}',
     '.da-header button,.da-error button{border:0;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;border-radius:50%;width:28px;height:28px;font-size:18px}.da-header button:hover,.da-error button:hover{background:var(--dsw-alias-interactive-bg-hover)}',
-    '.da-tabs{height:35px;flex:none;display:grid;grid-template-columns:repeat(4,1fr);padding:3px 6px;border-bottom:1px solid var(--dsw-alias-border-l1);gap:2px}.da-tabs button{border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;cursor:pointer}.da-tabs button:hover{background:var(--dsw-alias-interactive-bg-hover)}.da-tabs button.active{background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-brand-primary);font-weight:600}',
+    '.da-tabs{height:35px;flex:none;display:grid;grid-template-columns:repeat(5,1fr);padding:3px 6px;border-bottom:1px solid var(--dsw-alias-border-l1);gap:2px}.da-tabs button{border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:11px;cursor:pointer}.da-tabs button:hover{background:var(--dsw-alias-interactive-bg-hover)}.da-tabs button.active{background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-brand-primary);font-weight:600}',
     '.da-scroll{flex:1;min-height:0;overflow:auto;padding:10px}.da-stack{display:flex;flex-direction:column;gap:8px}',
     '.da-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-bottom:8px}.da-metric{border:1px solid var(--dsw-alias-border-l1);border-radius:10px;padding:10px;background:var(--dsw-alias-bg-base);display:flex;flex-direction:column}.da-metric b{font-size:19px;line-height:24px}.da-metric span{font-size:11px;color:var(--dsw-alias-label-dimmed)}',
     '.da-card{border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-base);padding:10px;margin-bottom:8px;color:inherit;text-align:left;width:100%;font:inherit}.da-card-head,.da-section-title{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.da-card-head>div{display:flex;flex-direction:column}.da-card-head small,.da-section-title span{font-size:10px;color:var(--dsw-alias-label-dimmed);font-weight:400}.da-section-title{margin-bottom:9px}.da-section-title strong{font-size:12px}',
@@ -362,6 +437,7 @@ window.__ModuleLoader__.load({ id: 'dsh-agora', factory: (require) => {
     '.da-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0;border-top:1px solid var(--dsw-alias-border-l1)}.da-row>span:first-child{display:flex;min-width:0;flex-direction:column}.da-row b{font-size:11px;font-weight:550}.da-row small{font-size:10px;color:var(--dsw-alias-label-dimmed);text-align:right}',
     '.da-dispatch{padding:9px 0;border-top:1px solid var(--dsw-alias-border-l1)}.da-dispatch:first-of-type{border-top:0}.da-dispatch code{font:9px var(--dsh-font-mono,ui-monospace,monospace);color:var(--dsw-alias-label-dimmed)}.da-dispatch-signals{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin:7px 0;color:var(--dsw-alias-label-dimmed);font-size:9px}.da-dispatch-signals b{display:block;color:var(--dsw-alias-label-secondary);font-weight:500}.da-progress-track{height:4px;border-radius:999px;background:var(--dsw-alias-interactive-bg-hover);overflow:hidden}.da-progress-track i{display:block;height:100%;background:var(--dsw-alias-brand-primary);border-radius:inherit}.da-progress small{display:block;margin-top:4px;color:var(--dsw-alias-label-secondary);font-size:9px}.da-evidence{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}.da-evidence span{padding:2px 5px;border-radius:5px;background:var(--dsw-alias-interactive-bg-hover);font-size:9px;color:var(--dsw-alias-label-secondary)}.da-result{margin:7px 0 0;max-height:64px;overflow:auto;white-space:pre-wrap;color:var(--dsw-alias-label-secondary);font-size:10px;line-height:15px}',
     '.da-form{display:flex;flex-direction:column;gap:7px}.da-form label{display:flex;flex-direction:column;gap:4px;color:var(--dsw-alias-label-secondary);font-size:11px}.da-form input,.da-form textarea,.da-form select{width:100%;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-layer-1,var(--dsw-alias-bg-base));color:var(--dsw-alias-label-primary);padding:7px 8px;font:inherit;font-size:12px;outline:none;resize:vertical}.da-form input:focus,.da-form textarea:focus,.da-form select:focus{border-color:var(--dsw-alias-brand-primary)}',
+    '.da-agent-picker{display:flex;flex-direction:column;gap:4px;max-height:126px;overflow:auto}.da-form .da-agent-picker label{display:grid;grid-template-columns:16px minmax(0,1fr);gap:1px 6px;padding:5px 7px;border:1px solid var(--dsw-alias-border-l1);border-radius:7px;cursor:pointer}.da-form .da-agent-picker label.selected{border-color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-interactive-bg-active)}.da-form .da-agent-picker input{width:auto;grid-row:1/3;align-self:center}.da-agent-picker code{font:9px var(--dsh-font-mono,ui-monospace,monospace);color:var(--dsw-alias-label-dimmed);overflow:hidden;text-overflow:ellipsis}.da-run{padding:8px 0;border-top:1px solid var(--dsw-alias-border-l1)}.da-run:first-of-type{border-top:0}.da-run code{font:9px var(--dsh-font-mono,ui-monospace,monospace);color:var(--dsw-alias-label-dimmed)}.da-conflict{margin-top:5px;padding:5px 7px;border-radius:6px;background:color-mix(in srgb,var(--dsw-alias-state-warning-primary) 10%,transparent);color:var(--dsw-alias-state-warning-primary,var(--dsw-alias-label-secondary));font-size:9px}',
     '.da-primary{height:30px;border:0;border-radius:7px;background:var(--dsw-alias-brand-primary);color:white;font:inherit;font-size:12px;cursor:pointer}.da-primary:disabled{opacity:.5;cursor:not-allowed}.da-task{cursor:pointer}.da-task:hover{border-color:var(--dsw-alias-brand-primary)}.da-task p{margin:7px 0;color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px}.da-task>small{color:var(--dsw-alias-label-dimmed);font-size:9px}',
     '.da-empty{flex:1;min-height:120px;display:flex;align-items:center;justify-content:center;padding:24px;color:var(--dsw-alias-label-dimmed);text-align:center}.da-error{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px 6px 10px;background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 12%,transparent);color:var(--dsw-alias-state-error-primary);font-size:11px}.da-error span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
     '.da-footer{height:25px;flex:none;padding:0 10px;border-top:1px solid var(--dsw-alias-border-l1);display:flex;align-items:center;justify-content:space-between;color:var(--dsw-alias-label-dimmed);font-size:9px}',

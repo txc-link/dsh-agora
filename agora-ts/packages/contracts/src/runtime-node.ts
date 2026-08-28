@@ -119,6 +119,14 @@ export const runtimeResultEnvelopeSchema = z.object({
     revision: z.string().min(1).nullable().optional(),
     metadata: z.record(z.string(), z.unknown()).nullable().optional(),
   }).strict().nullable().optional(),
+  usage: z.object({
+    input_tokens: z.number().int().nonnegative().nullable().default(null),
+    output_tokens: z.number().int().nonnegative().nullable().default(null),
+    total_tokens: z.number().int().nonnegative().nullable().default(null),
+    tool_calls: z.number().int().nonnegative().nullable().default(null),
+    cost_usd: z.number().nonnegative().nullable().default(null),
+    duration_ms: z.number().int().nonnegative().nullable().default(null),
+  }).strict().nullable().optional(),
 }).strict();
 export type RuntimeResultEnvelopeDto = z.infer<typeof runtimeResultEnvelopeSchema>;
 
@@ -192,6 +200,11 @@ export const completeRuntimeNodeDispatchRequestSchema = z.object({
   delivery_payload: z.record(z.string(), z.unknown()).nullable().optional(),
 }).strict();
 export type CompleteRuntimeNodeDispatchRequestDto = z.infer<typeof completeRuntimeNodeDispatchRequestSchema>;
+
+export const cancelRuntimeNodeDispatchRequestSchema = z.object({
+  reason: z.string().min(1).max(4_000),
+}).strict();
+export type CancelRuntimeNodeDispatchRequestDto = z.infer<typeof cancelRuntimeNodeDispatchRequestSchema>;
 
 export const runtimeNodeDeliveryStatusSchema = z.enum([
   'pending',

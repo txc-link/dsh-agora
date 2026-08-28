@@ -1,4 +1,11 @@
-import { createAgoraDatabase, ProjectBrainIndexJobRepository, runMigrations } from '@agora-ts/db';
+import {
+  CoordinationRepository,
+  FederationRepository,
+  ProjectBrainIndexJobRepository,
+  RuntimeTargetOverlayRepository,
+  createAgoraDatabase,
+  runMigrations,
+} from '@agora-ts/db';
 import type { ServerCompositionFactories, ServerCompositionOptions } from './composition.js';
 import { buildServerComposition, ensureRuntimeBrainPackRoot } from './composition.js';
 import {
@@ -13,11 +20,18 @@ import {
   ProjectBrainIndexQueueService,
   ProjectBrainIndexService,
   ProjectBrainIndexWorkerService,
+  ArtifactService,
+  CoordinationService,
+  MemoryService,
+  MergeCoordinatorService,
+  RuntimeNodeCredentialService,
   RuntimeTargetService,
 } from '@agora-ts/core';
 import { OpenAiCompatibleProjectBrainEmbeddingAdapter, QdrantProjectBrainVectorIndexAdapter } from '@agora-ts/adapters-brain';
-import { RuntimeTargetOverlayRepository } from '@agora-ts/db';
+import { A2aGatewayService } from '@agora-ts/adapters-runtime';
+import { FilesystemArtifactContentStore } from '@agora-ts/adapters-materialization';
 import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 export interface CreateServerRuntimeOptions extends ServerCompositionOptions {
   configPath?: string;
@@ -278,6 +292,30 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
     agentInventory: composition.agentRegistry,
     overlayRepository: new RuntimeTargetOverlayRepository(db),
   });
+  const federationRepository = new FederationRepository(db);
+  const artifactService = new ArtifactService(
+    federationRepository,
+    new FilesystemArtifactContentStore(process.env.AGORA_ARTIFACTS_DIR ?? join(dirname(config.db_path), 'artifacts')),
+  );
+  const memoryService = new MemoryService(federationRepository);
+  const runtimeNodeCredentialService = new RuntimeNodeCredentialService(federationRepository);
+  const coordinationService = new CoordinationService({
+    repository: new CoordinationRepository(db),
+    runtimeNodes: composition.runtimeNodeRegistryService,
+    memory: {
+      query: input => memoryService.query({ ...input, limit: input.limit ?? 20 }),
+    },
+  });
+  const mergeCoordinatorService = new MergeCoordinatorService(
+    federationRepository,
+    artifactService,
+    projectId => composition.projectService.getProjectRepoPath(projectId),
+  );
+  const publicBaseUrl = process.env.AGORA_PUBLIC_BASE_URL ?? runtimeEnv.apiBaseUrl;
+  const a2aGatewayService = new A2aGatewayService({
+    runtimeNodes: composition.runtimeNodeRegistryService,
+    publicBaseUrl,
+  });
   composition.discordPresenceService?.start();
   composition.discordThreadIngressService?.start();
   composition.ccConnectBridgeRuntimeService?.start();
@@ -308,12 +346,33 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
     taskService,
     ...(projectBrainIndexWorkerService ? { projectBrainIndexWorkerService } : {}),
   });
+  const coordinationIntervalMs = Number(process.env.AGORA_COORDINATION_RECONCILE_MS ?? 3_000);
+  let coordinationTimer: NodeJS.Timeout | null = setInterval(() => {
+    try {
+      coordinationService.reconcileActiveRuns();
+    } catch (error) {
+      console.error('[agora] coordination reconciliation failed', error);
+    }
+  }, coordinationIntervalMs);
+  coordinationTimer.unref?.();
+  const stopCoordinationReconciliation = () => {
+    if (coordinationTimer) {
+      clearInterval(coordinationTimer);
+      coordinationTimer = null;
+    }
+  };
+  const closeDatabase = db.close;
+  db.close = () => {
+    stopCoordinationReconciliation();
+    closeDatabase();
+  };
   const dispose = () => {
     composition.ccConnectSessionMirrorService?.stop();
     composition.ccConnectBridgeRuntimeService?.stop();
     composition.discordThreadIngressService?.stop();
     composition.discordPresenceService?.stop();
     observationScheduler.stop();
+    stopCoordinationReconciliation();
   };
 
   return {
@@ -321,6 +380,12 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
     db,
     ...composition,
     runtimeTargetService,
+    coordinationService,
+    artifactService,
+    memoryService,
+    runtimeNodeCredentialService,
+    mergeCoordinatorService,
+    a2aGatewayService,
     apiAuth: config.api_auth,
     dashboardAuth: {
       enabled: config.dashboard_auth.enabled,

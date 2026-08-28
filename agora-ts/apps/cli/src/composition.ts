@@ -44,6 +44,9 @@ import {
   ParticipantBindingRepository,
   RuntimeTargetOverlayRepository,
   RuntimeSessionBindingRepository,
+  RuntimeNodeRepository,
+  CoordinationRepository,
+  FederationRepository,
   TaskAuthorityRepository,
   ProjectWriteLockRepository,
   SqliteGateQueryPort,
@@ -77,6 +80,12 @@ import {
   RetrievalRegistry,
   RetrievalService,
   RuntimeTargetService,
+  RuntimeNodeRegistryService,
+  CoordinationService,
+  ArtifactService,
+  MemoryService,
+  RuntimeNodeCredentialService,
+  MergeCoordinatorService,
   StubIMMessagingPort,
   RolePackService,
   TaskAuthorityService,
@@ -102,7 +111,7 @@ import {
   type IMProvisioningPort,
 } from '@agora-ts/core';
 import { FilesystemContextSourceRetrievalAdapter, FilesystemSkillCatalogAdapter, FilesystemProjectBrainQueryAdapter, FilesystemProjectKnowledgeAdapter, FilesystemTaskBrainWorkspaceAdapter, OpenAiCompatibleProjectBrainEmbeddingAdapter, QdrantProjectBrainVectorIndexAdapter } from '@agora-ts/adapters-brain';
-import { ProjectContextBriefingMaterializer, RuntimeRepoShimMaterializer } from '@agora-ts/adapters-materialization';
+import { FilesystemArtifactContentStore, ProjectContextBriefingMaterializer, RuntimeRepoShimMaterializer } from '@agora-ts/adapters-materialization';
 import {
   CcConnectAgentRegistry,
 } from '@agora-ts/adapters-cc-connect';
@@ -260,6 +269,11 @@ export interface CliComposition {
   rolePackService: RolePackService;
   dashboardQueryService: DashboardQueryService;
   taskBrainBindingService: TaskBrainBindingService;
+  coordinationService: CoordinationService;
+  artifactService: ArtifactService;
+  memoryService: MemoryService;
+  runtimeNodeCredentialService: RuntimeNodeCredentialService;
+  mergeCoordinatorService: MergeCoordinatorService;
 }
 
 function ensureRuntimeBrainPackRoot(projectRoot: string): string {
@@ -753,6 +767,23 @@ export function createCliComposition(
     taskBrainWorkspacePort,
     taskContextBindingService,
   });
+  const federationRepository = new FederationRepository(db);
+  const artifactService = new ArtifactService(
+    federationRepository,
+    new FilesystemArtifactContentStore(join(dirname(config.db_path), 'artifacts')),
+  );
+  const memoryService = new MemoryService(federationRepository);
+  const runtimeNodeCredentialService = new RuntimeNodeCredentialService(federationRepository);
+  const coordinationService = new CoordinationService({
+    repository: new CoordinationRepository(db),
+    runtimeNodes: new RuntimeNodeRegistryService(new RuntimeNodeRepository(db)),
+    memory: { query: input => memoryService.query({ ...input, limit: input.limit ?? 20 }) },
+  });
+  const mergeCoordinatorService = new MergeCoordinatorService(
+    federationRepository,
+    artifactService,
+    projectId => projectService.getProjectRepoPath(projectId),
+  );
   return {
     config,
     db,
@@ -776,6 +807,11 @@ export function createCliComposition(
     rolePackService,
     dashboardQueryService,
     taskBrainBindingService,
+    coordinationService,
+    artifactService,
+    memoryService,
+    runtimeNodeCredentialService,
+    mergeCoordinatorService,
   };
 }
 

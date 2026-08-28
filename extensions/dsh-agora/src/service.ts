@@ -6,6 +6,10 @@ import type {
   AgoraRequestContext,
   AgoraTask,
   AgoraTaskStatus,
+  AgentScorecard,
+  CoordinationRun,
+  CoordinationRunStatus,
+  CreateCoordinationRunInput,
   CreateAgoraTaskInput,
   CreateRuntimeDispatchInput,
   DispatchAgentInput,
@@ -19,9 +23,10 @@ import type {
   RuntimeSessionBinding,
   RuntimeTarget,
 } from './contracts.js'
-import type { DshAgoraExtensionV1 } from './extension-sdk.js'
+import type { DshAgoraExtensionManifestV1, DshAgoraExtensionV1 } from './extension-sdk.js'
 import { DshAgoraExtensionRegistry } from './extension-sdk.js'
 import type { DshImBridgeV1 } from './im-bridge-v1.js'
+import { DshAgoraCommandAdapter, type DshAgoraCommandEventResultV1, type DshAgoraCommandEventV1 } from './command-adapter.js'
 
 export interface DshAgoraServiceOptions {
   readonly client: AgoraClient
@@ -34,6 +39,7 @@ export interface DshAgoraServiceOptions {
 
 export class DshAgoraService implements DshAgoraServiceApi {
   readonly registry: DshAgoraExtensionRegistry
+  readonly commandAdapter: DshAgoraCommandAdapter
   private imStatus: DshAgoraImStatus = {
     state: 'unavailable',
     reason: 'dsh-im command gateway discovery has not run',
@@ -49,6 +55,10 @@ export class DshAgoraService implements DshAgoraServiceApi {
     this.registry = options.registry ?? new DshAgoraExtensionRegistry()
     this.imBridge = options.imBridge ?? null
     this.nodeStatus = { state: 'disabled', nodeId: options.nodeId ?? 'unconfigured' }
+    this.commandAdapter = new DshAgoraCommandAdapter({
+      execute: (input, context, signal) => this.executeCommand(input, context, signal),
+      bridge: () => this.imBridge,
+    })
   }
 
   get serverUrl(): string {
@@ -96,6 +106,22 @@ export class DshAgoraService implements DshAgoraServiceApi {
 
   listRuntimeDispatchProgress(dispatchId: string, signal?: AbortSignal): Promise<RuntimeDispatchProgress[]> {
     return this.options.client.listRuntimeDispatchProgress(dispatchId, signal)
+  }
+
+  createCoordinationRun(input: CreateCoordinationRunInput, signal?: AbortSignal): Promise<CoordinationRun> {
+    return this.options.client.createCoordinationRun(input, signal)
+  }
+
+  getCoordinationRun(runId: string, signal?: AbortSignal): Promise<CoordinationRun> {
+    return this.options.client.getCoordinationRun(runId, signal)
+  }
+
+  listCoordinationRuns(status?: CoordinationRunStatus, signal?: AbortSignal): Promise<CoordinationRun[]> {
+    return this.options.client.listCoordinationRuns(status, signal)
+  }
+
+  listAgentScorecards(taskType?: string, signal?: AbortSignal): Promise<AgentScorecard[]> {
+    return this.options.client.listAgentScorecards(taskType, signal)
   }
 
   async dispatchAgent(input: DispatchAgentInput, signal?: AbortSignal): Promise<RuntimeDispatch> {
@@ -151,8 +177,8 @@ export class DshAgoraService implements DshAgoraServiceApi {
     return this.options.client.bindRuntimeSession(taskId, participantBindingId, sessionId, agentRef, signal)
   }
 
-  registerExtension(extension: DshAgoraExtensionV1): () => void {
-    return this.registry.registerExtension(extension)
+  registerExtension(extension: DshAgoraExtensionV1, manifest?: DshAgoraExtensionManifestV1, packageBytes?: Uint8Array): () => void {
+    return this.registry.registerExtension(extension, manifest, packageBytes)
   }
 
   listExtensions(): readonly DshAgoraExtensionV1[] {
@@ -163,12 +189,17 @@ export class DshAgoraService implements DshAgoraServiceApi {
     return executeAgoraCommand(this, rawInput, context, signal)
   }
 
+  executeCommandEvent(event: DshAgoraCommandEventV1, signal?: AbortSignal): Promise<DshAgoraCommandEventResultV1> {
+    return this.commandAdapter.ingest(event, signal)
+  }
+
   snapshot(): DshAgoraSnapshot {
     return {
       serverUrl: this.serverUrl,
       command: `/${this.options.commandName}`,
       im: this.imStatus,
       imBridge: this.imBridgeStatus,
+      commandAdapter: { state: 'ready', protocol: this.commandAdapter.protocol },
       node: this.nodeStatus,
       extensions: this.registry.listExtensions().map(extension => ({
         id: extension.id,

@@ -106,7 +106,13 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://agora.example.com/api/runtime-
 
 内置 DSH runtime 会报告 `claimed`、`session_ready`、`prompt_accepted`、`response_started`、`response_completed`、`finalizing`。被重新领取的 dispatch 会开始新的 attempt，旧 attempt 的进度仍可审计，但不会冒充新 worker 的当前进度。证据块格式错误或 Agent 没有提供证据时，答案仍会正常完成，信封中的 claims/evidence 为空。
 
-升级顺序是：先升级中央 Agora Server 并执行数据库迁移，再升级各 DSH 节点到 0.5。0。0.4 节点仍可连接升级后的 Server，只是不会产生新进度与证据字段；不要先把 0.5 节点连接到尚未升级的严格旧 Server。
+升级顺序是：先升级中央 Agora Server 并执行数据库迁移，再升级各 DSH 节点到 0.6.0。0.4 节点仍可连接升级后的 Server，只是不会产生新进度、证据和协同字段；不要先把 0.6 节点连接到尚未升级的严格旧 Server。
+
+### 0.6 协同运行与联邦能力
+
+`dsh-agora` 0.6 在可靠派发之上增加持久 `coordination_run`，支持 `single`、`fanout`、`review`、`debate`、`council` 五种策略。每次运行可限制 Agent 数、派发数、wall-clock、token、工具调用和成本。结果会检测无证据主张、同类数值冲突及 worker revision 漂移，并据此形成 Agent Scorecard。低于 `min_information_gain` 时不会继续创建新的验证轮次；未报告的用量保持 `null`，不会误算成零。只有 verifier 的受支持主张覆盖对应冲突时才会标为 `verified`；单纯完成验证派发不会把冲突伪装成已解决。
+
+同一版本还提供 A2A 1.0 HTTP+JSON gateway、SHA-256 制品仓库、分层有来源 memory、每节点最小权限凭据、人工审批后的 worktree merge coordinator，以及带 Ed25519 签名、权限声明和一致性检查的插件 manifest。数据库迁移为 `032_coordination_federation.sql`，升级仍采用“中央服务先、节点插件后”的顺序。
 
 ## 第二步：在每个 DSH 节点安装插件
 
@@ -167,6 +173,16 @@ dsh plugin --profile web add dsh-better-sidebar
         capabilities: ['research', 'coding']
 ```
 
+推荐让管理请求与 worker 使用不同凭据。管理员使用 `apiToken`；每个节点通过中央 CLI 获得只属于自己的 worker token：
+
+```bash
+agora node-credentials issue node-a \
+  --scope heartbeat --scope dispatch --scope delivery \
+  --label 'node-a worker'
+```
+
+该命令只在签发时返回一次明文 token，中央数据库只保存哈希。把它安全注入节点的 `AGORA_NODE_API_TOKEN`，或写入该节点插件配置的 `nodeApiToken`。`nodeApiToken` 只能访问自身 nodeId 对应的 heartbeat/dispatch/delivery 路由，不能读取任务、签发凭据或调用管理接口。轮换使用 `agora node-credentials rotate <node-id> <credential-id>`；确认新 token 生效后撤销旧凭据。
+
 Windows 的 `workspace` 可以写成：
 
 ```yaml
@@ -188,11 +204,12 @@ workspace: 'C:/Users/example/workspace'
 ```bash
 export AGORA_SERVER_URL=https://agora.example.com
 export AGORA_API_TOKEN=replace-with-server-bearer-token
+export AGORA_NODE_API_TOKEN=replace-with-scoped-node-token
 export DSH_AGORA_NODE_ID=node-a
 export DSH_AGORA_API_TOKEN=replace-if-non-loopback-callers-need-the-local-host-api
 ```
 
-`AGORA_API_TOKEN` 保护“DSH 插件 → Agora Server”；`DSH_AGORA_API_TOKEN` 保护插件自己的 `/dsh-agora/api/*`。没有设置后者时，本地 Host API 只接受 loopback 请求。
+`AGORA_API_TOKEN` 用于插件的管理/查询请求；`AGORA_NODE_API_TOKEN` 只用于 worker 心跳、claim、续租、进度、完成和 delivery；`DSH_AGORA_API_TOKEN` 保护插件自己的 `/dsh-agora/api/*`。没有设置后者时，本地 Host API 只接受 loopback 请求。
 
 检查最终合成配置：
 
@@ -295,7 +312,7 @@ im: unavailable — no dsh-im.command-gateway/v1 provider is installed
 imBridge: connected — dsh-im.bridge/v1
 ```
 
-这是预期状态，不影响：
+0.6 起快照还会同时显示 `commandAdapter.state: ready`。这是 `dsh-agora.command-adapter/v1` 第一方规范化入口，平台适配器可以直接投递带幂等键的命令事件；它不要求 dsh-im 实现私有 command gateway。第三方 gateway 仍显示 unavailable 是预期状态，不影响：
 
 - 节点心跳、claim 和跨 Agent 派发；
 - DSH Web 中的 `/agora` 命令；
@@ -316,6 +333,10 @@ imBridge: connected — dsh-im.bridge/v1
 /agora show <task-id>
 /agora status <task-id>
 /agora dispatch-status <dispatch-id>
+/agora runs
+/agora run-status <run-id>
+/agora scorecards [task-type]
+/agora run --mode council --agents dsh:node-a:default,dsh:node-b:default --max-agents 2 --max-dispatches 3 --max-seconds 600 "核验仓库并给出证据"
 /agora create --type implementation --priority high "实现 DSH 适配器"
 /agora dashboard
 /agora im
@@ -342,6 +363,7 @@ imBridge: connected — dsh-im.bridge/v1
 - 节点：心跳、Agent、能力标签、Bot 在线状态；
 - 任务：创建和查看持久任务；
 - 派发：选择目标、创建或续接 DSH Session、选择结果呈现方式，并分别显示租约心跳、实际工作阶段、证据数量和最终结果。
+- 协同：选择策略和多个 Agent，创建预算化运行，查看成员完成度、证据、冲突、token 用量、停止原因与 Agent Scorecard。
 
 界面只访问同源 `/dsh-agora/api`，Agora API Token 和 Discord Bot Token 始终留在 Host。派发默认 `silent`；只有明确选择“由目标 Bot 回帖”时才请求主动呈现。没有 sidebar 时 Host、工具、API 和节点 Worker 仍正常运行，只是不显示面板。
 
@@ -445,9 +467,47 @@ MINIMAX_CN_API_KEY: '...'
 
 ## 插件扩展和 Host API
 
-第三方插件可以导入 `dsh-agora/sdk` 并注册 `dsh-agora.extension/v1`。当前内置 `runtime` 扩展负责 Agent 描述、Session 创建/恢复和 prompt 执行；新的 provider、策略或观察器应沿注册表扩展，不依赖 dsh-im 私有实现。
+第三方插件可以导入 `dsh-agora/sdk` 并注册 `dsh-agora.extension/v1`。当前内置 `runtime` 扩展负责 Agent 描述、Session 创建/恢复和 prompt 执行；新的 runtime adapter 应实现 `supportsTarget(runtimeTargetRef)`，注册表会显式选择支持目标的 adapter，并在没有第三方匹配时回退到内置 DSH runtime。新的 provider、策略或观察器应沿注册表扩展，不依赖 dsh-im 私有实现。生产环境建议启用 `extensionSecurity.requireSignedThirdParty` 并在 `trustedPublicKeys` 中配置 `publisher-id:key-id` 对应的 PEM 公钥。
 
-`POST /dsh-agora/api/{snapshot,health,nodes,agents,tasks,task,status,create,dispatch,dispatch-status,dispatch-progress,attach-session,command}` 返回统一 JSON envelope。`dispatch-status` 返回含最新进度和结构化结果的 dispatch；`dispatch-progress` 接收 `dispatchId` 并返回完整进度历史。该 Host API 只是面板和本地 adapter 的薄代理，不保存 Agora 领域状态。
+严格模式下，第三方扩展必须提供 `dsh-agora.extension-manifest/v1`、Ed25519 签名和与 `integrity_sha256` 匹配的 package bytes；manifest 必须逐项声明 capability、permission 和 resource。安装前可调用 `runExtensionConformance()` 检查能力唯一性、runtime 协议、Agent 描述确定性和 manifest 权限对齐。
+
+`POST /dsh-agora/api/{snapshot,health,nodes,agents,tasks,task,status,create,dispatch,dispatch-status,dispatch-progress,coordination-create,coordination-runs,coordination-run,scorecards,attach-session,command,command-event}` 返回统一 JSON envelope。`command-event` 接受 `dsh-agora.command-adapter/v1`；所有事件必须有稳定 `idempotency_key`。该 Host API 只是面板和本地 adapter 的薄代理，不保存 Agora 领域状态。
+
+## 中央 CLI、REST 和 A2A
+
+中央 `agora` CLI 提供 agent-first 操作面：
+
+```bash
+agora coordination create --mode fanout \
+  --agent dsh:node-a:default --agent dsh:node-b:default \
+  --max-agents 2 --max-dispatches 2 --max-seconds 600 \
+  '独立检查仓库并附可核验证据'
+agora coordination list
+agora coordination show <run-id>
+agora coordination reconcile <run-id>
+agora coordination scorecards
+
+agora artifacts put --file validation.json --name validation.json \
+  --kind validation --media-type application/json \
+  --owner-kind coordination_run --owner-ref <run-id>
+agora memory add --scope project_shared --owner human --visibility project \
+  --project-id <project-id> '已验证的项目约束'
+agora memory query --scope project_shared --project-id <project-id>
+agora merge propose --task-id <task-id> --project-id <project-id> \
+  --base <base-revision> --head <head-revision> --worktree <path> \
+  --summary 'validated changes' --validation-artifact <artifact-id> --requested-by <agent-ref>
+```
+
+Agent 只能提出 merge proposal；批准/拒绝必须在已认证 Dashboard 完成。`agora merge execute <proposal-id>` 仅执行已经存在人类审批者的 proposal，并会重新核对干净工作区、固定 base/head revision 以及 validation artifact 的实际 SHA-256 内容。节点凭据的签发、列举、轮换和撤销只接受中央全局 bearer 或 Dashboard admin 会话，普通 member 无权管理凭据。
+
+A2A 1.0 HTTP+JSON 入口：
+
+- `GET /.well-known/agent-card.json`：公开发现，不包含密钥、workspace 路径或私有 metadata；
+- `POST /a2a/message:send`：创建异步 runtime dispatch；
+- `GET /a2a/tasks/:id`：查询状态和结构化结果；
+- `POST /a2a/tasks/:id:cancel`：取消任务。
+
+除 Agent Card 外，A2A 路由使用中央 bearer auth。v1 明确声明 `streaming=false`、`pushNotifications=false`，调用者应轮询 task；`metadata.runtimeTargetRef` 在存在多个目标时必填。
 
 ## 开发验证
 

@@ -126,6 +126,20 @@ export class RuntimeNodeRepository {
     return rows.map((row) => this.parseDispatch(row));
   }
 
+  cancelDispatch(dispatchId: string, reason: string, now = new Date()): RuntimeNodeDispatchDto | null {
+    const existing = this.getDispatch(dispatchId);
+    if (!existing) return null;
+    if (existing.status === 'completed' || existing.status === 'failed' || existing.status === 'cancelled') return existing;
+    const timestamp = now.toISOString();
+    this.db.prepare(`
+      UPDATE runtime_node_dispatches
+      SET status = 'cancelled', error = ?, completed_at = ?, updated_at = ?,
+          claimed_by = NULL, claim_token = NULL, claim_expires_at = NULL
+      WHERE id = ? AND status IN ('pending', 'claimed')
+    `).run(reason, timestamp, timestamp, dispatchId);
+    return this.getDispatch(dispatchId);
+  }
+
   claimDispatch(nodeId: string, instanceId: string, leaseSeconds: number, now = new Date()): RuntimeNodeDispatchDto | null {
     const timestamp = now.toISOString();
     const expiresAt = new Date(now.getTime() + leaseSeconds * 1_000).toISOString();

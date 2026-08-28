@@ -1,4 +1,4 @@
-import type { AgoraCommandResult, AgoraRequestContext, CreateAgoraTaskInput, DshAgoraServiceApi } from './contracts.js';
+import type { AgoraCommandResult, AgoraRequestContext, CreateAgoraTaskInput, DshAgoraServiceApi, CoordinationMode } from './contracts.js';
 export type AgoraCommand = {
     readonly kind: 'help';
 } | {
@@ -22,6 +22,25 @@ export type AgoraCommand = {
 } | {
     readonly kind: 'dispatch-status';
     readonly dispatchId: string;
+} | {
+    readonly kind: 'runs';
+} | {
+    readonly kind: 'run-status';
+    readonly runId: string;
+} | {
+    readonly kind: 'scorecards';
+    readonly taskType?: string;
+} | {
+    readonly kind: 'run';
+    readonly input: {
+        readonly mode: CoordinationMode;
+        readonly runtimeTargets: readonly string[];
+        readonly prompt: string;
+        readonly taskType: string;
+        readonly maxAgents?: number;
+        readonly maxDispatches?: number;
+        readonly maxSeconds?: number;
+    };
 } | {
     readonly kind: 'create';
     readonly input: CreateAgoraTaskInput;

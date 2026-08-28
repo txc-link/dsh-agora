@@ -11,6 +11,9 @@ test('browser client registers an Agora dashboard and visible launcher', async (
   assert.match(source, /latest_progress/)
   assert.match(source, /result_envelope/)
   assert.match(source, /租约心跳与工作进度分开显示/)
+  assert.match(source, /coordination-create/)
+  assert.match(source, /Agent Scorecard/)
+  assert.match(source, /环境漂移/)
   let registration
   const storage = new Map()
   const nodes = []

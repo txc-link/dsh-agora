@@ -2,6 +2,10 @@ import type {
   AgoraHealth,
   AgoraTask,
   AgoraTaskStatus,
+  AgentScorecard,
+  CoordinationRun,
+  CoordinationRunStatus,
+  CreateCoordinationRunInput,
   CreateAgoraTaskInput,
   CreateRuntimeDispatchInput,
   RuntimeDispatch,
@@ -115,6 +119,24 @@ export class AgoraClient {
       `/api/runtime-dispatches/${encodeURIComponent(requireValue(dispatchId, 'dispatch id'))}/progress`,
       { signal },
     ).then(value => value.events)
+  }
+
+  createCoordinationRun(input: CreateCoordinationRunInput, signal?: AbortSignal): Promise<CoordinationRun> {
+    return this.request('/api/coordination-runs', { method: 'POST', body: input, signal })
+  }
+
+  getCoordinationRun(runId: string, signal?: AbortSignal): Promise<CoordinationRun> {
+    return this.request(`/api/coordination-runs/${encodeURIComponent(requireValue(runId, 'coordination run id'))}`, { signal })
+  }
+
+  listCoordinationRuns(status?: CoordinationRunStatus, signal?: AbortSignal): Promise<CoordinationRun[]> {
+    const suffix = status ? `?status=${encodeURIComponent(status)}` : ''
+    return this.request<{ runs: CoordinationRun[] }>(`/api/coordination-runs${suffix}`, { signal }).then(value => value.runs)
+  }
+
+  listAgentScorecards(taskType?: string, signal?: AbortSignal): Promise<AgentScorecard[]> {
+    const suffix = nonEmpty(taskType) ? `?task_type=${encodeURIComponent(taskType!.trim())}` : ''
+    return this.request<{ scorecards: AgentScorecard[] }>(`/api/agent-scorecards${suffix}`, { signal }).then(value => value.scorecards)
   }
 
   claimRuntimeDispatch(nodeId: string, instanceId: string, leaseSeconds: number, signal?: AbortSignal): Promise<RuntimeDispatch | null> {

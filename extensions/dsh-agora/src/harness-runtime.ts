@@ -60,6 +60,7 @@ export class HarnessRuntimeAdapter implements DshAgoraRuntimeAdapterV1 {
     signal: AbortSignal,
     context?: RuntimeExecutionContext,
   ): Promise<RuntimeExecutionResult> {
+    const startedAt = Date.now()
     const agentRef = dispatch.runtime_target_ref.split(':').at(-1)
     const agent = this.agents.find(item => item.id === agentRef)
     if (!agent) throw new Error(`runtime target ${dispatch.runtime_target_ref} is not configured on this DSH node`)
@@ -105,7 +106,17 @@ export class HarnessRuntimeAdapter implements DshAgoraRuntimeAdapterV1 {
         answer: parsed.answer,
         reason: result.reason,
         metadata: { agent_ref: agent.id, runtime_target_ref: dispatch.runtime_target_ref },
-        resultEnvelope: parsed.envelope,
+        resultEnvelope: {
+          ...parsed.envelope,
+          usage: {
+            input_tokens: parsed.envelope.usage?.input_tokens ?? null,
+            output_tokens: parsed.envelope.usage?.output_tokens ?? null,
+            total_tokens: parsed.envelope.usage?.total_tokens ?? null,
+            tool_calls: parsed.envelope.usage?.tool_calls ?? null,
+            cost_usd: parsed.envelope.usage?.cost_usd ?? null,
+            duration_ms: Date.now() - startedAt,
+          },
+        },
       }
     } catch (error) {
       if (signal.aborted) {

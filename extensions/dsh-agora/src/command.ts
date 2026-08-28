@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type {
   AgoraCommandResult,
   AgoraRequestContext,
@@ -6,6 +7,8 @@ import type {
   CreateAgoraTaskInput,
   DshAgoraServiceApi,
   TaskPriority,
+  CoordinationMode,
+  CoordinationRun,
 } from './contracts.js'
 
 export type AgoraCommand =
@@ -18,6 +21,18 @@ export type AgoraCommand =
   | { readonly kind: 'show'; readonly taskId: string }
   | { readonly kind: 'status'; readonly taskId: string }
   | { readonly kind: 'dispatch-status'; readonly dispatchId: string }
+  | { readonly kind: 'runs' }
+  | { readonly kind: 'run-status'; readonly runId: string }
+  | { readonly kind: 'scorecards'; readonly taskType?: string }
+  | { readonly kind: 'run'; readonly input: {
+      readonly mode: CoordinationMode
+      readonly runtimeTargets: readonly string[]
+      readonly prompt: string
+      readonly taskType: string
+      readonly maxAgents?: number
+      readonly maxDispatches?: number
+      readonly maxSeconds?: number
+    } }
   | { readonly kind: 'create'; readonly input: CreateAgoraTaskInput }
 
 export class AgoraCommandParseError extends Error {
@@ -36,6 +51,10 @@ const USAGE = [
   '/agora show <task-id>',
   '/agora status <task-id>',
   '/agora dispatch-status <dispatch-id>',
+  '/agora runs',
+  '/agora run-status <run-id>',
+  '/agora scorecards [task-type]',
+  '/agora run --mode fanout --agents <target,target,...> [--max-agents N] [--max-dispatches N] [--max-seconds N] <prompt>',
   '/agora create [--type <type>] [--priority low|normal|high] [--project <id>] <title>',
   '/agora dashboard',
   '/agora im',
@@ -71,6 +90,31 @@ export function parseAgoraCommand(rawInput: string): AgoraCommand {
       return { kind: 'status', taskId: oneArgument(tokens, 'status') }
     case 'dispatch-status':
       return { kind: 'dispatch-status', dispatchId: oneArgument(tokens, 'dispatch-status') }
+    case 'runs':
+      noArguments(tokens, verb)
+      return { kind: 'runs' }
+    case 'run-status':
+      return { kind: 'run-status', runId: oneArgument(tokens, 'run-status') }
+    case 'scorecards':
+      if (tokens.length > 1) throw new AgoraCommandParseError('scorecards accepts at most one task type')
+      return { kind: 'scorecards', ...(tokens[0] ? { taskType: tokens[0] } : {}) }
+    case 'run': {
+      const flags = parseFlags(tokens, new Set(['mode', 'agents', 'task-type', 'max-agents', 'max-dispatches', 'max-seconds']))
+      const prompt = flags.positionals.join(' ').trim()
+      if (!prompt) throw new AgoraCommandParseError('run requires a prompt')
+      const mode = parseCoordinationMode(flags.values.mode)
+      const runtimeTargets = (flags.values.agents ?? '').split(',').map(value => value.trim()).filter(Boolean)
+      if (runtimeTargets.length === 0) throw new AgoraCommandParseError('run requires --agents <target,target,...>')
+      return { kind: 'run', input: {
+        mode,
+        runtimeTargets,
+        prompt,
+        taskType: flags.values['task-type']?.trim() || 'general',
+        ...optionalPositiveInteger(flags.values['max-agents'], 'max-agents'),
+        ...optionalPositiveInteger(flags.values['max-dispatches'], 'max-dispatches'),
+        ...optionalPositiveInteger(flags.values['max-seconds'], 'max-seconds'),
+      } }
+    }
     case 'list': {
       const flags = parseFlags(tokens, new Set(['state', 'project']))
       if (flags.positionals.length > 0) throw new AgoraCommandParseError('list only accepts --state and --project')
@@ -166,6 +210,34 @@ export async function executeAgoraCommand(
           ].join('\n'),
         }
       }
+      case 'runs': {
+        const runs = await service.listCoordinationRuns(undefined, signal)
+        return { kind: 'success', text: runs.length === 0 ? 'No coordination runs.' : runs.map(formatRunLine).join('\n') }
+      }
+      case 'run-status': return { kind: 'success', text: formatRun(await service.getCoordinationRun(command.runId, signal)) }
+      case 'scorecards': {
+        const cards = await service.listAgentScorecards(command.taskType, signal)
+        return { kind: 'success', text: cards.length === 0 ? 'No Agent scorecard observations.' : cards.map(card => (
+          `${card.runtime_target_ref} [${card.task_type}] score=${card.score.toFixed(1)} observations=${card.observations} success=${formatRatio(card.success_rate)} p95=${card.p95_duration_ms ?? '-'}ms evidence=${card.evidence_yield?.toFixed(2) ?? '-'}`
+        )).join('\n') }
+      }
+      case 'run': {
+        const budget = {
+          ...(command.input.maxAgents === undefined ? {} : { max_agents: command.input.maxAgents }),
+          ...(command.input.maxDispatches === undefined ? {} : { max_dispatches: command.input.maxDispatches }),
+          ...(command.input.maxSeconds === undefined ? {} : { max_wall_clock_seconds: command.input.maxSeconds }),
+        }
+        const run = await service.createCoordinationRun({
+          mode: command.input.mode,
+          prompt: command.input.prompt,
+          task_type: command.input.taskType,
+          candidates: command.input.runtimeTargets.map(runtime_target_ref => ({ runtime_target_ref })),
+          ...(Object.keys(budget).length === 0 ? {} : { budget }),
+          idempotency_key: `dsh-command:${randomUUID()}`,
+          metadata: context.actorId ? { requested_by: context.actorId } : null,
+        }, signal)
+        return { kind: 'success', text: `Created coordination run ${run.id}\n${formatRun(run)}` }
+      }
       case 'create': {
         const task = await service.createTask({
           ...command.input,
@@ -206,7 +278,23 @@ function formatStatus(status: AgoraTaskStatus): string {
   ].join('\n')
 }
 
+function formatRunLine(run: CoordinationRun): string {
+  return `${run.id} [${run.status}] ${run.mode} members=${run.members.length} ${run.stop_reason ?? ''}`.trim()
+}
+
+function formatRun(run: CoordinationRun): string {
+  return [
+    formatRunLine(run),
+    `Deadline: ${run.deadline_at}`,
+    `Usage: tokens=${run.usage.total_tokens ?? '-'} tools=${run.usage.tool_calls ?? '-'} cost=${run.usage.cost_usd ?? '-'}`,
+    `Evidence: ${run.synthesis?.evidence_ids.length ?? 0}; conflicts: ${run.synthesis?.conflicts.length ?? 0}; verified: ${run.synthesis?.verified ?? false}`,
+    ...run.members.map(member => `- r${member.round} ${member.role} ${member.runtime_target_ref}: ${member.status} score=${member.selection_score.toFixed(1)}`),
+    ...(run.synthesis?.answer ? ['', run.synthesis.answer] : []),
+  ].join('\n')
+}
+
 function formatImStatus(snapshot: ReturnType<DshAgoraServiceApi['snapshot']>): string {
+  const adapter = `First-party command adapter: ${snapshot.commandAdapter.state} (${snapshot.commandAdapter.protocol})`
   const gateway = snapshot.im.state === 'connected'
     ? `Command gateway: connected (${snapshot.im.service}, ${snapshot.im.protocol})`
     : `Command gateway: ${snapshot.im.state} (${snapshot.im.reason})`
@@ -218,7 +306,7 @@ function formatImStatus(snapshot: ReturnType<DshAgoraServiceApi['snapshot']>): s
     : snapshot.node.state === 'error'
       ? `Runtime node: error (${snapshot.node.nodeId}, ${snapshot.node.error})`
       : `Runtime node: ${snapshot.node.state} (${snapshot.node.nodeId})`
-  return [gateway, bridge, node, `Extensions: ${snapshot.extensions.map(item => item.id).join(', ') || '-'}`].join('\n')
+  return [adapter, gateway, bridge, node, `Extensions: ${snapshot.extensions.map(item => item.id).join(', ') || '-'}`].join('\n')
 }
 
 function imTargetFrom(context: AgoraRequestContext): Pick<CreateAgoraTaskInput, 'imTarget'> | Record<string, never> {
@@ -237,6 +325,24 @@ function parsePriority(value: string | undefined): TaskPriority | undefined {
   if (value === 'low' || value === 'normal' || value === 'high') return value
   throw new AgoraCommandParseError('priority must be low, normal, or high')
 }
+
+function parseCoordinationMode(value: string | undefined): CoordinationMode {
+  if (value === 'single' || value === 'fanout' || value === 'review' || value === 'debate' || value === 'council') return value
+  throw new AgoraCommandParseError('run requires --mode single|fanout|review|debate|council')
+}
+
+function optionalPositiveInteger(
+  value: string | undefined,
+  field: 'max-agents' | 'max-dispatches' | 'max-seconds',
+): Partial<{ maxAgents: number; maxDispatches: number; maxSeconds: number }> {
+  if (value === undefined) return {}
+  const parsed = Number(value)
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new AgoraCommandParseError(`--${field} must be a positive integer`)
+  const key = field === 'max-agents' ? 'maxAgents' : field === 'max-dispatches' ? 'maxDispatches' : 'maxSeconds'
+  return { [key]: parsed }
+}
+
+function formatRatio(value: number | null): string { return value === null ? '-' : `${Math.round(value * 100)}%` }
 
 function oneArgument(tokens: string[], verb: string): string {
   if (tokens.length !== 1) throw new AgoraCommandParseError(`${verb} requires exactly one task id`)

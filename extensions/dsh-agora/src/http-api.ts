@@ -49,6 +49,29 @@ export async function handleHttpRequest(
       case 'status': value = await service.taskStatus(requiredString(payload.taskId, 'taskId'), signal); break
       case 'dispatch-status': value = await service.getRuntimeDispatch(requiredString(payload.dispatchId, 'dispatchId'), signal); break
       case 'dispatch-progress': value = await service.listRuntimeDispatchProgress(requiredString(payload.dispatchId, 'dispatchId'), signal); break
+      case 'coordination-runs': value = await service.listCoordinationRuns(
+        optionalCoordinationStatus(payload.status),
+        signal,
+      ); break
+      case 'coordination-run': value = await service.getCoordinationRun(requiredString(payload.runId, 'runId'), signal); break
+      case 'scorecards': value = await service.listAgentScorecards(optionalString(payload.taskType), signal); break
+      case 'coordination-create': {
+        const mode = requiredCoordinationMode(payload.mode)
+        const taskId = optionalString(payload.taskId)
+        const taskType = optionalString(payload.taskType)
+        const verifierTargetRef = optionalString(payload.verifierTargetRef)
+        value = await service.createCoordinationRun({
+          prompt: requiredString(payload.prompt, 'prompt'),
+          mode,
+          candidates: requiredStringArray(payload.runtimeTargetRefs, 'runtimeTargetRefs').map(runtime_target_ref => ({ runtime_target_ref })),
+          idempotency_key: requiredString(payload.idempotencyKey, 'idempotencyKey'),
+          ...(taskId === undefined ? {} : { task_id: taskId }),
+          ...(taskType === undefined ? {} : { task_type: taskType }),
+          ...(verifierTargetRef === undefined ? {} : { verifier_target_ref: verifierTargetRef }),
+          ...(payload.budget === undefined ? {} : { budget: coordinationBudget(payload.budget) }),
+        }, signal)
+        break
+      }
       case 'dispatch': {
         const taskId = optionalString(payload.taskId)
         const participantBindingId = optionalString(payload.participantBindingId)
@@ -104,6 +127,7 @@ export async function handleHttpRequest(
         requestContext(payload.context),
         signal,
       ); break
+      case 'command-event': value = await service.executeCommandEvent(payload as unknown as import('./command-adapter.js').DshAgoraCommandEventV1, signal); break
       default: throw new HttpApiError(404, 'not-found', `unknown dsh-agora API method "${method}"`)
     }
     writeJson(response, 200, { ok: true, value })
@@ -180,6 +204,46 @@ function optionalInteger(value: unknown, field: string, minimum: number, maximum
     throw new HttpApiError(400, 'bad-request', `${field} must be an integer between ${minimum} and ${maximum}`)
   }
   return value as number
+}
+
+function requiredStringArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || value.length === 0) throw new HttpApiError(400, 'bad-request', `${field} must be a non-empty string array`)
+  return value.map(item => requiredString(item, field))
+}
+
+function requiredCoordinationMode(value: unknown): 'single' | 'fanout' | 'review' | 'debate' | 'council' {
+  const mode = requiredString(value, 'mode')
+  if (mode === 'single' || mode === 'fanout' || mode === 'review' || mode === 'debate' || mode === 'council') return mode
+  throw new HttpApiError(400, 'bad-request', 'mode must be single, fanout, review, debate, or council')
+}
+
+function optionalCoordinationStatus(value: unknown): import('./contracts.js').CoordinationRunStatus | undefined {
+  const status = optionalString(value)
+  if (status === undefined) return undefined
+  if (status === 'running' || status === 'verifying' || status === 'completed' || status === 'partial'
+    || status === 'failed' || status === 'cancelled' || status === 'budget_exhausted') return status
+  throw new HttpApiError(400, 'bad-request', 'coordination status is invalid')
+}
+
+function coordinationBudget(value: unknown): Partial<import('./contracts.js').CoordinationBudget> {
+  const record = asRecord(value)
+  const fields = [
+    ['max_agents', 1, 32],
+    ['max_dispatches', 1, 64],
+    ['max_wall_clock_seconds', 15, 86_400],
+    ['max_tokens', 1, Number.MAX_SAFE_INTEGER],
+    ['max_tool_calls', 1, Number.MAX_SAFE_INTEGER],
+  ] as const
+  const budget: Record<string, number> = {}
+  for (const [field, minimum, maximum] of fields) {
+    const item = optionalInteger(record[field], field, minimum, maximum)
+    if (item !== undefined) budget[field] = item
+  }
+  if (record.max_cost_usd !== undefined) {
+    if (typeof record.max_cost_usd !== 'number' || record.max_cost_usd <= 0) throw new HttpApiError(400, 'bad-request', 'max_cost_usd must be positive')
+    budget.max_cost_usd = record.max_cost_usd
+  }
+  return budget
 }
 
 function requestContext(value: unknown): AgoraRequestContext {

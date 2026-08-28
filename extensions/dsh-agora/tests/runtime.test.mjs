@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { createHash, generateKeyPairSync, sign } from 'node:crypto'
 import {
   DSH_AGORA_EXTENSION_PROTOCOL,
   DSH_AGORA_RUNTIME_PROTOCOL,
   DshAgoraExtensionRegistry,
   HarnessRuntimeAdapter,
+  DSH_AGORA_EXTENSION_MANIFEST_PROTOCOL,
+  runExtensionConformance,
 } from '../lib/index.js'
 
 test('extension registry versions, isolates, and disposes runtime adapters', () => {
@@ -13,7 +16,7 @@ test('extension registry versions, isolates, and disposes runtime adapters', () 
     protocol: DSH_AGORA_EXTENSION_PROTOCOL,
     id: 'example-runtime',
     kind: 'runtime',
-    capabilities: ['runtime.execute', 'runtime.execute'],
+    capabilities: ['runtime.execute'],
     runtime: {
       protocol: DSH_AGORA_RUNTIME_PROTOCOL,
       describeAgents: () => [],
@@ -22,9 +25,81 @@ test('extension registry versions, isolates, and disposes runtime adapters', () 
   }
   const dispose = registry.registerExtension(extension)
   assert.deepEqual(registry.listExtensions()[0].capabilities, ['runtime.execute'])
+  assert.throws(() => registry.registerExtension({ ...extension, id: 'duplicate-capabilities', capabilities: ['runtime.execute', 'runtime.execute'] }), /must be unique/)
   assert.throws(() => registry.registerExtension(extension), /already registered/)
   dispose()
   assert.equal(registry.listExtensions().length, 0)
+})
+
+test('extension registry routes targets to explicit third-party runtime adapters', () => {
+  const registry = new DshAgoraExtensionRegistry()
+  const makeExtension = (id, prefix) => ({
+    protocol: DSH_AGORA_EXTENSION_PROTOCOL,
+    id,
+    kind: 'runtime',
+    capabilities: ['runtime.execute'],
+    runtime: {
+      protocol: DSH_AGORA_RUNTIME_PROTOCOL,
+      supportsTarget: target => target.startsWith(prefix),
+      describeAgents: () => [],
+      execute: async () => ({ sessionId: 's', answer: id }),
+    },
+  })
+  const alpha = makeExtension('alpha-runtime', 'alpha:')
+  const beta = makeExtension('beta-runtime', 'beta:')
+  registry.registerExtension(alpha)
+  registry.registerExtension(beta)
+  assert.equal(registry.runtimeForTarget('beta:worker'), beta.runtime)
+  assert.equal(registry.runtimeForTarget('unknown:worker'), null)
+})
+
+test('extension registry does not route an explicitly unsupported target through a sole adapter', () => {
+  const registry = new DshAgoraExtensionRegistry()
+  registry.registerExtension({
+    protocol: DSH_AGORA_EXTENSION_PROTOCOL,
+    id: 'explicit-runtime',
+    kind: 'runtime',
+    capabilities: ['runtime.execute'],
+    runtime: {
+      protocol: DSH_AGORA_RUNTIME_PROTOCOL,
+      supportsTarget: () => false,
+      describeAgents: () => [],
+      execute: async () => { throw new Error('must not execute') },
+    },
+  })
+  assert.equal(registry.runtimeForTarget('custom:node:agent'), null)
+})
+
+test('third-party extensions require trusted Ed25519 manifests under strict policy', async () => {
+  const { privateKey, publicKey } = generateKeyPairSync('ed25519')
+  const extension = {
+    protocol: DSH_AGORA_EXTENSION_PROTOCOL,
+    id: 'signed-runtime',
+    kind: 'runtime',
+    capabilities: ['runtime.execute'],
+    runtime: { protocol: DSH_AGORA_RUNTIME_PROTOCOL, describeAgents: () => [{ agent_ref: 'signed', roles: [], capabilities: [] }], execute: async () => ({ sessionId: 's', answer: 'ok' }) },
+  }
+  const unsigned = {
+    protocol: DSH_AGORA_EXTENSION_MANIFEST_PROTOCOL,
+    id: extension.id,
+    version: '1.0.0',
+    kind: extension.kind,
+    integrity_sha256: createHash('sha256').update('package').digest('hex'),
+    capabilities: ['runtime.execute'],
+    permissions: [{ capability: 'runtime.execute', resources: ['runtime:dsh:*'] }],
+    publisher: { id: 'example', key_id: 'main' },
+  }
+  const manifest = { ...unsigned, signature: { algorithm: 'Ed25519', value: sign(null, Buffer.from(stableJson(unsigned)), privateKey).toString('base64url') } }
+  const registry = new DshAgoraExtensionRegistry({
+    requireSignedThirdParty: true,
+    trustedPublicKeys: { 'example:main': publicKey.export({ type: 'spki', format: 'pem' }) },
+  })
+
+  assert.throws(() => registry.registerExtension(extension), /requires a signed manifest/)
+  assert.throws(() => registry.registerExtension(extension, manifest), /requires package bytes/)
+  registry.registerExtension(extension, manifest, Buffer.from('package'))
+  assert.equal(registry.manifestFor('signed-runtime').version, '1.0.0')
+  assert.deepEqual((await runExtensionConformance(extension, manifest)).ok, true)
 })
 
 test('Harness runtime creates a Session and tracks the exact dispatched turn', async () => {
@@ -75,5 +150,12 @@ test('Harness runtime creates a Session and tracks the exact dispatched turn', a
   assert.equal(result.resultEnvelope.evidence[0].metadata.passed, 42)
   assert.equal(result.resultEnvelope.environment.revision, 'abc123')
   assert.equal(result.resultEnvelope.environment.agent_ref, 'developer')
+  assert.equal(typeof result.resultEnvelope.usage.duration_ms, 'number')
   assert.equal(calls.find(call => call.method === 'session.prompt').rpcId, 'agora-dispatch-dispatch-1')
 })
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
+  if (value && typeof value === 'object') return `{${Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(',')}}`
+  return JSON.stringify(value) ?? 'null'
+}

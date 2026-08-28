@@ -79,6 +79,20 @@ export class AgoraClient {
     listRuntimeDispatchProgress(dispatchId, signal) {
         return this.request(`/api/runtime-dispatches/${encodeURIComponent(requireValue(dispatchId, 'dispatch id'))}/progress`, { signal }).then(value => value.events);
     }
+    createCoordinationRun(input, signal) {
+        return this.request('/api/coordination-runs', { method: 'POST', body: input, signal });
+    }
+    getCoordinationRun(runId, signal) {
+        return this.request(`/api/coordination-runs/${encodeURIComponent(requireValue(runId, 'coordination run id'))}`, { signal });
+    }
+    listCoordinationRuns(status, signal) {
+        const suffix = status ? `?status=${encodeURIComponent(status)}` : '';
+        return this.request(`/api/coordination-runs${suffix}`, { signal }).then(value => value.runs);
+    }
+    listAgentScorecards(taskType, signal) {
+        const suffix = nonEmpty(taskType) ? `?task_type=${encodeURIComponent(taskType.trim())}` : '';
+        return this.request(`/api/agent-scorecards${suffix}`, { signal }).then(value => value.scorecards);
+    }
     claimRuntimeDispatch(nodeId, instanceId, leaseSeconds, signal) {
         return this.request(`/api/runtime-nodes/${encodeURIComponent(requireValue(nodeId, 'node id'))}/dispatches/claim`, { method: 'POST', body: { instance_id: instanceId, lease_seconds: leaseSeconds }, signal }).then(value => value.dispatch);
     }

@@ -4,3 +4,4 @@ export { RuntimeRepoShimMaterializer } from './runtime-repo-shim-materializer.js
 export type { RuntimeRepoShimMaterializerOptions } from './runtime-repo-shim-materializer.js';
 export { RuntimeRepoShimWritebackService } from './runtime-repo-shim-writeback-service.js';
 export type { RuntimeRepoShimWritebackServiceOptions } from './runtime-repo-shim-writeback-service.js';
+export { FilesystemArtifactContentStore } from './filesystem-artifact-content-store.js';

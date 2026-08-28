@@ -1,4 +1,4 @@
-import type { AgoraHealth, AgoraTask, AgoraTaskStatus, CreateAgoraTaskInput, CreateRuntimeDispatchInput, RuntimeDispatch, RecordRuntimeDispatchProgressInput, RuntimeDispatchProgress, RuntimeResultEnvelope, RuntimeDelivery, RuntimeNode, RuntimeNodeHeartbeatInput, RuntimeSessionBinding, RuntimeTarget } from './contracts.js';
+import type { AgoraHealth, AgoraTask, AgoraTaskStatus, AgentScorecard, CoordinationRun, CoordinationRunStatus, CreateCoordinationRunInput, CreateAgoraTaskInput, CreateRuntimeDispatchInput, RuntimeDispatch, RecordRuntimeDispatchProgressInput, RuntimeDispatchProgress, RuntimeResultEnvelope, RuntimeDelivery, RuntimeNode, RuntimeNodeHeartbeatInput, RuntimeSessionBinding, RuntimeTarget } from './contracts.js';
 export interface AgoraClientOptions {
     readonly serverUrl: string;
     readonly apiToken?: string | undefined;
@@ -28,6 +28,10 @@ export declare class AgoraClient {
     createRuntimeDispatch(nodeId: string, input: CreateRuntimeDispatchInput, signal?: AbortSignal): Promise<RuntimeDispatch>;
     getRuntimeDispatch(dispatchId: string, signal?: AbortSignal): Promise<RuntimeDispatch>;
     listRuntimeDispatchProgress(dispatchId: string, signal?: AbortSignal): Promise<RuntimeDispatchProgress[]>;
+    createCoordinationRun(input: CreateCoordinationRunInput, signal?: AbortSignal): Promise<CoordinationRun>;
+    getCoordinationRun(runId: string, signal?: AbortSignal): Promise<CoordinationRun>;
+    listCoordinationRuns(status?: CoordinationRunStatus, signal?: AbortSignal): Promise<CoordinationRun[]>;
+    listAgentScorecards(taskType?: string, signal?: AbortSignal): Promise<AgentScorecard[]>;
     claimRuntimeDispatch(nodeId: string, instanceId: string, leaseSeconds: number, signal?: AbortSignal): Promise<RuntimeDispatch | null>;
     renewRuntimeDispatch(nodeId: string, dispatchId: string, instanceId: string, claimToken: string, leaseSeconds: number, signal?: AbortSignal): Promise<RuntimeDispatch>;
     recordRuntimeDispatchProgress(nodeId: string, dispatchId: string, input: RecordRuntimeDispatchProgressInput, signal?: AbortSignal): Promise<RuntimeDispatchProgress>;

@@ -22,6 +22,7 @@ export class HarnessRuntimeAdapter {
         }));
     }
     async execute(dispatch, signal, context) {
+        const startedAt = Date.now();
         const agentRef = dispatch.runtime_target_ref.split(':').at(-1);
         const agent = this.agents.find(item => item.id === agentRef);
         if (!agent)
@@ -61,7 +62,17 @@ export class HarnessRuntimeAdapter {
                 answer: parsed.answer,
                 reason: result.reason,
                 metadata: { agent_ref: agent.id, runtime_target_ref: dispatch.runtime_target_ref },
-                resultEnvelope: parsed.envelope,
+                resultEnvelope: {
+                    ...parsed.envelope,
+                    usage: {
+                        input_tokens: parsed.envelope.usage?.input_tokens ?? null,
+                        output_tokens: parsed.envelope.usage?.output_tokens ?? null,
+                        total_tokens: parsed.envelope.usage?.total_tokens ?? null,
+                        tool_calls: parsed.envelope.usage?.tool_calls ?? null,
+                        cost_usd: parsed.envelope.usage?.cost_usd ?? null,
+                        duration_ms: Date.now() - startedAt,
+                    },
+                },
             };
         }
         catch (error) {

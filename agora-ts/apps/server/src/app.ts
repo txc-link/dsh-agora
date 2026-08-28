@@ -110,10 +110,34 @@ import {
   runtimeNodeDispatchProgressSchema,
   runtimeNodeDispatchProgressListResponseSchema,
   completeRuntimeNodeDispatchRequestSchema,
+  cancelRuntimeNodeDispatchRequestSchema,
   runtimeNodeDispatchSchema,
   claimRuntimeNodeDeliveryRequestSchema,
   completeRuntimeNodeDeliveryRequestSchema,
   runtimeNodeDeliverySchema,
+  createCoordinationRunRequestSchema,
+  coordinationRunSchema,
+  coordinationRunListResponseSchema,
+  coordinationRunStatusSchema,
+  coordinationScorecardListResponseSchema,
+  createArtifactRequestSchema,
+  artifactSchema,
+  artifactListResponseSchema,
+  createMemoryEntryRequestSchema,
+  memoryEntrySchema,
+  memoryQuerySchema,
+  memoryListResponseSchema,
+  issueRuntimeNodeCredentialRequestSchema,
+  issuedRuntimeNodeCredentialSchema,
+  runtimeNodeCredentialListResponseSchema,
+  runtimeNodeCredentialSchema,
+  createMergeProposalRequestSchema,
+  decideMergeProposalRequestSchema,
+  mergeProposalSchema,
+  mergeProposalListResponseSchema,
+  a2aSendMessageRequestSchema,
+  a2aTaskSchema,
+  a2aAgentCardSchema,
   updateProjectRuntimePolicyRequestSchema,
   upsertRuntimeTargetOverlayRequestSchema,
   type HealthResponse,
@@ -182,8 +206,14 @@ import {
   type WorkspaceBootstrapService,
   type RuntimeTargetService,
   type RuntimeNodeRegistryService,
+  type CoordinationService,
+  type ArtifactService,
+  type MemoryService,
+  type RuntimeNodeCredentialService,
+  type MergeCoordinatorService,
   WorkspaceBootstrapService as WorkspaceBootstrapServiceImpl,
 } from '@agora-ts/core';
+import type { A2aGatewayService } from '@agora-ts/adapters-runtime';
 import {
   NotificationOutboxRepository,
   HumanAccountRepository,
@@ -226,6 +256,12 @@ export interface BuildAppOptions {
   dashboardQueryService?: DashboardQueryService;
   runtimeTargetService?: RuntimeTargetService;
   runtimeNodeRegistryService?: RuntimeNodeRegistryService;
+  coordinationService?: CoordinationService;
+  artifactService?: ArtifactService;
+  memoryService?: MemoryService;
+  runtimeNodeCredentialService?: RuntimeNodeCredentialService;
+  mergeCoordinatorService?: MergeCoordinatorService;
+  a2aGatewayService?: A2aGatewayService;
   ccConnectInspectionService?: CcConnectInspectionService;
   ccConnectManagementService?: CcConnectManagementService;
   ccConnectThreadSessionService?: CcConnectThreadSessionServiceLike;
@@ -479,6 +515,20 @@ function parseBearerToken(authorization?: string) {
     return null;
   }
   return token;
+}
+
+function runtimeNodeCredentialAuthTarget(method: string, rawUrl: string): {
+  nodeId: string;
+  scope: 'heartbeat' | 'dispatch' | 'delivery';
+} | null {
+  const path = rawUrl.split('?')[0] ?? rawUrl;
+  const heartbeat = /^\/api\/runtime-nodes\/([^/]+)\/heartbeat$/u.exec(path);
+  if (method === 'PUT' && heartbeat) return { nodeId: decodeURIComponent(heartbeat[1]!), scope: 'heartbeat' };
+  const dispatch = /^\/api\/runtime-nodes\/([^/]+)\/dispatches(?:\/claim|\/[^/]+\/(?:renew|progress|complete))$/u.exec(path);
+  if (method === 'POST' && dispatch) return { nodeId: decodeURIComponent(dispatch[1]!), scope: 'dispatch' };
+  const delivery = /^\/api\/runtime-nodes\/([^/]+)\/deliveries(?:\/claim|\/[^/]+\/complete)$/u.exec(path);
+  if (method === 'POST' && delivery) return { nodeId: decodeURIComponent(delivery[1]!), scope: 'delivery' };
+  return null;
 }
 
 function parseBasicCredentials(authorization?: string) {
@@ -867,6 +917,29 @@ function requireDashboardAdminSession(
   return current.session;
 }
 
+function requireControlPlaneAdmin(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  sessions: Map<string, DashboardSession>,
+  apiAuth: BuildAppOptions['apiAuth'],
+  dashboardAuth: BuildAppOptions['dashboardAuth'],
+) {
+  const bearer = parseBearerToken(request.headers.authorization);
+  if (apiAuth?.enabled && apiAuth.token && bearer === apiAuth.token) {
+    return true;
+  }
+  if (dashboardAuth?.enabled && dashboardAuth.method === 'session') {
+    return Boolean(requireDashboardAdminSession(request, reply, sessions));
+  }
+  if (apiAuth?.enabled) {
+    // The global auth hook normally rejects this request before the route runs.
+    // Keep this guard fail-closed if the hook policy changes later.
+    reply.status(403).send({ message: 'control-plane admin authorization required' });
+    return false;
+  }
+  return true;
+}
+
 function incrementCounter(counter: Map<string, number>, key: string) {
   counter.set(key, (counter.get(key) ?? 0) + 1);
 }
@@ -1092,6 +1165,12 @@ export function buildApp(options: BuildAppOptions = {}) {
   const dashboardQueryService = options.dashboardQueryService;
   const runtimeTargetService = options.runtimeTargetService;
   const runtimeNodeRegistryService = options.runtimeNodeRegistryService;
+  const coordinationService = options.coordinationService;
+  const artifactService = options.artifactService;
+  const memoryService = options.memoryService;
+  const runtimeNodeCredentialService = options.runtimeNodeCredentialService;
+  const mergeCoordinatorService = options.mergeCoordinatorService;
+  const a2aGatewayService = options.a2aGatewayService;
   const ccConnectInspectionService = options.ccConnectInspectionService ?? new CcConnectInspectionService();
   const ccConnectManagementService = options.ccConnectManagementService ?? new CcConnectManagementService();
   const ccConnectThreadSessionService = options.ccConnectThreadSessionService;
@@ -1127,7 +1206,8 @@ export function buildApp(options: BuildAppOptions = {}) {
     if (structuredLogs) {
       (request as typeof request & RequestTimingState).startedAtMs = Date.now();
     }
-    if (!request.url.startsWith('/api/') || request.url === '/api/health' || request.url === readyPath) {
+    const protectedApi = request.url.startsWith('/api/') || request.url.startsWith('/a2a/');
+    if (!protectedApi || request.url === '/api/health' || request.url === readyPath) {
       return;
     }
     if (rateLimit?.enabled) {
@@ -1180,6 +1260,17 @@ export function buildApp(options: BuildAppOptions = {}) {
       return reply.status(401).send({ message: 'missing bearer token' });
     }
     if (token !== apiAuth.token) {
+      const nodeCredentialTarget = runtimeNodeCredentialAuthTarget(request.method, request.url);
+      if (
+        nodeCredentialTarget
+        && runtimeNodeCredentialService?.authenticate(
+          nodeCredentialTarget.nodeId,
+          token,
+          nodeCredentialTarget.scope,
+        )
+      ) {
+        return;
+      }
       return reply.status(403).send({ message: 'invalid api token' });
     }
   });
@@ -4636,6 +4727,18 @@ export function buildApp(options: BuildAppOptions = {}) {
     }
   });
 
+  app.post('/api/runtime-dispatches/:dispatchId/cancel', async (request, reply) => {
+    if (!runtimeNodeRegistryService) return reply.status(503).send({ message: 'Runtime node registry service is not configured' });
+    try {
+      const { dispatchId } = request.params as { dispatchId: string };
+      const input = cancelRuntimeNodeDispatchRequestSchema.parse(request.body);
+      return reply.send(runtimeNodeDispatchSchema.parse(runtimeNodeRegistryService.cancelDispatch(dispatchId, input.reason)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
   app.post('/api/runtime-nodes/:nodeId/dispatches/claim', async (request, reply) => {
     if (!runtimeNodeRegistryService) {
       return reply.status(503).send({ message: 'Runtime node registry service is not configured' });
@@ -4747,6 +4850,287 @@ export function buildApp(options: BuildAppOptions = {}) {
       return reply.send(runtimeNodeDeliverySchema.parse(
         runtimeNodeRegistryService.completeDelivery(nodeId, deliveryId, input),
       ));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/coordination-runs', async (request, reply) => {
+    if (!coordinationService) return reply.status(503).send({ message: 'Coordination service is not configured' });
+    try {
+      const input = createCoordinationRunRequestSchema.parse(request.body);
+      return reply.status(201).send(coordinationRunSchema.parse(coordinationService.createRun(input)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/coordination-runs', async (request, reply) => {
+    if (!coordinationService) return reply.status(503).send({ message: 'Coordination service is not configured' });
+    try {
+      const query = request.query as { status?: string; limit?: string };
+      const status = query.status ? coordinationRunStatusSchema.parse(query.status) : undefined;
+      const limit = query.limit ? Math.min(200, Math.max(1, Number.parseInt(query.limit, 10))) : 100;
+      return reply.send(coordinationRunListResponseSchema.parse({ runs: coordinationService.listRuns(status, limit) }));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/coordination-runs/:runId', async (request, reply) => {
+    if (!coordinationService) return reply.status(503).send({ message: 'Coordination service is not configured' });
+    try {
+      const { runId } = request.params as { runId: string };
+      return reply.send(coordinationRunSchema.parse(coordinationService.getRun(runId)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/coordination-runs/:runId/reconcile', async (request, reply) => {
+    if (!coordinationService) return reply.status(503).send({ message: 'Coordination service is not configured' });
+    try {
+      const { runId } = request.params as { runId: string };
+      return reply.send(coordinationRunSchema.parse(coordinationService.reconcileRun(runId)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/coordination-runs/:runId/cancel', async (request, reply) => {
+    if (!coordinationService) return reply.status(503).send({ message: 'Coordination service is not configured' });
+    try {
+      const { runId } = request.params as { runId: string };
+      const body = request.body as { reason?: unknown } | null;
+      const reason = typeof body?.reason === 'string' && body.reason.trim() ? body.reason.trim() : 'cancelled by caller';
+      return reply.send(coordinationRunSchema.parse(coordinationService.cancelRun(runId, reason)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/agent-scorecards', async (request, reply) => {
+    if (!coordinationService) return reply.status(503).send({ message: 'Coordination service is not configured' });
+    const query = request.query as { runtime_target_ref?: string; task_type?: string };
+    return reply.send(coordinationScorecardListResponseSchema.parse({
+      scorecards: coordinationService.listScorecards(query.runtime_target_ref, query.task_type),
+    }));
+  });
+
+  app.post('/api/artifacts', async (request, reply) => {
+    if (!artifactService) return reply.status(503).send({ message: 'Artifact service is not configured' });
+    try {
+      return reply.status(201).send(artifactSchema.parse(artifactService.create(createArtifactRequestSchema.parse(request.body))));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/artifacts', async (request, reply) => {
+    if (!artifactService) return reply.status(503).send({ message: 'Artifact service is not configured' });
+    const query = request.query as { owner_kind?: string; owner_ref?: string; limit?: string };
+    const limit = query.limit ? Math.min(200, Math.max(1, Number.parseInt(query.limit, 10))) : 100;
+    return reply.send(artifactListResponseSchema.parse({ artifacts: artifactService.list(query.owner_kind, query.owner_ref, limit) }));
+  });
+
+  app.get('/api/artifacts/:artifactId', async (request, reply) => {
+    if (!artifactService) return reply.status(503).send({ message: 'Artifact service is not configured' });
+    try {
+      const { artifactId } = request.params as { artifactId: string };
+      return reply.send(artifactSchema.parse(artifactService.get(artifactId)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/artifacts/:artifactId/content', async (request, reply) => {
+    if (!artifactService) return reply.status(503).send({ message: 'Artifact service is not configured' });
+    try {
+      const { artifactId } = request.params as { artifactId: string };
+      const artifact = artifactService.get(artifactId);
+      return reply.type(artifact.media_type).send(artifactService.content(artifactId));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/memories', async (request, reply) => {
+    if (!memoryService) return reply.status(503).send({ message: 'Memory service is not configured' });
+    try {
+      return reply.status(201).send(memoryEntrySchema.parse(memoryService.create(createMemoryEntryRequestSchema.parse(request.body))));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/memories/query', async (request, reply) => {
+    if (!memoryService) return reply.status(503).send({ message: 'Memory service is not configured' });
+    try {
+      return reply.send(memoryListResponseSchema.parse({ entries: memoryService.query(memoryQuerySchema.parse(request.body)) }));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/memories/:memoryId', async (request, reply) => {
+    if (!memoryService) return reply.status(503).send({ message: 'Memory service is not configured' });
+    try {
+      const { memoryId } = request.params as { memoryId: string };
+      return reply.send(memoryEntrySchema.parse(memoryService.get(memoryId)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/runtime-nodes/:nodeId/credentials', async (request, reply) => {
+    if (!runtimeNodeCredentialService) return reply.status(503).send({ message: 'Runtime node credential service is not configured' });
+    if (!requireControlPlaneAdmin(request, reply, dashboardSessions, apiAuth, dashboardAuth)) return;
+    try {
+      const { nodeId } = request.params as { nodeId: string };
+      const input = issueRuntimeNodeCredentialRequestSchema.parse(request.body);
+      return reply.status(201).send(issuedRuntimeNodeCredentialSchema.parse(runtimeNodeCredentialService.issue(nodeId, {
+        scopes: input.scopes,
+        ...(input.expires_in_seconds === undefined ? {} : { expires_in_seconds: input.expires_in_seconds }),
+        ...(input.label === undefined ? {} : { label: input.label }),
+      })));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/runtime-nodes/:nodeId/credentials', async (request, reply) => {
+    if (!runtimeNodeCredentialService) return reply.status(503).send({ message: 'Runtime node credential service is not configured' });
+    if (!requireControlPlaneAdmin(request, reply, dashboardSessions, apiAuth, dashboardAuth)) return;
+    const { nodeId } = request.params as { nodeId: string };
+    return reply.send(runtimeNodeCredentialListResponseSchema.parse({ credentials: runtimeNodeCredentialService.list(nodeId) }));
+  });
+
+  app.post('/api/runtime-nodes/:nodeId/credentials/:credentialId/rotate', async (request, reply) => {
+    if (!runtimeNodeCredentialService) return reply.status(503).send({ message: 'Runtime node credential service is not configured' });
+    if (!requireControlPlaneAdmin(request, reply, dashboardSessions, apiAuth, dashboardAuth)) return;
+    try {
+      const { nodeId, credentialId } = request.params as { nodeId: string; credentialId: string };
+      return reply.send(issuedRuntimeNodeCredentialSchema.parse(runtimeNodeCredentialService.rotate(nodeId, credentialId)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/runtime-nodes/:nodeId/credentials/:credentialId/revoke', async (request, reply) => {
+    if (!runtimeNodeCredentialService) return reply.status(503).send({ message: 'Runtime node credential service is not configured' });
+    if (!requireControlPlaneAdmin(request, reply, dashboardSessions, apiAuth, dashboardAuth)) return;
+    try {
+      const { nodeId, credentialId } = request.params as { nodeId: string; credentialId: string };
+      return reply.send(runtimeNodeCredentialSchema.parse(runtimeNodeCredentialService.revoke(nodeId, credentialId)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/merge-proposals', async (request, reply) => {
+    if (!mergeCoordinatorService) return reply.status(503).send({ message: 'Merge coordinator service is not configured' });
+    try {
+      return reply.status(201).send(mergeProposalSchema.parse(mergeCoordinatorService.create(createMergeProposalRequestSchema.parse(request.body))));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/merge-proposals', async (request, reply) => {
+    if (!mergeCoordinatorService) return reply.status(503).send({ message: 'Merge coordinator service is not configured' });
+    const query = request.query as { project_id?: string; limit?: string };
+    const limit = query.limit ? Math.min(200, Math.max(1, Number.parseInt(query.limit, 10))) : 100;
+    return reply.send(mergeProposalListResponseSchema.parse({ proposals: mergeCoordinatorService.list(query.project_id, limit) }));
+  });
+
+  app.get('/api/merge-proposals/:proposalId', async (request, reply) => {
+    if (!mergeCoordinatorService) return reply.status(503).send({ message: 'Merge coordinator service is not configured' });
+    try {
+      const { proposalId } = request.params as { proposalId: string };
+      return reply.send(mergeProposalSchema.parse(mergeCoordinatorService.get(proposalId)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/merge-proposals/:proposalId/decision', async (request, reply) => {
+    if (!mergeCoordinatorService) return reply.status(503).send({ message: 'Merge coordinator service is not configured' });
+    const session = requireDashboardAdminSession(request, reply, dashboardSessions);
+    if (!session) return;
+    try {
+      const { proposalId } = request.params as { proposalId: string };
+      const input = decideMergeProposalRequestSchema.parse(request.body);
+      return reply.send(mergeProposalSchema.parse(mergeCoordinatorService.decide(proposalId, session.username, input.decision, input.reason)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/merge-proposals/:proposalId/execute', async (request, reply) => {
+    if (!mergeCoordinatorService) return reply.status(503).send({ message: 'Merge coordinator service is not configured' });
+    const session = requireDashboardAdminSession(request, reply, dashboardSessions);
+    if (!session) return;
+    try {
+      const { proposalId } = request.params as { proposalId: string };
+      return reply.send(mergeProposalSchema.parse(mergeCoordinatorService.execute(proposalId)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/.well-known/agent-card.json', async (_request, reply) => {
+    if (!a2aGatewayService) return reply.status(503).send({ message: 'A2A gateway service is not configured' });
+    return reply.type('application/a2a+json').send(a2aAgentCardSchema.parse(a2aGatewayService.agentCard()));
+  });
+
+  app.post('/a2a/message:send', async (request, reply) => {
+    if (!a2aGatewayService) return reply.status(503).send({ message: 'A2A gateway service is not configured' });
+    try {
+      return reply.status(201).type('application/a2a+json').send(a2aTaskSchema.parse(a2aGatewayService.sendMessage(a2aSendMessageRequestSchema.parse(request.body))));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/a2a/tasks/:taskId', async (request, reply) => {
+    if (!a2aGatewayService) return reply.status(503).send({ message: 'A2A gateway service is not configured' });
+    try {
+      const { taskId } = request.params as { taskId: string };
+      return reply.type('application/a2a+json').send(a2aTaskSchema.parse(a2aGatewayService.getTask(taskId)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/a2a/tasks/*', async (request, reply) => {
+    if (!a2aGatewayService) return reply.status(503).send({ message: 'A2A gateway service is not configured' });
+    try {
+      const raw = (request.params as { '*': string })['*'];
+      if (!raw.endsWith(':cancel')) throw new NotFoundError('A2A task operation not found');
+      const taskId = raw.slice(0, -':cancel'.length);
+      if (!taskId) throw new TypeError('A2A task id is required');
+      return reply.type('application/a2a+json').send(a2aTaskSchema.parse(a2aGatewayService.cancelTask(taskId)));
     } catch (error) {
       const translated = translateError(error);
       return reply.status(translated.statusCode).send(translated.body);

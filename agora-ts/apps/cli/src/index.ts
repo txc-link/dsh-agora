@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
@@ -67,6 +68,11 @@ import {
   ReferenceBundleService,
   type RetrievalService,
   RuntimeTargetService,
+  type CoordinationService,
+  type ArtifactService,
+  type MemoryService,
+  type RuntimeNodeCredentialService,
+  type MergeCoordinatorService,
   isDeveloperRegressionEnabled,
 } from '@agora-ts/core';
 import { OpenAiCompatibleProjectBrainEmbeddingAdapter } from '@agora-ts/adapters-brain';
@@ -110,6 +116,9 @@ import type {
   TemplateDetailDto,
   TemplateGraphDto,
   ValidateWorkflowRequestDto,
+  CoordinationModeDto,
+  CoordinationRunStatusDto,
+  MemoryScopeDto,
 } from '@agora-ts/contracts';
 import {
   craftsmanExecutionSendKeysRequestSchema,
@@ -122,6 +131,11 @@ import {
   currentImContextResolveRequestSchema,
   createSubtasksRequestSchema,
   createTaskRequestSchema,
+  createCoordinationRunRequestSchema,
+  createArtifactRequestSchema,
+  createMemoryEntryRequestSchema,
+  memoryQuerySchema,
+  createMergeProposalRequestSchema,
 } from '@agora-ts/contracts';
 import { runInitCommand } from './init-command.js';
 import { runStartCommand } from './start-command.js';
@@ -200,6 +214,11 @@ export interface CliDependencies {
   rolePackService?: RolePackService;
   dashboardQueryService?: DashboardQueryService;
   runtimeTargetService?: RuntimeTargetServiceLike;
+  coordinationService?: Pick<CoordinationService, 'createRun' | 'getRun' | 'listRuns' | 'reconcileRun' | 'cancelRun' | 'listScorecards'>;
+  artifactService?: Pick<ArtifactService, 'create' | 'get' | 'list' | 'content'>;
+  memoryService?: Pick<MemoryService, 'create' | 'get' | 'query'>;
+  runtimeNodeCredentialService?: Pick<RuntimeNodeCredentialService, 'issue' | 'list' | 'rotate' | 'revoke'>;
+  mergeCoordinatorService?: Pick<MergeCoordinatorService, 'create' | 'get' | 'list' | 'execute'>;
   ccConnectInspectionService?: CcConnectInspectionService;
   ccConnectManagementService?: CcConnectManagementService;
   ccConnectThreadSessionService?: CcConnectThreadSessionServiceLike;
@@ -612,6 +631,11 @@ export function createCliProgram(deps: CliDependencies = {}) {
   const rolePackService = createLazyObject(() => deps.rolePackService ?? resolveComposition().rolePackService);
   const dashboardQueryService = createLazyObject(() => deps.dashboardQueryService ?? resolveComposition().dashboardQueryService);
   const getRuntimeTargetService = () => deps.runtimeTargetService ?? createDefaultRuntimeTargetService(resolveComposition().db);
+  const coordinationService = createLazyObject(() => deps.coordinationService ?? resolveComposition().coordinationService);
+  const artifactService = createLazyObject(() => deps.artifactService ?? resolveComposition().artifactService);
+  const memoryService = createLazyObject(() => deps.memoryService ?? resolveComposition().memoryService);
+  const runtimeNodeCredentialService = createLazyObject(() => deps.runtimeNodeCredentialService ?? resolveComposition().runtimeNodeCredentialService);
+  const mergeCoordinatorService = createLazyObject(() => deps.mergeCoordinatorService ?? resolveComposition().mergeCoordinatorService);
   const getCcConnectInspectionService = () => deps.ccConnectInspectionService ?? new CcConnectInspectionService();
   const getCcConnectManagementService = () => deps.ccConnectManagementService ?? new CcConnectManagementService();
   const getImProvisioningPort = () => deps.imProvisioningPort ?? resolveComposition().imProvisioningPort;
@@ -781,6 +805,137 @@ export function createCliProgram(deps: CliDependencies = {}) {
         `escalation: controller=${snapshot.escalation.controller_pinged_tasks} roster=${snapshot.escalation.roster_pinged_tasks} inbox=${snapshot.escalation.inbox_escalated_tasks} runtime_unhealthy=${snapshot.escalation.runtime_unhealthy} status=${snapshot.escalation.status}`,
       );
     });
+
+  const coordination = program.command('coordination').description('budgeted multi-agent coordination');
+  coordination
+    .command('create')
+    .description('create and dispatch a coordination run')
+    .argument('<prompt...>', 'coordination prompt')
+    .requiredOption('--mode <mode>', 'single|fanout|review|debate|council')
+    .requiredOption('--agent <runtimeTargetRef>', 'candidate runtime target (repeatable)', collectOption, [])
+    .option('--task-id <taskId>', 'related Agora task id')
+    .option('--task-type <taskType>', 'scorecard task type', 'general')
+    .option('--verifier <runtimeTargetRef>', 'explicit verifier target')
+    .option('--max-agents <count>', 'maximum selected agents', parseIntegerOption)
+    .option('--max-dispatches <count>', 'maximum dispatches', parseIntegerOption)
+    .option('--max-seconds <seconds>', 'wall-clock budget', parseIntegerOption)
+    .option('--max-tokens <count>', 'token budget', parseIntegerOption)
+    .option('--max-tool-calls <count>', 'tool-call budget', parseIntegerOption)
+    .option('--max-cost-usd <amount>', 'cost budget in USD', Number)
+    .option('--memory-scope <scope>', 'task|agent_private|project_shared|decision|episodic (repeatable)', collectOption, [])
+    .option('--idempotency-key <key>', 'stable replay key')
+    .option('--metadata-json <json>', 'coordination metadata JSON')
+    .action((prompt: string[], options: {
+      mode: CoordinationModeDto; agent: string[]; taskId?: string; taskType: string; verifier?: string;
+      maxAgents?: number; maxDispatches?: number; maxSeconds?: number; maxTokens?: number;
+      maxToolCalls?: number; maxCostUsd?: number; memoryScope: MemoryScopeDto[]; idempotencyKey?: string; metadataJson?: string;
+    }) => {
+      const budget = {
+        ...(options.maxAgents === undefined ? {} : { max_agents: options.maxAgents }),
+        ...(options.maxDispatches === undefined ? {} : { max_dispatches: options.maxDispatches }),
+        ...(options.maxSeconds === undefined ? {} : { max_wall_clock_seconds: options.maxSeconds }),
+        ...(options.maxTokens === undefined ? {} : { max_tokens: options.maxTokens }),
+        ...(options.maxToolCalls === undefined ? {} : { max_tool_calls: options.maxToolCalls }),
+        ...(options.maxCostUsd === undefined ? {} : { max_cost_usd: options.maxCostUsd }),
+      };
+      const input = createCoordinationRunRequestSchema.parse({
+        prompt: prompt.join(' '), mode: options.mode,
+        candidates: options.agent.map(runtime_target_ref => ({ runtime_target_ref })),
+        task_type: options.taskType,
+        ...(options.taskId ? { task_id: options.taskId } : {}),
+        ...(options.verifier ? { verifier_target_ref: options.verifier } : {}),
+        ...(Object.keys(budget).length > 0 ? { budget } : {}),
+        memory_scopes: options.memoryScope,
+        idempotency_key: options.idempotencyKey ?? `cli:${randomUUID()}`,
+        metadata: parseJsonOption(options.metadataJson, '--metadata-json'),
+      });
+      writeLine(stdout, JSON.stringify(coordinationService.createRun(input), null, 2));
+    });
+  coordination.command('list').option('--status <status>', 'filter by status').option('--limit <count>', 'maximum rows', parseIntegerOption, 100)
+    .action((options: { status?: CoordinationRunStatusDto; limit: number }) => {
+      writeLine(stdout, JSON.stringify(coordinationService.listRuns(options.status, options.limit), null, 2));
+    });
+  coordination.command('show').argument('<runId>').action((runId: string) => writeLine(stdout, JSON.stringify(coordinationService.getRun(runId), null, 2)));
+  coordination.command('reconcile').argument('<runId>').action((runId: string) => writeLine(stdout, JSON.stringify(coordinationService.reconcileRun(runId), null, 2)));
+  coordination.command('cancel').argument('<runId>').option('--reason <reason>', 'cancellation reason', 'cancelled through CLI')
+    .action((runId: string, options: { reason: string }) => writeLine(stdout, JSON.stringify(coordinationService.cancelRun(runId, options.reason), null, 2)));
+  coordination.command('scorecards').option('--target <runtimeTargetRef>').option('--task-type <taskType>')
+    .action((options: { target?: string; taskType?: string }) => writeLine(stdout, JSON.stringify(coordinationService.listScorecards(options.target, options.taskType), null, 2)));
+
+  const artifacts = program.command('artifacts').description('content-addressed coordination artifacts');
+  artifacts.command('put').requiredOption('--file <path>').requiredOption('--name <name>').requiredOption('--kind <kind>')
+    .requiredOption('--media-type <mediaType>').requiredOption('--owner-kind <ownerKind>').requiredOption('--owner-ref <ownerRef>')
+    .option('--metadata-json <json>')
+    .action((options: { file: string; name: string; kind: string; mediaType: string; ownerKind: string; ownerRef: string; metadataJson?: string }) => {
+      const input = createArtifactRequestSchema.parse({
+        name: options.name, kind: options.kind, media_type: options.mediaType,
+        content_base64: readFileSync(resolve(options.file)).toString('base64'), owner_kind: options.ownerKind,
+        owner_ref: options.ownerRef, metadata: parseJsonOption(options.metadataJson, '--metadata-json'),
+      });
+      writeLine(stdout, JSON.stringify(artifactService.create(input), null, 2));
+    });
+  artifacts.command('list').option('--owner-kind <kind>').option('--owner-ref <ref>').option('--limit <count>', '', parseIntegerOption, 100)
+    .action((options: { ownerKind?: string; ownerRef?: string; limit: number }) => writeLine(stdout, JSON.stringify(artifactService.list(options.ownerKind, options.ownerRef, options.limit), null, 2)));
+  artifacts.command('show').argument('<artifactId>').action((artifactId: string) => writeLine(stdout, JSON.stringify(artifactService.get(artifactId), null, 2)));
+  artifacts.command('content').argument('<artifactId>').option('--base64', 'emit base64 instead of UTF-8')
+    .action((artifactId: string, options: { base64?: boolean }) => {
+      const bytes = artifactService.content(artifactId); writeLine(stdout, options.base64 ? bytes.toString('base64') : bytes.toString('utf8'));
+    });
+
+  const memory = program.command('memory').description('layered scoped memory');
+  memory.command('add').argument('<content...>').requiredOption('--scope <scope>').requiredOption('--owner <ownerRef>')
+    .requiredOption('--visibility <visibility>').option('--project-id <projectId>').option('--task-id <taskId>')
+    .option('--agent <agentRef>').option('--ttl-seconds <seconds>', '', parseIntegerOption)
+    .option('--source-kind <kind>', '', 'human').option('--source-ref <ref>').option('--metadata-json <json>')
+    .action((content: string[], options: { scope: MemoryScopeDto; owner: string; visibility: string; projectId?: string; taskId?: string; agent?: string; ttlSeconds?: number; sourceKind: string; sourceRef?: string; metadataJson?: string }) => {
+      const input = createMemoryEntryRequestSchema.parse({
+        scope: options.scope, content: content.join(' '), owner_ref: options.owner, visibility: options.visibility,
+        ...(options.projectId ? { project_id: options.projectId } : {}), ...(options.taskId ? { task_id: options.taskId } : {}),
+        ...(options.agent ? { agent_ref: options.agent } : {}), ...(options.ttlSeconds ? { ttl_seconds: options.ttlSeconds } : {}),
+        source: { kind: options.sourceKind, ...(options.sourceRef ? { ref: options.sourceRef } : {}) },
+        artifact_ids: [], evidence_ids: [], metadata: parseJsonOption(options.metadataJson, '--metadata-json'),
+      });
+      writeLine(stdout, JSON.stringify(memoryService.create(input), null, 2));
+    });
+  memory.command('query').requiredOption('--scope <scope>', 'repeatable', collectOption, [])
+    .option('--project-id <projectId>').option('--task-id <taskId>').option('--agent <agentRef>').option('--owner <ownerRef>')
+    .option('--limit <count>', '', parseIntegerOption, 50)
+    .action((options: { scope: MemoryScopeDto[]; projectId?: string; taskId?: string; agent?: string; owner?: string; limit: number }) => {
+      const input = memoryQuerySchema.parse({ scopes: options.scope, project_id: options.projectId, task_id: options.taskId, agent_ref: options.agent, owner_ref: options.owner, limit: options.limit });
+      writeLine(stdout, JSON.stringify(memoryService.query(input), null, 2));
+    });
+  memory.command('show').argument('<memoryId>').action((memoryId: string) => writeLine(stdout, JSON.stringify(memoryService.get(memoryId), null, 2)));
+
+  const credentials = program.command('node-credentials').description('scoped runtime-node credentials');
+  credentials.command('issue').argument('<nodeId>').requiredOption('--scope <scope>', 'heartbeat|dispatch|delivery (repeatable)', collectOption, [])
+    .option('--expires-seconds <seconds>', '', parseIntegerOption).option('--label <label>')
+    .action((nodeId: string, options: { scope: Array<'heartbeat' | 'dispatch' | 'delivery'>; expiresSeconds?: number; label?: string }) => {
+      writeLine(stdout, JSON.stringify(runtimeNodeCredentialService.issue(nodeId, {
+        scopes: options.scope, ...(options.expiresSeconds ? { expires_in_seconds: options.expiresSeconds } : {}), ...(options.label ? { label: options.label } : {}),
+      }), null, 2));
+    });
+  credentials.command('list').argument('<nodeId>').action((nodeId: string) => writeLine(stdout, JSON.stringify(runtimeNodeCredentialService.list(nodeId), null, 2)));
+  credentials.command('rotate').argument('<nodeId>').argument('<credentialId>').action((nodeId: string, credentialId: string) => writeLine(stdout, JSON.stringify(runtimeNodeCredentialService.rotate(nodeId, credentialId), null, 2)));
+  credentials.command('revoke').argument('<nodeId>').argument('<credentialId>').action((nodeId: string, credentialId: string) => writeLine(stdout, JSON.stringify(runtimeNodeCredentialService.revoke(nodeId, credentialId), null, 2)));
+
+  const merge = program.command('merge').description('governed sandbox merge proposals');
+  merge.command('propose').requiredOption('--task-id <taskId>').requiredOption('--project-id <projectId>')
+    .requiredOption('--base <revision>').requiredOption('--head <revision>').requiredOption('--worktree <path>')
+    .requiredOption('--summary <summary>').requiredOption('--validation-artifact <id>', 'repeatable', collectOption, [])
+    .requiredOption('--requested-by <actor>').option('--metadata-json <json>')
+    .action((options: { taskId: string; projectId: string; base: string; head: string; worktree: string; summary: string; validationArtifact: string[]; requestedBy: string; metadataJson?: string }) => {
+      const input = createMergeProposalRequestSchema.parse({
+        task_id: options.taskId, project_id: options.projectId, base_revision: options.base, head_revision: options.head,
+        worktree_path: options.worktree, diff_summary: options.summary, validation_artifact_ids: options.validationArtifact,
+        requested_by: options.requestedBy, metadata: parseJsonOption(options.metadataJson, '--metadata-json'),
+      });
+      writeLine(stdout, JSON.stringify(mergeCoordinatorService.create(input), null, 2));
+    });
+  merge.command('list').option('--project-id <projectId>').option('--limit <count>', '', parseIntegerOption, 100)
+    .action((options: { projectId?: string; limit: number }) => writeLine(stdout, JSON.stringify(mergeCoordinatorService.list(options.projectId, options.limit), null, 2)));
+  merge.command('show').argument('<proposalId>').action((proposalId: string) => writeLine(stdout, JSON.stringify(mergeCoordinatorService.get(proposalId), null, 2)));
+  merge.command('execute').argument('<proposalId>').description('execute a proposal already approved in the authenticated Dashboard')
+    .action((proposalId: string) => writeLine(stdout, JSON.stringify(mergeCoordinatorService.execute(proposalId), null, 2)));
 
   program
     .command('create')

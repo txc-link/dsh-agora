@@ -89,6 +89,7 @@ describe('agora-ts sqlite bootstrap', () => {
       '029_runtime_dispatch_leases.sql',
       '030_runtime_dispatch_delivery_outbox.sql',
       '031_runtime_dispatch_progress.sql',
+      '032_coordination_federation.sql',
     ]);
     const taskTable = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tasks'")

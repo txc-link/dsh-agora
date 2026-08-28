@@ -219,6 +219,8 @@ dsh plugin --profile web add /absolute/path/to/Agora/extensions/dsh-agora
 
 See [Doc/dsh-integration.md](Doc/dsh-integration.md) for the command surface, security boundary, and the versioned dsh-im collaboration contract.
 
+The DSH adapter also exposes durable budgeted coordination (`single`, `fanout`, `review`, `debate`, `council`), evidence/conflict synthesis, Agent Scorecards, scoped node credentials, layered memory, content-addressed artifacts, governed merge proposals, and an A2A 1.0 HTTP+JSON boundary. The complete operator guide is in [extensions/dsh-agora/README.md](extensions/dsh-agora/README.md); the design boundary is recorded in [Doc/03-ARCHITECTURE/dsh-agora-coordination-and-federation-v1.md](Doc/03-ARCHITECTURE/dsh-agora-coordination-and-federation-v1.md).
+
 If you want semantic `project brain` retrieval, `./agora init` now offers an optional setup phase that:
 
 - collects your embedding API settings

@@ -56,6 +56,34 @@ test('dispatch status separates lease liveness from meaningful progress and evid
   assert.match(result.text, /Evidence: 1 item\(s\), 1 claim\(s\)/)
 })
 
+test('run command creates a budgeted coordination strategy', async () => {
+  let input
+  const service = fakeService({
+    createCoordinationRun: async value => {
+      input = value
+      return coordinationRun(value.mode)
+    },
+  })
+  const result = await executeAgoraCommand(service, 'run --mode council --agents dsh:a:one,dsh:b:two --max-agents 2 --max-dispatches 3 --max-seconds 600 inspect repository')
+  assert.equal(result.kind, 'success')
+  assert.deepEqual(input, {
+    mode: 'council',
+    candidates: [{ runtime_target_ref: 'dsh:a:one' }, { runtime_target_ref: 'dsh:b:two' }],
+    prompt: 'inspect repository',
+    task_type: 'general',
+    budget: { max_agents: 2, max_dispatches: 3, max_wall_clock_seconds: 600 },
+    idempotency_key: input.idempotency_key,
+    metadata: null,
+  })
+})
+
+test('im status advertises the first-party command adapter without third-party gateway support', async () => {
+  const result = await executeAgoraCommand(fakeService(), 'im')
+  assert.equal(result.kind, 'success')
+  assert.match(result.text, /First-party command adapter: ready/)
+  assert.match(result.text, /Command gateway: unavailable/)
+})
+
 function fakeService(overrides = {}) {
   return {
     serverUrl: 'http://agora.test',
@@ -65,9 +93,28 @@ function fakeService(overrides = {}) {
     taskStatus: async id => ({ task: task(id, 'Task'), flow_log: [], progress_log: [], subtasks: [] }),
     createTask: async input => task('OC-1', input.title),
     listRuntimeDispatchProgress: async () => [],
+    createCoordinationRun: async () => ({ id: 'run-1', status: 'running', mode: 'fanout', members: [], stop_reason: null }),
+    getCoordinationRun: async () => ({ id: 'run-1', status: 'running', mode: 'fanout', members: [], stop_reason: null }),
+    listCoordinationRuns: async () => [],
+    listAgentScorecards: async () => [],
     executeCommand: async () => ({ kind: 'success' }),
-    snapshot: () => ({ serverUrl: 'http://agora.test', command: '/agora', im: { state: 'unavailable', reason: 'none' } }),
+    snapshot: () => ({
+      serverUrl: 'http://agora.test', command: '/agora',
+      im: { state: 'unavailable', reason: 'none' },
+      imBridge: { state: 'unavailable', reason: 'none' },
+      commandAdapter: { state: 'ready', protocol: 'dsh-agora.command-adapter/v1' },
+      node: { state: 'disabled', nodeId: 'test' }, extensions: [],
+    }),
     ...overrides,
+  }
+}
+
+function coordinationRun(mode = 'fanout') {
+  return {
+    id: 'run-1', status: 'running', mode, members: [], stop_reason: null,
+    deadline_at: '2026-08-28T01:00:00.000Z',
+    usage: { input_tokens: null, output_tokens: null, total_tokens: null, tool_calls: null, cost_usd: null, duration_ms: null },
+    synthesis: null,
   }
 }
 

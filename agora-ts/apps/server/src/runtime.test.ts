@@ -90,6 +90,8 @@ function mockRuntimeModules(existsSyncImpl: (path: string) => boolean) {
     ArchiveJobRepository: class ArchiveJobRepository {},
     CraftsmanExecutionRepository: class CraftsmanExecutionRepository {},
     ProjectBrainIndexJobRepository: class ProjectBrainIndexJobRepository {},
+    CoordinationRepository: class CoordinationRepository {},
+    FederationRepository: class FederationRepository {},
     RuntimeTargetOverlayRepository: class RuntimeTargetOverlayRepository {},
     SubtaskRepository: class SubtaskRepository {},
   }));
@@ -100,6 +102,13 @@ function mockRuntimeModules(existsSyncImpl: (path: string) => boolean) {
     LiveSessionStore: class LiveSessionStore {},
     ProjectBrainDoctorService: class ProjectBrainDoctorService {},
     ProjectBrainIndexQueueService: class ProjectBrainIndexQueueService {},
+    ArtifactService: class ArtifactService {},
+    CoordinationService: class CoordinationService {
+      reconcileActiveRuns() {}
+    },
+    MemoryService: class MemoryService {},
+    MergeCoordinatorService: class MergeCoordinatorService {},
+    RuntimeNodeCredentialService: class RuntimeNodeCredentialService {},
     RuntimeTargetService: class RuntimeTargetService {},
     TaskService: class TaskService {
       startupRecoveryScan() {}

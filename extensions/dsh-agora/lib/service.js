@@ -1,9 +1,11 @@
 import { AgoraClient } from './agora-client.js';
 import { executeAgoraCommand } from './command.js';
 import { DshAgoraExtensionRegistry } from './extension-sdk.js';
+import { DshAgoraCommandAdapter } from './command-adapter.js';
 export class DshAgoraService {
     options;
     registry;
+    commandAdapter;
     imStatus = {
         state: 'unavailable',
         reason: 'dsh-im command gateway discovery has not run',
@@ -19,6 +21,10 @@ export class DshAgoraService {
         this.registry = options.registry ?? new DshAgoraExtensionRegistry();
         this.imBridge = options.imBridge ?? null;
         this.nodeStatus = { state: 'disabled', nodeId: options.nodeId ?? 'unconfigured' };
+        this.commandAdapter = new DshAgoraCommandAdapter({
+            execute: (input, context, signal) => this.executeCommand(input, context, signal),
+            bridge: () => this.imBridge,
+        });
     }
     get serverUrl() {
         return this.options.client.serverUrl;
@@ -55,6 +61,18 @@ export class DshAgoraService {
     }
     listRuntimeDispatchProgress(dispatchId, signal) {
         return this.options.client.listRuntimeDispatchProgress(dispatchId, signal);
+    }
+    createCoordinationRun(input, signal) {
+        return this.options.client.createCoordinationRun(input, signal);
+    }
+    getCoordinationRun(runId, signal) {
+        return this.options.client.getCoordinationRun(runId, signal);
+    }
+    listCoordinationRuns(status, signal) {
+        return this.options.client.listCoordinationRuns(status, signal);
+    }
+    listAgentScorecards(taskType, signal) {
+        return this.options.client.listAgentScorecards(taskType, signal);
     }
     async dispatchAgent(input, signal) {
         const { nodeId } = parseDshRuntimeTarget(input.runtime_target_ref);
@@ -102,8 +120,8 @@ export class DshAgoraService {
     bindRuntimeSession(taskId, participantBindingId, sessionId, agentRef, signal) {
         return this.options.client.bindRuntimeSession(taskId, participantBindingId, sessionId, agentRef, signal);
     }
-    registerExtension(extension) {
-        return this.registry.registerExtension(extension);
+    registerExtension(extension, manifest, packageBytes) {
+        return this.registry.registerExtension(extension, manifest, packageBytes);
     }
     listExtensions() {
         return this.registry.listExtensions();
@@ -111,12 +129,16 @@ export class DshAgoraService {
     executeCommand(rawInput, context = {}, signal) {
         return executeAgoraCommand(this, rawInput, context, signal);
     }
+    executeCommandEvent(event, signal) {
+        return this.commandAdapter.ingest(event, signal);
+    }
     snapshot() {
         return {
             serverUrl: this.serverUrl,
             command: `/${this.options.commandName}`,
             im: this.imStatus,
             imBridge: this.imBridgeStatus,
+            commandAdapter: { state: 'ready', protocol: this.commandAdapter.protocol },
             node: this.nodeStatus,
             extensions: this.registry.listExtensions().map(extension => ({
                 id: extension.id,
