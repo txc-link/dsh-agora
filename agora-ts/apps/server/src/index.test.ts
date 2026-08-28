@@ -31,6 +31,7 @@ describe('server index wiring', () => {
       configPath,
       JSON.stringify({
         db_path: dbPath,
+        api_auth: { enabled: false, token: 'test-token' },
       }),
     );
     const runtime = createServerRuntime({ configPath });
@@ -48,7 +49,10 @@ describe('server index wiring', () => {
   it('passes the runtime node registry from runtime into buildApp', async () => {
     const dir = makeTempDir();
     const configPath = join(dir, 'agora.json');
-    writeFileSync(configPath, JSON.stringify({ db_path: join(dir, 'runtime.db') }));
+    writeFileSync(configPath, JSON.stringify({
+      db_path: join(dir, 'runtime.db'),
+      api_auth: { enabled: false, token: 'test-token' },
+    }));
     const runtime = createServerRuntime({ configPath });
     const app = createAppFromRuntime(runtime);
 
