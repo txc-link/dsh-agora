@@ -40,6 +40,15 @@ describe('Mem0RestAdapter.add', () => {
     await expect(adapter.add({ scopeRef: 'g', agentRef: 'a', kind: 'fact', text: 'x' }))
       .rejects.toThrow(/mem0 auth failed/);
   });
+
+  it('mem0 API key (m0sk_ 前缀) → X-API-Key header 而非 Bearer', async () => {
+    const { impl, calls } = makeFetch({ body: { results: [{ id: 'm2' }] } });
+    const adapter = new Mem0RestAdapter({ baseUrl: 'http://x:8888', token: 'm0sk_abc123def456', fetchImpl: impl });
+    await adapter.add({ scopeRef: 'g', agentRef: 'a', kind: 'fact', text: 'x' });
+    const headers = calls[0].init.headers as Record<string, string>;
+    expect(headers['X-API-Key']).toBe('m0sk_abc123def456');
+    expect(headers.Authorization).toBeUndefined();
+  });
 });
 
 describe('Mem0RestAdapter.search / list', () => {

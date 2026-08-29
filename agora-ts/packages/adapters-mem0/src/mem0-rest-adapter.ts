@@ -52,7 +52,11 @@ export class Mem0RestAdapter implements GroupMemoryPort {
 
   private headers(): Record<string, string> {
     const h: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (this.token) h.Authorization = `Bearer ${this.token}`;
+    if (this.token) {
+      // mem0 REST 约定: JWT 走 Bearer, API key (m0sk_ 前缀) 走 X-API-Key (server/auth.py verify_auth)
+      if (this.token.startsWith('m0sk_')) h['X-API-Key'] = this.token;
+      else h.Authorization = `Bearer ${this.token}`;
+    }
     return h;
   }
 
