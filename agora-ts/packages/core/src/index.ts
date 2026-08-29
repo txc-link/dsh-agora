@@ -427,6 +427,8 @@ export type {
 export { GroupMemoryService } from './group-memory-service.js';
 export { TeamService } from './team-service.js';
 export { OrgHierarchyResolver } from './org-hierarchy-resolver.js';
+export { DelegateRouter } from './delegate-router.js';
+export type { DelegateNotifyPayload, DelegateSubtreeInput, DelegateSubtreeResult, EscalateUpInput, EscalateUpResult } from './delegate-router.js';
 export type { TeamResult } from './team-service.js';
 export type { OrgTeamNode } from './org-hierarchy-resolver.js';
 

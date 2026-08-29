@@ -82,6 +82,7 @@ import {
   type GroupMemoryPort,
   TeamService,
   OrgHierarchyResolver,
+  DelegateRouter,
   AgentQuestionService,
   runTaskAskCommand,
   ThreadTaskBindingService,
@@ -1344,6 +1345,49 @@ export function createCliProgram(deps: CliDependencies = {}) {
     .requiredOption('--id <teamId>', 'team id')
     .action((options: { id: string }) => {
       const result = getTeamService().deleteTeam(options.id);
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  let delegateRouter: DelegateRouter | null = null;
+  function getDelegateRouter(): DelegateRouter {
+    if (!delegateRouter) {
+      delegateRouter = new DelegateRouter({ teamRepo: getTeamRepository(), resolver: getOrgResolver() });
+    }
+    return delegateRouter;
+  }
+
+  const delegate = program
+    .command('delegate')
+    .description('delegate tasks along the org hierarchy (org-aware-work-os S3; IM 通知通道 Phase 6 绑定)');
+
+  delegate
+    .command('subtree')
+    .description('delegate a task to all agents under a team (cycle + depth guarded)')
+    .requiredOption('--team <teamId>', 'target team id (subtree)')
+    .requiredOption('--task <taskId>', 'task id to delegate')
+    .option('--from <agentRef>', 'delegator agent ref (excluded from recipients)')
+    .option('--max-depth <n>', 'delegation depth limit', (v: string) => Number.parseInt(v, 10), undefined)
+    .action((options: { team: string; task: string; from?: string; maxDepth?: number }) => {
+      const router = options.maxDepth !== undefined
+        ? new DelegateRouter({ teamRepo: getTeamRepository(), resolver: getOrgResolver(), maxDepth: options.maxDepth })
+        : getDelegateRouter();
+      const result = router.delegateSubtree({
+        teamId: options.team,
+        taskId: options.task,
+        fromRef: options.from ?? null,
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  delegate
+    .command('escalate')
+    .description('route an issue up the chain to the nearest lead')
+    .requiredOption('--agent <agentRef>', 'escalating agent ref')
+    .option('--task <taskId>', 'related task id')
+    .action((options: { agent: string; task?: string }) => {
+      const result = getDelegateRouter().escalateUp({ agentRef: options.agent, taskId: options.task ?? null });
       writeLine(stdout, JSON.stringify(result, null, 2));
       if (!result.ok) process.exitCode = 1;
     });
