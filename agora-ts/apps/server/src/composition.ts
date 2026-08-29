@@ -46,6 +46,7 @@ import {
   TaskConversationService,
   TaskInboundService,
   InboxReplyService,
+  ThreadTaskBindingService,
   TaskContextBindingService,
   TaskParticipationService,
   RuntimeThreadMessageRouter,
@@ -105,6 +106,7 @@ import {
   TaskConversationReadCursorRepository,
   TaskConversationRepository,
   TaskRepository,
+  ThreadTaskBindingRepository,
   TemplateRepository,
   TodoRepository,
   SqliteGateCommandPort,
@@ -708,6 +710,10 @@ export function createDefaultServerCompositionFactories(): ServerCompositionFact
     createInboxReplyService: (context) => new InboxReplyService({
       conversationRepository: new TaskConversationRepository(context.db),
       taskRepository: new TaskRepository(context.db),
+      threadTaskBindingService: new ThreadTaskBindingService({
+        repo: new ThreadTaskBindingRepository(context.db),
+        taskRepo: new TaskRepository(context.db),
+      }),
     }),
     createTaskInboundService: (_context, deps) => new TaskInboundService(
       deps.taskConversationService,

@@ -19,6 +19,7 @@ import type {
   TaskConversationAuthorKind,
 } from '@agora-ts/contracts';
 import { NotFoundError } from './errors.js';
+import type { ThreadTaskBindingService } from './thread-task-binding-service.js';
 
 export interface InboxReplyInput {
   taskId: string;
@@ -41,13 +42,16 @@ export interface InboxReplyReceipt {
 export class InboxReplyService {
   private readonly conversationRepository: ITaskConversationRepository;
   private readonly taskRepository: Pick<ITaskRepository, 'getTask'>;
+  private readonly threadTaskBindingService: ThreadTaskBindingService | undefined;
 
   public constructor(options: {
     conversationRepository: ITaskConversationRepository;
     taskRepository: Pick<ITaskRepository, 'getTask'>;
+    threadTaskBindingService?: ThreadTaskBindingService;
   }) {
     this.conversationRepository = options.conversationRepository;
     this.taskRepository = options.taskRepository;
+    this.threadTaskBindingService = options.threadTaskBindingService;
   }
 
   public recordInboundReply(input: InboxReplyInput): InboxReplyReceipt {
@@ -74,6 +78,19 @@ export class InboxReplyService {
     );
     if (existing) {
       return { id: existing.id, deduped: true };
+    }
+
+    // Ensure the thread↔task binding exists when the adapter supplied an
+    // opaque threadKey (room's first reply auto-binds). No-op when the
+    // binding service is not wired (in-memory / test compositions).
+    if (input.threadTaskBindingKey && this.threadTaskBindingService) {
+      const bound = this.threadTaskBindingService.getByThreadKey(input.threadTaskBindingKey);
+      if (!bound) {
+        this.threadTaskBindingService.bind({
+          threadKey: input.threadTaskBindingKey,
+          taskId: input.taskId,
+        });
+      }
     }
 
     const entry = this.conversationRepository.insert({

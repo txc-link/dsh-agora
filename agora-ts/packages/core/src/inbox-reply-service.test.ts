@@ -173,4 +173,72 @@ describe('InboxReplyService', () => {
       service.recordInboundReply(makeInput({ providerMessageRef: '' })),
     ).toThrow(/provider message ref/i);
   });
+
+  it('auto-binds threadTaskBindingKey when the binding does not exist yet', () => {
+    const tasks = new Map<string, TaskRecord>();
+    tasks.set('T-1', {
+      id: 'T-1', version: 1, title: 'demo', description: null, type: 'oneoff',
+      priority: 'normal', creator: 'user:txc-link', locale: 'zh-CN', project_id: null,
+      state: 'pending', archive_status: null, current_stage: null, skill_policy: null,
+      team: { members: [] },
+      workflow: { stages: [], graph: { graph_version: 1, entry_nodes: [], nodes: [], edges: [] } },
+      control: null, scheduler: null, scheduler_snapshot: null, discord: null, metrics: null,
+      error_detail: null, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+    });
+    const bound: Array<{ threadKey: string; taskId: string }> = [];
+    const stubBindingService = {
+      getByThreadKey: () => undefined,
+      bind: (input: { threadKey: string; taskId: string }) => {
+        bound.push(input);
+        return { thread_key: input.threadKey, task_id: input.taskId, created_at: '', updated_at: '' };
+      },
+    } as unknown as ConstructorParameters<typeof InboxReplyService>[0]['threadTaskBindingService'];
+
+    const conversationRepo = new StubConversationRepo();
+    const service = new InboxReplyService({
+      conversationRepository: conversationRepo,
+      taskRepository: new StubTaskRepo(tasks),
+      threadTaskBindingService: stubBindingService,
+    });
+
+    service.recordInboundReply(
+      makeInput({ threadTaskBindingKey: 'mx_abcdef', providerMessageRef: '$evt-bind' }),
+    );
+    expect(bound).toHaveLength(1);
+    expect(bound[0]).toEqual({ threadKey: 'mx_abcdef', taskId: 'T-1' });
+    expect(conversationRepo.entries[0]!.thread_task_binding_id).toBe('mx_abcdef');
+  });
+
+  it('reuses an existing binding instead of re-binding', () => {
+    const tasks = new Map<string, TaskRecord>();
+    tasks.set('T-1', {
+      id: 'T-1', version: 1, title: 'demo', description: null, type: 'oneoff',
+      priority: 'normal', creator: 'user:txc-link', locale: 'zh-CN', project_id: null,
+      state: 'pending', archive_status: null, current_stage: null, skill_policy: null,
+      team: { members: [] },
+      workflow: { stages: [], graph: { graph_version: 1, entry_nodes: [], nodes: [], edges: [] } },
+      control: null, scheduler: null, scheduler_snapshot: null, discord: null, metrics: null,
+      error_detail: null, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+    });
+    const bound: Array<{ threadKey: string; taskId: string }> = [];
+    const stubBindingService = {
+      getByThreadKey: () => ({ thread_key: 'mx_abcdef', task_id: 'T-1', created_at: '', updated_at: '' }),
+      bind: (input: { threadKey: string; taskId: string }) => {
+        bound.push(input);
+        return { thread_key: input.threadKey, task_id: input.taskId, created_at: '', updated_at: '' };
+      },
+    } as unknown as ConstructorParameters<typeof InboxReplyService>[0]['threadTaskBindingService'];
+
+    const conversationRepo = new StubConversationRepo();
+    const service = new InboxReplyService({
+      conversationRepository: conversationRepo,
+      taskRepository: new StubTaskRepo(tasks),
+      threadTaskBindingService: stubBindingService,
+    });
+
+    service.recordInboundReply(
+      makeInput({ threadTaskBindingKey: 'mx_abcdef', providerMessageRef: '$evt-reuse' }),
+    );
+    expect(bound).toHaveLength(0);
+  });
 });
