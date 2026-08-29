@@ -21,10 +21,10 @@
 ## S1 组织架构（Team / 层级 / 职责域）
 
 - [x] 调研: Core 已有 CitizenService / RolePackService / ProjectAgentRosterService / team-member-kind（turn 163）
-- [ ] `TeamService`: Team 聚合模型（lead / members / responsibility / parent）+ 持久化
-- [ ] `OrgHierarchyResolver`: reportTo / subordinates 层级解析
-- [ ] CLI: `agora org` / `agora team` 配置入口
-- [ ] 与 ProjectMembership 的关系定型（统一 or 并存）→ 未决 U6
+- [x] `TeamService`: Team 聚合模型（lead / members / responsibility / parent）+ 持久化（090ca6d, migration 038, 13 新测试）
+- [x] `OrgHierarchyResolver`: reportTo / subordinates 层级解析（090ca6d）
+- [x] CLI: `agora org` / `agora team` 配置入口（090ca6d; 冒烟 4/4）
+- [x] 与 ProjectMembership 的关系定型（统一 or 并存）→ U6 已决: **并存**（Team=组织汇报关系, ProjectMembership=项目协作关系; SSoT 2026-08-30 拍板）
 
 ## S2 主动任务接取（✅ 主体已完成 505ce4d）
 
@@ -48,7 +48,7 @@
 - [x] `adapters-mem0`: Mem0RestAdapter + `agora experience` CLI（993e7b6; 真实全链等 AGORA_MEM0_TOKEN）
 - [x] 群组维度接入点: `agora experience` 写/读（手动 CLI 口径）; forum learn 任务开始注入
 - [x] obsidian vault 分组映射（61a3b6c: ForumVaultWriter + `agora forum export --vault`; 分组 <vault>/<base>/<project>/<category>/, frontmatter tags, 评论线程, id 索引幂等; vault=本地文件夹, Obsidian 自动刷新）
-- [ ] 跨节点 L4 记忆（federation P2 实现）
+- [ ] 跨节点 L4 记忆（federation P2 实现; 留待多 homeserver 需求, 与 P3 同理由用户启动, 不做超前开发 — 2026-08-30 口径）
 
 ## S5 主动对话 push（✅ 主体已完成 d002792, 2026-08-30）
 
@@ -56,17 +56,17 @@
 - [x] `routeQuestion`: 助手优先 → CEO（assistantRef 可配置解耦 U2）
 - [x] `agora ask` CLI: {create,list,show,answer,escalate,close} — 测试 7/7 + 冒烟 7/7
 - [x] QuestionMessagingPort 推送缝（create/escalate 通知; core 零平台名）
-- [ ] IM 真实通道绑定（composition root 注入真实 adapter — 归 Phase 6 matrix transport 真实化）
+- [x] IM 真实通道绑定（2609572 adapters-matrix + 92a56b0/9c37655: live 现网 task_created 45s 自动送达 Synapse ✅ 2026-08-30）
 - [x] ResearchRequestService: 以 kind=research + answer 承载（D1 修正, 不单独建服务, 见 planning D1）
-- [ ] 调研结果自动写回共享记忆（依赖 S4）
+- [x] 调研结果自动写回共享记忆（c0e5c9a: answer(kind=research) → GroupMemoryPort.add, 真实 mem0 :8888 冒烟 scope=task:org 分区写入 ✅ 2026-08-30）
 
 ## S6 反思进化 + 论坛
 
-- [ ] `ReflectionService`: 读 scorecard → 反思报告生成
-- [ ] `ForumService`: 帖子模型（lesson/howto/insight/question/proposal）+ CRUD + 搜索 → 存储形态未决 U4
-- [ ] `AgentEvolutionService`: 反思 → agent 配置更新（自动 or 建议+确认）
-- [ ] 学习注入: 新任务开始时检索相关帖子进上下文
-- [ ] CLI: `agora reflect` / `agora post` / `agora forum`
+- [x] `ReflectionService`: 读 scorecard → 反思报告生成（92938b0）
+- [x] `ForumService`: 帖子模型（lesson/howto/insight/question/proposal）+ CRUD + 搜索 → U4 已决: SQLite ForumRepository(migration 039)（92938b0）
+- [x] `AgentEvolutionService`: 反思 → 配置更新 = **建议+确认** 模式（c0e5c9a: 反思报告→proposal 帖, apply 状态机 proposed→applied, 不隐式改配置文件; 真库冒烟 ✅）
+- [x] 学习注入: 新任务开始时检索相关帖子进上下文（92938b0: ForumService.relevantPosts + CLI）
+- [x] CLI: `agora reflect` / `agora post` / `agora forum` / `agora evolution {propose,apply}`（92938b0 + c0e5c9a）
 
 ## 部署与入口（Phase 6）
 
@@ -75,7 +75,7 @@
 - [x] 3 台机拓扑默认拍板 **方案 C**（Linux 中央 home server = agora + mem0 + Synapse; Win/Mac 客户端接入; runbook = matrix 仓 deploy/01-04 脚本; 实机部署由用户执行）→ U5 如用户另选可改
 - [x] E2EE 决定（R-D: disabled by default; initRustCrypto 非致命; 加密房间后续轮）
 - [ ] federation P3（自动团队组建; 后续轮, 依赖多 homeserver 环境）
-- [ ] Discord 冒烟（积压 R-G; 需 Discord bot 环境在线）
+- [x] Discord 冒烟（R-G 已闭环 2026-08-30: 三台 bot token 存 .secrets/discord.env; austin_l bot REST + adapter 真机冒烟 ✅）
 
 ---
 
@@ -97,6 +97,8 @@
 | 2026-08-30 | Phase 6 S5/S3 IM 通道绑定 (adapters-matrix) | `2609572` | 回归 1239/1239 + 真机发 2 条通知回读落盘 |
 | 2026-08-30 | Phase 6 server E2E + roomId 直发 | `92a56b0` | 一次性 server(:18018) → outbox → dispatcher → Synapse 落盘 {delivered:1} |
 | 2026-08-30 | S4 obsidian 资料沉淀分组 (forum export) | `61a3b6c` | obsidian 套件 10/10 + 真帖导出冒烟 |
+| 2026-08-30 | task_created 自动通知链路（dispatcher defaultTargetRef + REST 挂点 + 周期扫描） | `9c37655` | 回归 1418/1418 + live 现网 45s 自动送达 Synapse |
+| 2026-08-30 | S5/S6 checklist 清零（research 写回 + EvolutionService） | `c0e5c9a` | 回归 1423/1423 + mem0/evolution 真实冒烟 ✅ |
 
 ## 迭代顺序（按用户优先级 D5: S2→S5→S4→S6→部署）
 
