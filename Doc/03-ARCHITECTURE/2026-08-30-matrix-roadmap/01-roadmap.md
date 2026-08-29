@@ -50,14 +50,14 @@
 
 **依赖**:
 - matrix-js-sdk ^30+ (与 node 22 兼容)
-- 真实 homeserver 测试实例 (沙箱无, 需 docker 或 homeserver.org 公共账号)
-- E2EE 决策 (T-7 优先级)
+- ✅ **真实 homeserver 已就绪** (turn 118 用户答 #1: 服务器已有 homeserver 实例, 无需 docker/公共账号)
+- E2EE 决策 (T-7 优先级, 建议默认禁用见 T-7)
 
 **未决**:
 - 是否引入 @matrix-org/matrix-sdk-crypto-wasm (E2EE) — 早期 stub 可不引入, 后续 T-7 加
-- bot 身份 vs app-service — 默认 bot, app-service 留可选 (T-10)
+- ✅ bot 身份 + app-service 两条 seam 都做 (turn 118 用户答 #4: 都要支持, 见 T-10)
 
-**估计**: 1-2 PR / 4-6h (含 homeserver 接入测试).
+**估计**: 1-2 PR / 4-6h (含 homeserver 接入测试, 沙箱外执行).
 
 ---
 
@@ -127,11 +127,14 @@
 
 **价值**: ★★★ — 但有"是否要支持" 的根本决策: agora 单租户模型扩展性.
 
-**未决**:
-- agora 是否要扩展为 multi-tenant / federated? (回答: 暂不支持, 但 seam 留好)
+**用户决定** (turn 118 #3): ✅ **要做 federation 扩展**. agora model 扩展为 multi-tenant / federated seam.
+
+**未决** (已部分拍板):
+- ✅ agora 扩展 multi-tenant/federated (turn 118 #3)
+- ✅ **multi-homeserver 凭证**: **per-project bridge config** (turn 118 #5). 默认单 homeserver; 多 homeserver 通过 project-level 多 robot 配.
 - 即使不联邦, matrix-jssdk 也需支持 federation-capable server 配置
 
-**估计**: 1-2 PR / 6-8h (含架构决策).
+**估计**: 1-2 PR / 6-8h (含架构决策 + federation-capable jssdk 配置).
 
 ---
 
@@ -145,11 +148,20 @@
 
 **依赖**: T-1; @matrix-org/matrix-sdk-crypto-wasm (或 olm).
 
+**E2EE 含义 + 冲突 + 建议** (turn 118 用户问 "啥意思"):
+- **含义**: matrix 用 olm/megolm 加密, homeserver 也看不到消息明文, 只有参与方有密钥.
+- **意味着什么**:
+  - agora server 拿不到 thread 消息内容 → audit-trail 不能记消息文本, 只能记 "消息已发送" + metadata (event_id, sender, room, time)
+  - matrix thread → agora comment 投影也只能用 event_id + sender, 不能存原文
+  - search / pull 命令拿不到消息内容 (matrix 也不让 server 搜密文)
+  - agora Task metadata 不能加密 (posture/decision 需可审计)
+- **建议** (待用户拍板): **默认禁用 E2EE** (encrypted=false room), 保留 option 让敏感 thread 启用加密. 这样 agora audit / 状态投影正常, 敏感 thread 用户自己决定开启.
+
 **未决**:
-- agora Task state 是否也要 E2EE? (回答: 不, task metadata 需可审计)
+- agora Task state 是否也要 E2EE? (建议: 不, task metadata 需可审计)
 - key backup 策略: 用户本地 / agora server 代理 / 完全不备份?
 
-**估计**: 1-2 PR / 6-10h (crypto 复杂).
+**估计**: 1-2 PR / 6-10h (crypto 复杂). **建议延后到 T-1 + T-1.5 + T-3 之后**.
 
 ---
 
@@ -171,11 +183,15 @@
 
 **价值**: ★★ — attachments 是 IM 重要功能.
 
-**依赖**: T-1; agora artifact storage 决策 (本地 / S3 / IPFS).
+**依赖**: T-1.
 
-**未决**: artifact storage 决策. 暂本地.
+**storage 决策** (turn 118 #6): ✅ **S3**. agora artifact backend 用 S3.
 
-**估计**: 1 PR / 2-3h.
+**未决**:
+- S3 凭证管理: agora server IAM role / per-project access key / OIDC?
+- attachments 大小限制: matrix 默认 100MB, agora 是否限制?
+
+**估计**: 1 PR / 3-4h (含 S3 backend + matrix upload integration).
 
 ---
 
@@ -183,13 +199,17 @@
 
 **目标**: matrix app-service (而非 bot 身份) 接入. app-service 可伪装成任意用户, 权限更强大.
 
-**价值**: ★★ — 但 homeserver 端配置复杂, 一般项目用 bot 就够.
+**价值**: ★★ — 但 homeserver 端配置复杂.
 
-**依赖**: T-1 + agora model 决策 (是否要支持多用户伪装).
+**用户决定** (turn 118 #4): ✅ **bot + app-service 两条 seam 都做**. 默认 bot (简单), app-service 作为可选进阶配置.
 
-**未决**: agora 是否要支持"用 matrix 任意用户身份发 thread"? 默认不, 但留 seam.
+**依赖**: T-1.
 
-**估计**: 1 PR / 3-4h.
+**未决**:
+- app-service registration YAML 配置格式 (homeserver 端标准格式)
+- agora 是否要支持"用 matrix 任意用户身份发 thread"? 默认不, 但 app-service 模式下可开
+
+**估计**: 1 PR / 4-5h (含两种模式的 factory + 文档 + 测试).
 
 ---
 

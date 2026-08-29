@@ -46,14 +46,16 @@ R-F / R-G / R-H / R-I / R-J / R-K / R-L / R-M ← 按需
 - **T-3 (R-D)** = matrix reply 是 agora Task 的 feedback channel, 让 IM 用户能"批注"task
 - **T-4 (R-E)** = matrix Space 与 agora multi-project topology 的天然对应
 
-## 5. 未决事项 (待用户拍板)
+## 5. 未决事项 (用户拍板状态)
 
-1. **真实 homeserver 测试环境**: 沙箱 `/root` 只读, 矩阵 E2E 测试需 homeserver 实例. 选 synapse in docker / 公共 homeserver / 自建?
-2. **E2EE 优先级**: matrix 原生 E2EE 是卖点, 但 crypto 复杂度高. agora Task 状态要不要也加密? (回答: 不加密, task metadata 需可审计)
-3. **federation**: agora 是单租户模型, matrix federation 让外部 server 用户能 join. agora 是否要扩展支持? (回答: 暂不支持, 但留 seam)
-4. **app-service vs bot**: bot 身份简单但 rate limit 紧; app-service 强大但需 homeserver 配置. 默认 bot, app-service 留可选.
-5. **multi-homeserver 凭证**: 一台 homeserver 一个 robot, 还是多 homeserver 多 robot? (回答: per-project bridge config)
-6. **attachments / 大消息**: matrix 支持 attachments, agora artifact 用 IPFS / S3 / 本地? (回答: 暂本地, 后续再迁移)
+| # | 问题 | 用户决定 | 影响 |
+|---|---|---|---|
+| 1 | 真实 homeserver 测试环境 | ✅ **服务器已有真实 homeserver** | T-1 立即可做, 无需 docker/公共账号 |
+| 2 | E2EE 优先级 | ⏳ **待解释后拍板** (见 `01-roadmap.md` §T-7 解释) | T-7 + T-1 crypto 决策 |
+| 3 | federation | ✅ **要支持扩展** (要做 T-6) | agora model 扩展为 multi-tenant/federated seam |
+| 4 | app-service vs bot | ✅ **都要支持** (T-10 都做) | bot 默认 + app-service 留 seam |
+| 5 | multi-homeserver 凭证 | ✅ **我决定 (per-project)** | 默认 per-project bridge config, 单 homeserver; multi-homeserver 通过 project-level 多 robot 配 |
+| 6 | attachments storage | ✅ **S3** (T-9 用 S3) | agora artifact 用 S3 backend |
 
 ## 6. 与现有 doc 的关系
 
