@@ -815,3 +815,51 @@ export interface IAgentQuestionRepository {
     target: AgentQuestionTarget,
   ): AgentQuestionRecord | null;
 }
+
+// ─── 32. Org teams (S1 组织模型: team 聚合 + 层级) ──────────────────────────
+
+export type TeamRecordMemberList = string[];
+
+export interface TeamRecord {
+  id: string;
+  project_id: string;
+  name: string;
+  /** team lead agent ref */
+  lead: string;
+  /** member agent refs (含 lead) */
+  members: TeamRecordMemberList;
+  /** 职责域 (如 dev/research/ops), 与任务 skill 匹配 */
+  responsibilities: string[];
+  /** 上级 team id; null = 组织根直属 */
+  parent_id: string | null;
+  created_at: string;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface TeamInsertInput {
+  id?: string;
+  project_id: string;
+  name: string;
+  lead: string;
+  members?: TeamRecordMemberList;
+  responsibilities?: string[];
+  parent_id?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface TeamUpdateInput {
+  lead?: string;
+  members?: TeamRecordMemberList;
+  responsibilities?: string[];
+  parent_id?: string | null;
+}
+
+export interface ITeamRepository {
+  insert(input: TeamInsertInput): TeamRecord;
+  getById(id: string): TeamRecord | null;
+  getByName(projectId: string, name: string): TeamRecord | null;
+  listByProject(projectId: string): TeamRecord[];
+  listByMember(agentRef: string): TeamRecord[];
+  update(id: string, patch: TeamUpdateInput): TeamRecord | null;
+  delete(id: string): boolean;
+}

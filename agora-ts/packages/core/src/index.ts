@@ -425,6 +425,11 @@ export type {
   GroupMemoryListInput,
 } from './group-memory-ports.js';
 export { GroupMemoryService } from './group-memory-service.js';
+export { TeamService } from './team-service.js';
+export { OrgHierarchyResolver } from './org-hierarchy-resolver.js';
+export type { TeamResult } from './team-service.js';
+export type { OrgTeamNode } from './org-hierarchy-resolver.js';
+
 
 
 // ─── Phase 3.5 worksite re-exports for CLI composition ───────────────────────

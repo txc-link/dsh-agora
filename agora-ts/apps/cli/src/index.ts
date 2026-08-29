@@ -80,6 +80,8 @@ import {
   runTaskClaimPollCommand,
   GroupMemoryService,
   type GroupMemoryPort,
+  TeamService,
+  OrgHierarchyResolver,
   AgentQuestionService,
   runTaskAskCommand,
   ThreadTaskBindingService,
@@ -88,13 +90,13 @@ import {
   isDeveloperRegressionEnabled,
 } from '@agora-ts/core';
 import { Mem0RestAdapter } from '@agora-ts/adapters-mem0';
-import type { IAgentQuestionRepository, IBorrowRequestRepository, ITaskClaimRepository, IThreadTaskBindingRepository } from '@agora-ts/contracts';
+import type { IAgentQuestionRepository, IBorrowRequestRepository, ITaskClaimRepository, IThreadTaskBindingRepository, ITeamRepository } from '@agora-ts/contracts';
 import { TaskRepository } from '@agora-ts/db';
 import { ThreadTaskBindingRepository } from '@agora-ts/db';
 import { OpenAiCompatibleProjectBrainEmbeddingAdapter } from '@agora-ts/adapters-brain';
 import { buildCcConnectAgentId, CcConnectAgentRegistry, loadCcConnectProjectTargets } from '@agora-ts/adapters-cc-connect';
 import { ProjectContextBriefingMaterializer, RuntimeRepoShimMaterializer, RuntimeRepoShimWritebackService } from '@agora-ts/adapters-materialization';
-import { ProjectBrainIndexJobRepository, RuntimeTargetOverlayRepository, AgentQuestionRepository, BorrowRequestRepository, TaskClaimRepository, type AgoraDatabase } from '@agora-ts/db';
+import { ProjectBrainIndexJobRepository, RuntimeTargetOverlayRepository, AgentQuestionRepository, BorrowRequestRepository, TaskClaimRepository, TeamRepository, type AgoraDatabase } from '@agora-ts/db';
 import { LiveRegressionActor } from '@agora-ts/testing';
 import type { DashboardSessionClient } from './dashboard-session-client.js';
 import type {
@@ -242,6 +244,7 @@ export interface CliDependencies {
   taskClaimRepository?: ITaskClaimRepository;
   agentQuestionService?: AgentQuestionService;
   agentQuestionRepository?: IAgentQuestionRepository;
+  teamRepository?: ITeamRepository;
   threadTaskBindingRepository?: IThreadTaskBindingRepository;
   ccConnectInspectionService?: CcConnectInspectionService;
   ccConnectManagementService?: CcConnectManagementService;
@@ -1226,6 +1229,151 @@ export function createCliProgram(deps: CliDependencies = {}) {
       const result = await getGroupMemoryService().list({ scopeRef, ...(options.limit !== undefined ? { limit: options.limit } : {}) });
       writeLine(stdout, JSON.stringify(result, null, 2));
       if (!result.ok) process.exitCode = 1;
+    });
+
+  const getTeamRepository = (): ITeamRepository => deps.teamRepository ?? new TeamRepository(resolveComposition().db);
+  let teamService: TeamService | null = null;
+  function getTeamService(): TeamService {
+    if (!teamService) {
+      teamService = new TeamService({ teamRepo: getTeamRepository() });
+    }
+    return teamService;
+  }
+  let orgResolver: OrgHierarchyResolver | null = null;
+  function getOrgResolver(): OrgHierarchyResolver {
+    if (!orgResolver) {
+      orgResolver = new OrgHierarchyResolver({ teamRepo: getTeamRepository() });
+    }
+    return orgResolver;
+  }
+
+  const team = program
+    .command('team')
+    .description('team CRUD + 层级 (org-aware-work-os S1)');
+
+  team
+    .command('create')
+    .description('create a team')
+    .requiredOption('--name <name>', 'team name (unique per project)')
+    .requiredOption('--lead <agentRef>', 'team lead agent ref')
+    .option('--project-id <projectId>', 'project scope', 'default')
+    .option('--members <refs>', 'comma-separated member agent refs', '')
+    .option('--responsibilities <list>', 'comma-separated responsibility domains', '')
+    .option('--parent <teamId>', 'parent team id')
+    .action((options: { name: string; lead: string; projectId: string; members: string; responsibilities: string; parent?: string }) => {
+      const members = options.members.split(',').map((m) => m.trim()).filter((m) => m.length > 0);
+      const responsibilities = options.responsibilities.split(',').map((r) => r.trim()).filter((r) => r.length > 0);
+      const result = getTeamService().createTeam({
+        projectId: options.projectId,
+        name: options.name,
+        lead: options.lead,
+        ...(members.length > 0 ? { members } : {}),
+        ...(responsibilities.length > 0 ? { responsibilities } : {}),
+        ...(options.parent ? { parentId: options.parent } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  team
+    .command('list')
+    .description('list teams in a project')
+    .option('--project-id <projectId>', 'project scope', 'default')
+    .action((options: { projectId: string }) => {
+      writeLine(stdout, JSON.stringify({ ok: true, data: getTeamService().listByProject(options.projectId) }, null, 2));
+    });
+
+  team
+    .command('show')
+    .description('show one team')
+    .requiredOption('--id <teamId>', 'team id')
+    .action((options: { id: string }) => {
+      const found = getTeamService().get(options.id);
+      if (!found) {
+        writeLine(stdout, JSON.stringify({ ok: false, error: `team '${options.id}' not found` }, null, 2));
+        process.exitCode = 1;
+        return;
+      }
+      writeLine(stdout, JSON.stringify({ ok: true, data: found }, null, 2));
+    });
+
+  team
+    .command('add-member')
+    .requiredOption('--id <teamId>', 'team id')
+    .requiredOption('--agent <agentRef>', 'agent ref to add')
+    .action((options: { id: string; agent: string }) => {
+      const result = getTeamService().addMember(options.id, options.agent);
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  team
+    .command('remove-member')
+    .requiredOption('--id <teamId>', 'team id')
+    .requiredOption('--agent <agentRef>', 'agent ref to remove')
+    .action((options: { id: string; agent: string }) => {
+      const result = getTeamService().removeMember(options.id, options.agent);
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  team
+    .command('set-lead')
+    .requiredOption('--id <teamId>', 'team id')
+    .requiredOption('--agent <agentRef>', 'new lead agent ref')
+    .action((options: { id: string; agent: string }) => {
+      const result = getTeamService().setLead(options.id, options.agent);
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  team
+    .command('set-parent')
+    .description('set/clear parent team (cycle-guarded)')
+    .requiredOption('--id <teamId>', 'team id')
+    .option('--parent <teamId>', 'parent team id; omit to clear')
+    .action((options: { id: string; parent?: string }) => {
+      const result = getTeamService().setParent(options.id, options.parent ?? null);
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  team
+    .command('rm')
+    .description('delete a team (leaf only)')
+    .requiredOption('--id <teamId>', 'team id')
+    .action((options: { id: string }) => {
+      const result = getTeamService().deleteTeam(options.id);
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  const org = program
+    .command('org')
+    .description('organization view + hierarchy resolution (org-aware-work-os S1)');
+
+  org
+    .command('show')
+    .description('project org tree')
+    .option('--project-id <projectId>', 'project scope', 'default')
+    .action((options: { projectId: string }) => {
+      const tree = getOrgResolver().orgTree(options.projectId);
+      writeLine(stdout, JSON.stringify({ ok: true, data: { project_id: options.projectId, tree } }, null, 2));
+    });
+
+  org
+    .command('chain')
+    .description('report-to chain for an agent (leads above, near → far)')
+    .requiredOption('--agent <agentRef>', 'agent ref')
+    .action((options: { agent: string }) => {
+      writeLine(stdout, JSON.stringify({
+        ok: true,
+        data: {
+          agent_ref: options.agent,
+          teams: getOrgResolver().teamsOf(options.agent).map((t) => ({ id: t.id, name: t.name, project_id: t.project_id })),
+          leads_above: getOrgResolver().leadsAbove(options.agent),
+        },
+      }, null, 2));
     });
 
   const thread = program.command('thread').description('Thread ↔ Task binding (Phase 4 / R-C T-1.5)');
