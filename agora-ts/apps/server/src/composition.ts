@@ -73,6 +73,7 @@ import { OsHostResourcePort } from '@agora-ts/adapters-host';
 import { AcpCraftsmanInputPort, AcpCraftsmanProbePort, AcpCraftsmanTailPort, AcpRuntimeRecoveryPort, createDefaultCraftsmanAdapters, DirectAcpxRuntimePort, TmuxCraftsmanInputPort, TmuxCraftsmanProbePort, TmuxCraftsmanTailPort, TmuxRuntimeRecoveryPort, TmuxRuntimeService } from '@agora-ts/adapters-runtime';
 import { loadOpenClawDiscordAccountTokens, OpenClawAgentRegistry, OpenClawCitizenProjectionAdapter, OpenClawLogPresenceSource } from '@agora-ts/adapters-openclaw';
 import { DiscordGatewayPresenceService, DiscordIMMessagingAdapter, DiscordIMProvisioningAdapter } from '@agora-ts/adapters-discord';
+import { MatrixIMMessagingAdapter } from '@agora-ts/adapters-matrix';
 import { ObsidianContextSourceRetrievalAdapter } from '@agora-ts/adapters-obsidian';
 import { agoraDataDirPath, hasInstalledBrainPack, refineProjectNomosDraftFromSpec, resolveAgoraProjectStateLayout, resolveProjectNomosRuntimePaths, resolveProjectNomosState, syncBundledBrainPackContents, type AgoraConfig } from '@agora-ts/config';
 import type { IFlowLogRepository, IProgressLogRepository, LiveSessionDto } from '@agora-ts/contracts';
@@ -574,6 +575,15 @@ export function createDefaultServerCompositionFactories(): ServerCompositionFact
       const { im } = context.config;
       if (im.provider === 'discord' && im.discord?.bot_token) {
         return new DiscordIMMessagingAdapter({ botToken: im.discord.bot_token });
+      }
+      if (im.provider === 'matrix' && im.matrix) {
+        const m = im.matrix;
+        return new MatrixIMMessagingAdapter({
+          homeserverUrl: m.homeserver_url,
+          accessToken: m.access_token,
+          defaultRoomId: m.default_room_id,
+          roomByRef: m.room_by_ref,
+        });
       }
       return new StubIMMessagingPort();
     },

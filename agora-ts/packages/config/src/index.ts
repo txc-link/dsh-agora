@@ -91,9 +91,21 @@ export const discordImConfigSchema = z.object({
 });
 export type DiscordImConfig = z.infer<typeof discordImConfigSchema>;
 
+export const matrixImConfigSchema = z.object({
+  homeserver_url: z.string().min(1),
+  access_token: z.string().min(1),
+  user_id: z.string().min(1),
+  default_room_id: z.string().min(1),
+  /** agentRef → roomId 定向通知映射; 未命中走 default_room_id */
+  room_by_ref: z.record(z.string(), z.string()).default({}),
+  notify_on_task_create: z.boolean().default(true),
+});
+export type MatrixImConfig = z.infer<typeof matrixImConfigSchema>;
+
 export const imConfigSchema = z.object({
-  provider: z.enum(['discord', 'none']).default('none'),
+  provider: z.enum(['discord', 'matrix', 'none']).default('none'),
   discord: discordImConfigSchema.optional(),
+  matrix: matrixImConfigSchema.optional(),
 });
 export type ImConfig = z.infer<typeof imConfigSchema>;
 
