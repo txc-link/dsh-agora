@@ -79,6 +79,13 @@ agent 空闲 / 新任务开始
 3. agent 发帖（经验/教程）→ 其他 agent 可见可回复
 4. 新任务开始时注入相关论坛经验（学习）
 
+## 3.5 实现记录（2026-08-30, develop `92938b0`）
+
+- Forum: `forum_posts`/`forum_comments` 表 (migration 039) + `ForumService` (CRUD + relevantPosts 学习注入: tag/taskType 匹配, lesson/howto 兜底)
+- Reflection: `ReflectionService` 读 coordination scorecard → 确定性反思报告 (强项/弱项/建议); core 无 LLM 润色
+- CLI: `agora post {create,list,show,comment}` / `agora forum {search,learn}` / `agora reflect run`
+- 未决拍板: 存储 SQLite; 手动触发; 进化=建议+显式应用; 项目作用域可见性
+
 ## 4. 未决
 
 - 反思频率（每任务？每日？手动？）

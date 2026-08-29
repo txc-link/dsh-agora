@@ -112,6 +112,7 @@ agora-ts 这一阶段不主动开 slice。R-E / R-F 按矩阵仓 SSoT phase 3 + 
 
 - 2026-08-29: agora-ts SSoT 建立 (本文件); 回写 60b01a6 R-D hotfix; R-E / R-F 显式 scope 到 connector + dashboard, agora-ts 不动
 - 2026-08-30: **org-aware-work-os S2 任务认领** (develop `505ce4d`) — TaskClaimService 状态机 + matchTaskToAgent 职责匹配 + ResidentAgentPoller + CLI `agora claim {create,release,list,claimable}` + migration 036; TDD 33 新测试, core+db 回归 592/592, 真实冒烟 8/8; planning: `Doc/09-PLANNING/TASKS/2026-08-30-org-aware-task-claiming/`; architecture: `Doc/03-ARCHITECTURE/org-aware-work-os/`; 顺手修复 database.test.ts 迁移断言陈旧 (033-036)
+- 2026-08-30: **org-aware-work-os S6 反思论坛** (develop `92938b0`) — ForumRepository(039) + ForumService(CRUD/学习注入) + ReflectionService(scorecard→报告) + `agora post|forum|reflect`; 回归 653/653; 冒烟 5/5
 - 2026-08-30: **org-aware-work-os S3 委派路由** (develop `349a04d`) — DelegateRouter (delegateSubtree/escalateUp + 深度限制 + 环检测) + `agora delegate subtree|escalate`; 回归 645/645; 冒烟 4/4
 - 2026-08-30: **org-aware-work-os S1 组织模型** (develop `090ca6d`) — TeamRecord/migration 038 + TeamService (环守卫) + OrgHierarchyResolver + `agora team`/`agora org show|chain`; 回归 638/638; 冒烟 4/4; 未决默认拍板: Membership 并存/SQLite 表/每项目 org
 - 2026-08-30: **org-aware-work-os S4 共享记忆 R1** (develop `993e7b6`) — GroupMemoryPort/Service (core) + @agora-ts/adapters-mem0 (Mem0RestAdapter) + `agora experience add/search/list`; 本机 mem0 REST server :8888 探测确认; 回归 629/629; 冒烟: 真实 401 路径 3/3 + stub 全链路 3/3; 待 MEM0 token 后全链上线

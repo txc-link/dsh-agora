@@ -92,6 +92,7 @@
 | 2026-08-30 | S4 R1（mem0 adapter + experience CLI） | `993e7b6` | 11 新测试 + 回归 629/629 + 冒烟 6/6 |
 | 2026-08-30 | S1 组织模型（teams + 层级 + CLI） | `090ca6d` | 13 新测试 + 回归 638/638 + 冒烟 4/4 |
 | 2026-08-30 | S3 委派路由（DelegateRouter + CLI） | `349a04d` | 7 新测试 + 回归 645/645 + 冒烟 4/4 |
+| 2026-08-30 | S6 反思论坛（Forum + Reflection + CLI） | `92938b0` | 8 新测试 + 回归 653/653 + 冒烟 5/5 |
 
 ## 迭代顺序（按用户优先级 D5: S2→S5→S4→S6→部署）
 
@@ -99,6 +100,4 @@
 2. ✅ S5 主动对话 push 主体（d002792）
 3. ✅ S2 收尾（8b0d3e6）
 4. ⏭ **S4 剩余**: MEM0 token（待用户提供）→ 真实全链冒烟; obsidian 分组映射; 跨节点 L4
-6. ⏭ **下一轮: S6 反思论坛**（ReflectionService/ForumService/AgentEvolutionService/学习注入 + CLI）
-7. Phase 6 部署
-7. Phase 6 部署 + matrix 真实化（含 S5 IM 通道绑定）
+8. ⏭ **下一轮: Phase 6 部署**（matrix transport 真实化 matrix-js-sdk + S5/S3 IM 通道绑定 + worksite thread resolver; U5 拓扑需用户拍板或方案 C 默认）
