@@ -75,9 +75,14 @@ import {
   type MergeCoordinatorService,
   BorrowService,
   runBorrowCommand,
+  ThreadTaskBindingService,
+  runThreadBindCommand,
+  type RunThreadBindCommandOptions,
   isDeveloperRegressionEnabled,
 } from '@agora-ts/core';
-import type { IBorrowRequestRepository } from '@agora-ts/contracts';
+import type { IBorrowRequestRepository, IThreadTaskBindingRepository } from '@agora-ts/contracts';
+import { TaskRepository } from '@agora-ts/db';
+import { ThreadTaskBindingRepository } from '@agora-ts/db';
 import { OpenAiCompatibleProjectBrainEmbeddingAdapter } from '@agora-ts/adapters-brain';
 import { buildCcConnectAgentId, CcConnectAgentRegistry, loadCcConnectProjectTargets } from '@agora-ts/adapters-cc-connect';
 import { ProjectContextBriefingMaterializer, RuntimeRepoShimMaterializer, RuntimeRepoShimWritebackService } from '@agora-ts/adapters-materialization';
@@ -224,6 +229,7 @@ export interface CliDependencies {
   mergeCoordinatorService?: Pick<MergeCoordinatorService, 'create' | 'get' | 'list' | 'execute'>;
   borrowService?: BorrowService;
   borrowRequestRepository?: IBorrowRequestRepository;
+  threadTaskBindingRepository?: IThreadTaskBindingRepository;
   ccConnectInspectionService?: CcConnectInspectionService;
   ccConnectManagementService?: CcConnectManagementService;
   ccConnectThreadSessionService?: CcConnectThreadSessionServiceLike;
@@ -643,6 +649,11 @@ export function createCliProgram(deps: CliDependencies = {}) {
   const mergeCoordinatorService = createLazyObject(() => deps.mergeCoordinatorService ?? resolveComposition().mergeCoordinatorService);
   const borrowService = createLazyObject(() => deps.borrowService ?? resolveComposition().borrowService);
   const getBorrowRequestRepository = () => deps.borrowRequestRepository ?? new BorrowRequestRepository(resolveComposition().db);
+  const getThreadTaskBindingRepository = () => deps.threadTaskBindingRepository ?? new ThreadTaskBindingRepository(resolveComposition().db);
+  const getThreadTaskBindingService = () => new ThreadTaskBindingService({
+    repo: getThreadTaskBindingRepository(),
+    taskRepo: new TaskRepository(resolveComposition().db),
+  });
   const getCcConnectInspectionService = () => deps.ccConnectInspectionService ?? new CcConnectInspectionService();
   const getCcConnectManagementService = () => deps.ccConnectManagementService ?? new CcConnectManagementService();
   const getImProvisioningPort = () => deps.imProvisioningPort ?? resolveComposition().imProvisioningPort;
@@ -933,6 +944,60 @@ export function createCliProgram(deps: CliDependencies = {}) {
         { borrowService, borrowRepo: getBorrowRequestRepository() },
         { subcommand: 'show', requestId },
       );
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  const thread = program.command('thread').description('Thread ↔ Task binding (Phase 4 / R-C T-1.5)');
+  const threadDeps = () => ({
+    bindingService: getThreadTaskBindingService(),
+    bindingRepo: getThreadTaskBindingRepository(),
+  });
+  thread
+    .command('bind')
+    .description('bind a threadKey to an existing task')
+    .requiredOption('--thread-key <threadKey>', 'opaque thread key (e.g. mx_<16hex> from matrix adapter)')
+    .requiredOption('--task-id <taskId>', 'agora task id (e.g. T-1)')
+    .action(async (options: { threadKey: string; taskId: string }) => {
+      const result = await runThreadBindCommand(threadDeps(), {
+        subcommand: 'bind',
+        threadKey: options.threadKey,
+        taskId: options.taskId,
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  thread
+    .command('unbind')
+    .description('remove a thread↔task binding by thread-key or task-id')
+    .option('--thread-key <threadKey>', 'opaque thread key')
+    .option('--task-id <taskId>', 'agora task id')
+    .action(async (options: { threadKey?: string; taskId?: string }) => {
+      const args: RunThreadBindCommandOptions = { subcommand: 'unbind' };
+      if (options.threadKey !== undefined) args.unbindThreadKey = options.threadKey;
+      if (options.taskId !== undefined) args.unbindTaskId = options.taskId;
+      const result = await runThreadBindCommand(threadDeps(), args);
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  thread
+    .command('lookup')
+    .description('look up a binding by task id or thread key')
+    .option('--task <taskId>', 'agora task id')
+    .option('--thread <threadKey>', 'opaque thread key')
+    .action(async (options: { task?: string; thread?: string }) => {
+      const args: RunThreadBindCommandOptions = { subcommand: 'lookup' };
+      if (options.task !== undefined) args.lookupTaskId = options.task;
+      if (options.thread !== undefined) args.lookupThreadKey = options.thread;
+      const result = await runThreadBindCommand(threadDeps(), args);
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  thread
+    .command('list')
+    .description('list all thread↔task bindings')
+    .action(async () => {
+      const result = await runThreadBindCommand(threadDeps(), { subcommand: 'list' });
       writeLine(stdout, JSON.stringify(result, null, 2));
       if (!result.ok) process.exitCode = 1;
     });

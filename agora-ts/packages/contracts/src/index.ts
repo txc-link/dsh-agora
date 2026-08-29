@@ -44,3 +44,5 @@ export * from './workspace-bootstrap.js';
 export * from './citizen.js';
 export * from './repository-interfaces.js';
 export * from './domain-types.js';
+
+export * from './thread-task-binding.js';
