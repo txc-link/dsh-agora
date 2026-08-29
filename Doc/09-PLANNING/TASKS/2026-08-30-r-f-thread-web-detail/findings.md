@@ -1,7 +1,7 @@
 # R-F thread web 详情面板 — findings
 
-**Last updated**: 2026-08-29 (Asia/Shanghai, R-F.1)
-**Surveyor**: R-F.1 subagent (R-F.1)
+**Last updated**: 2026-08-29 (Asia/Shanghai, R-F.2)
+**Surveyor**: R-F.1 + R-F.2 subagents
 **Scope**: dashboard ↔ agora REST thread/conversation layer
 
 ---
@@ -240,9 +240,87 @@ Base URL: `http://127.0.0.1:18008`(本机),Bearer token 鉴权(401 if missing)�
 
 ---
 
-## 10. 与 task_plan.md 对账
+## 10. R-F.2 实施细节与选型
 
-- §2.1 目标 ✅ (探索 + 接入)。
+### 10.1 选型:短轮询 vs SSE vs WebSocket
+
+| 候选 | 优点 | 缺点 | 决定 |
+|---|---|---|---|
+| **短轮询 4s** | 零 server 改动、复用现有 GET、§1.5 最短路径、unmount 即停 | 4s 内通知延迟、每秒 ~0.25 次请求/活跃 sheet | ✅ 采纳 |
+| SSE (`/api/tasks/:id/conversation/stream`) | 通知即推、增量 payload | 需 server 加端点 + token 鉴权 + Last-Event-ID 续传、需 `@agora-ts/contracts` 加 SSE schema | ⏳ 留待 polling 不够时再升级 |
+| WebSocket | 双向 | 需新 server 端点 + heartbeat + reconnect 策略;thread 不需双向 | ❌ over-engineering |
+
+**理由**:
+- R-F.1 已确认 server 无 SSE / WebSocket 端点(`app.ts` 全文搜索 `text/event-stream` / `EventSource` / `ws` / `socket.io` 均为 0)。
+- 选 polling 完全符合 §1.5 "不扩展到用户未要求的方案范围"。
+- 4s 是 polling 行业惯例(Linear / Notion 5s, GitHub Issues 30s),thread detail 的延迟可接受。
+
+### 10.2 实现细节(文件位置 + 关键行号)
+
+`dashboard/src/components/task/TaskDetailSheet.tsx`:
+
+| 元素 | 行号 | 作用 |
+|---|---|---|
+| `POLL_INTERVAL_MS = 4000` | L37 | 轮询间隔常量(顶部 const) |
+| `RELATIVE_TICK_MS = 1000` | L40 | 1Hz 重渲染 "Xs ago" 用 |
+| `TERMINAL_TASK_STATES = Set([...])` | L46 | 终态白名单 |
+| `isTaskStateTerminal(state)` | L51 | helper |
+| `useState lastUpdatedAt / isRefreshing` | L117-118 | UI 显示 |
+| `useRef inflightRef` | L120 | 重叠 tick 防护 |
+| `useEffect 短轮询` | L126-194 | 主循环;`AbortController` hoisted,cleanup `abort() + clearInterval` |
+| `useEffect 1Hz tick` | L196-202 | 仅 re-render "Xs ago",不发请求 |
+| `<p data-testid="task-detail-refresh-indicator">` | L248-256 | UI indicator |
+
+### 10.3 Race-condition & stale-closure 防护细节
+
+- **Stale closure**: `useEffect` 依赖 `[shouldPoll, taskId]`,每次 `taskId` / `shouldPoll` 变化都重建 effect 并 `targetTaskId = taskId` 重新捕获,**不依赖 ref 持有最新值**(避免双重状态源)。
+- **Race condition**:`inflightRef.current === true` 时,新 tick 直接 return,旧 promise 完成后才允许下个 tick 进入。
+- **Tear-down ordering**: `return () => { cancelled = true; controller.abort(); clearInterval(intervalId); }` — 顺序保证:1) 阻止新写入,2) 中断在途请求,3) 停止新 tick。`AbortError` 由 `error.statusText === 'aborted'` 分支静默(L163),UI 不闪错。
+
+### 10.4 与 R-F.1 view-model 的衔接
+
+- R-F.1 选 `types/agora.ts` 直接 re-export `@agora-ts/contracts` DTO,**不**走 `TaskConversationEntry` view-model(避免触发 R-D typedrift 债)。
+- R-F.2 polling 反向写回 store 时,仍用 `mapTaskConversationEntryDto(bundle.entry)` 把 DTO 映射为 view-model(`taskMappers.ts:376`),与 R-F.1 启动 `selectTask()` 时的写法一致 — 同一组件两种数据来源,**统一渲染路径**。
+- 替换路径只覆盖 `selectedTaskStatus.conversation` 与 `selectedTaskStatus.conversationSummary`,**不**触动 `task` / `subtasks` / `flow_log` — polling 范围内语义自洽,不会因部分刷新导致 UI flicker。
+
+### 10.5 i18n 键扩展
+
+新增 3 个 key,`tasks.*` 命名空间下:
+
+| key | 插值 | zh-CN | en-US |
+|---|---|---|---|
+| `tasks.lastUpdated` | `{{seconds}}` | 最后更新 {{seconds}} 秒前 | Last updated {{seconds}}s ago |
+| `tasks.refreshing` | — | 正在刷新会话… | Refreshing conversation… |
+| `tasks.autoRefresh` | `{{seconds}}` | 每 {{seconds}} 秒自动刷新 | Auto-refresh every {{seconds}}s |
+
+`npm run lint:i18n` 通过 → 8 个 project surface 全部包含新增 key,无遗漏/拼写错。
+
+### 10.6 已知限制
+
+1. **Polling 4s 延迟上限**:R-D inbound reply 投递到 conversation 后,最长等 4s 才显示。可接受。
+2. **同 sheet 多 task 切换**:每次切换 taskId 会 cancel 旧 effect、立即触发新 effect、启动新一轮 4s 计时器。正确,无泄漏。
+3. **浏览器 tab 后台冻结**:`setInterval` 在后台 tab 仍按 4s 触发(部分浏览器限流到 1Hz)。这可能导致切回前台时多个 tick 排队 — `inflightRef` 保证只一个请求实际发出,其它 return。安全。
+4. **服务端 CORS / cookie 行为**:`agoraClient.getTaskConversation` 沿用 `lib/api.ts` 的 `fetch + Bearer`,不引入新跨域问题。
+5. **实际 E2E 视觉验证缺失**:server token 轮换使 `curl` 测试不可用;polling 视觉验证留给总工浏览器手测。
+
+### 10.7 §1 / §1.5 自检
+
+- **§1**: R-F.2 仍只在 Dashboard 上层 entry adapter 改,Core 不动,agora-ts server 不动 — 边界保持。
+- **§1.5**: 最短路径,无 subscribe facade、无 polling backoff、无 SSE 兜底分支、无 connection-state indicator 副作用组件;新增 3 个 i18n key 是必要 UI 文本,非过度设计。
+- **§2**: R-F.2 没引入任何"必须人类确认"动作,继续是 Dashboard 人类入口的被动刷新。
+
+### 10.8 与 task_plan.md 对账
+
+- §2.1 目标 ✅ (探索 + 接入 + real-time)。
+- §2.2 子步骤 1-4 ✅(R-F.1),R-F.2 新增步骤(短轮询 effect + indicator + i18n + abort/race 防护)✅。
+- §2.3 风险:无 agora-ts 端点缺失触发器,polling 用现有 GET 即可,无需 server 改动。
+- §2.4 验证标准:dev 启动 ✅,lint ✅,tsc 零新增 typedrift ✅,test 零新增 failure ✅,real-time polling 行为靠 code review 验证(完整 E2E 留总工浏览器手测)。
+
+---
+
+## 11. 与 task_plan.md 对账
+
+- §2.1 目标 ✅ (探索 + 接入 + real-time)。
 - §2.2 子步骤 1-4 ✅,步骤 5 启动 dev ✅,check 跨层级 **partial**(同主仓 baseline)。
 - §2.3 风险:无 agora-ts 端点缺失触发器(端点齐),Dashboard 类型层补字段 ✅(在 worktree stub,无主仓修改),无 mock 替换需求(原本就是真实 API,只是没在 ProjectDetailPage 显示)。
 - §2.4 验证标准 partial:dev 启动 + TS/lint OK,但 `npm run check` 全链路 baseline 失败。

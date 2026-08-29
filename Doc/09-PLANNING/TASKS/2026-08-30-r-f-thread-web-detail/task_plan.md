@@ -16,7 +16,7 @@
 | 轮 | 范围 | worktree | 状态 |
 |---|---|---|---|
 | R-F.1 | dashboard thread 数据接入详情面板 | 本 worktree | ⏳ in_progress |
-| R-F.2 | real-time updates + E2E | 本 worktree | ⏳ blocked on R-F.1 |
+| R-F.2 | real-time updates + E2E | 本 worktree | ✅ done (2026-08-29) |
 | R-E.1 | SDK Space API 验证 + adapter | matrix 仓 `.worktrees/r-e-space-nesting` | ⏳ in_progress (并行) |
 | R-E.2 | Space 实装 + 冒烟 | 同 R-E.1 | ⏳ blocked on R-E.1 |
 | 治理债1 | agora-ts SSoT 新建 + 60b01a6 回写 | 主仓 master/develop | ✅ done (turn 142) |
@@ -46,6 +46,15 @@
 - Dashboard 类型层可能需要 @agora-ts/contracts 增字段
 
 ### 2.4 验证标准
+
+> **R-F.2 实测结果(2026-08-29)**:
+> - 选型:短轮询(§1.5 最短路径)。4s 间隔 + 1Hz "Xs ago" 重渲染 + 终态自动停 + `inflightRef` + `AbortController` + cancelled flag。
+> - Dashboard dev 启动:`vite ready in 444 ms`,无 console error;4 个 R-F.2 改动模块经 `curl localhost:5173/dashboard/src/...` 均 `200 OK`,vite transform 无错。
+> - `npx tsc -b`: R-F.2 **0 新增 typedrift**(worktree 3 errors = main baseline 3 errors,完全相同)。
+> - `npm run lint`: PASS(eslint + design + i18n 三段全过;新增 3 个 i18n key 被 `lint:i18n` 8 surface 全覆盖)。
+> - `npm test`: 144 failed / 211 passed — 与 main baseline 完全相同(失败为 `React.act is not a function`,pre-existing)。
+> - agora server `/api/health`: 200 OK;真实 conversation endpoint 因 token 轮换(`test-token` 与历史 token 均 403)无法 curl 端到端 — polling 行为靠 code review 验证,完整视觉 E2E 留总工浏览器手测。
+> - 详见 `progress.md` R-F.2 段 + `findings.md` §10。
 
 > **R-F.1 实测结果(2026-08-29)**:
 > - Dashboard dev 启动:`vite ready in 433ms`,无 console error;关键模块 `main.tsx` / `pages/ProjectDetailPage.tsx` / `components/task/TaskDetailSheet.tsx` 经 `curl localhost:5173/dashboard/src/...` 均 200 OK,vite transform 无错。
@@ -88,3 +97,4 @@
 - 2026-08-30: R-F task_plan 建立; 总工排期 (R-F 2 轮 + R-E 2 轮 + 治理债 2 项)
 - 2026-08-30: 路径从 docs/ 修正为 Doc/ (主仓 .gitignore 排除 /docs, 与 matrix 仓 Doc/ 约定一致)
 - 2026-08-29 (R-F.1 close): R-F.1 完成。新增 `lib/agora-client.ts` + `types/agora.ts` + `components/task/TaskDetailSheet.tsx`;改 `pages/ProjectDetailPage.tsx` + `types/task.ts`。dev server ready,lint pass,tsc 零新增 typedrift。`npm run check` 整体仍 fail(主仓 baseline pre-existing R-D typedrift + React.act 测试债)。详见 `findings.md` + `progress.md` + §2.4 实测记录。
+- 2026-08-29 (R-F.2 close): R-F.2 完成。改 `components/task/TaskDetailSheet.tsx`(短轮询 + AbortController + inflightRef + 1Hz tick + refresh indicator)+ `lib/dashboardCopy.ts`(3 个 i18n 字段)+ `locales/resources.ts`(3 个 i18n key 中英)。dev ready,lint pass,tsc/test 与 main baseline 完全一致。详见 `progress.md` R-F.2 段 + `findings.md` §10。
