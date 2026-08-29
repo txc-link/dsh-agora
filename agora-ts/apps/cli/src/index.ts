@@ -77,18 +77,20 @@ import {
   runBorrowCommand,
   TaskClaimService,
   runTaskClaimCommand,
+  AgentQuestionService,
+  runTaskAskCommand,
   ThreadTaskBindingService,
   runThreadBindCommand,
   type RunThreadBindCommandOptions,
   isDeveloperRegressionEnabled,
 } from '@agora-ts/core';
-import type { IBorrowRequestRepository, ITaskClaimRepository, IThreadTaskBindingRepository } from '@agora-ts/contracts';
+import type { IAgentQuestionRepository, IBorrowRequestRepository, ITaskClaimRepository, IThreadTaskBindingRepository } from '@agora-ts/contracts';
 import { TaskRepository } from '@agora-ts/db';
 import { ThreadTaskBindingRepository } from '@agora-ts/db';
 import { OpenAiCompatibleProjectBrainEmbeddingAdapter } from '@agora-ts/adapters-brain';
 import { buildCcConnectAgentId, CcConnectAgentRegistry, loadCcConnectProjectTargets } from '@agora-ts/adapters-cc-connect';
 import { ProjectContextBriefingMaterializer, RuntimeRepoShimMaterializer, RuntimeRepoShimWritebackService } from '@agora-ts/adapters-materialization';
-import { ProjectBrainIndexJobRepository, RuntimeTargetOverlayRepository, BorrowRequestRepository, TaskClaimRepository, type AgoraDatabase } from '@agora-ts/db';
+import { ProjectBrainIndexJobRepository, RuntimeTargetOverlayRepository, AgentQuestionRepository, BorrowRequestRepository, TaskClaimRepository, type AgoraDatabase } from '@agora-ts/db';
 import { LiveRegressionActor } from '@agora-ts/testing';
 import type { DashboardSessionClient } from './dashboard-session-client.js';
 import type {
@@ -234,6 +236,8 @@ export interface CliDependencies {
   borrowRequestRepository?: IBorrowRequestRepository;
   taskClaimService?: TaskClaimService;
   taskClaimRepository?: ITaskClaimRepository;
+  agentQuestionService?: AgentQuestionService;
+  agentQuestionRepository?: IAgentQuestionRepository;
   threadTaskBindingRepository?: IThreadTaskBindingRepository;
   ccConnectInspectionService?: CcConnectInspectionService;
   ccConnectManagementService?: CcConnectManagementService;
@@ -659,6 +663,13 @@ export function createCliProgram(deps: CliDependencies = {}) {
     claimRepo: getTaskClaimRepository(),
     taskExists: (taskId) => new TaskRepository(resolveComposition().db).getTask(taskId) !== null,
   });
+  const getAgentQuestionRepository = (): IAgentQuestionRepository => deps.agentQuestionRepository ?? new AgentQuestionRepository(resolveComposition().db);
+  const getAgentQuestionService = () => deps.agentQuestionService ?? new AgentQuestionService({
+    questionRepo: getAgentQuestionRepository(),
+    // S1 组织模型落地后从配置/roster 读取 assistantRef; 当前默认直达 ceo
+    assistantRef: null,
+    ceoRef: 'human:ceo',
+  });
   const getThreadTaskBindingRepository = () => deps.threadTaskBindingRepository ?? new ThreadTaskBindingRepository(resolveComposition().db);
   const getThreadTaskBindingService = () => new ThreadTaskBindingService({
     repo: getThreadTaskBindingRepository(),
@@ -1021,6 +1032,86 @@ export function createCliProgram(deps: CliDependencies = {}) {
         matchRoleId: options.role,
         matchSkills: options.skills,
       });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  const ask = program.command('ask').description('Agent proactive questions to assistant/CEO (org-aware-work-os S5)');
+  const askDeps = () => ({
+    questionService: getAgentQuestionService(),
+    questionRepo: getAgentQuestionRepository(),
+  });
+  ask
+    .command('create')
+    .description('ask a question to the assistant (or CEO when no assistant configured)')
+    .requiredOption('--agent <agentRef>', 'asking agent ref')
+    .requiredOption('--question <text>', 'question text')
+    .option('--kind <kind>', 'clarify|resource|approval|info|research', 'clarify')
+    .option('--task <taskId>', 'related task id')
+    .option('--context <text>', 'supporting context for the question')
+    .action(async (options: { agent: string; question: string; kind?: string; task?: string; context?: string }) => {
+      const result = await runTaskAskCommand(askDeps(), {
+        subcommand: 'create',
+        createAgentRef: options.agent,
+        askQuestion: options.question,
+        ...(options.kind !== undefined ? { askKind: options.kind } : {}),
+        ...(options.task !== undefined ? { askTaskId: options.task } : {}),
+        ...(options.context !== undefined ? { askContext: options.context } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  ask
+    .command('list')
+    .description('list questions (--open for pending+escalated only, --agent <agentRef> for one agent)')
+    .option('--open', 'only pending + escalated questions')
+    .option('--agent <agentRef>', 'filter by agent ref')
+    .action(async (options: { open?: boolean; agent?: string }) => {
+      const result = await runTaskAskCommand(askDeps(), {
+        subcommand: 'list',
+        ...(options.open ? { listOpenOnly: true } : {}),
+        ...(options.agent !== undefined ? { listAgent: options.agent } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  ask
+    .command('show')
+    .description('show one question by id')
+    .requiredOption('--id <questionId>', 'question id')
+    .action(async (options: { id: string }) => {
+      const result = await runTaskAskCommand(askDeps(), { subcommand: 'show', questionId: options.id });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  ask
+    .command('answer')
+    .description('answer a question (assistant or CEO side)')
+    .requiredOption('--id <questionId>', 'question id')
+    .requiredOption('--by <ref>', 'who answers (ref, e.g. agent:assistant)')
+    .requiredOption('--answer <text>', 'answer text')
+    .action(async (options: { id: string; by: string; answer: string }) => {
+      const result = await runTaskAskCommand(askDeps(), {
+        subcommand: 'answer', questionId: options.id, answeredBy: options.by, answerText: options.answer,
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  ask
+    .command('escalate')
+    .description('escalate a pending question directly to the CEO')
+    .requiredOption('--id <questionId>', 'question id')
+    .action(async (options: { id: string }) => {
+      const result = await runTaskAskCommand(askDeps(), { subcommand: 'escalate', questionId: options.id });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  ask
+    .command('close')
+    .description('close/withdraw a question')
+    .requiredOption('--id <questionId>', 'question id')
+    .action(async (options: { id: string }) => {
+      const result = await runTaskAskCommand(askDeps(), { subcommand: 'close', questionId: options.id });
       writeLine(stdout, JSON.stringify(result, null, 2));
       if (!result.ok) process.exitCode = 1;
     });

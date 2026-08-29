@@ -34,5 +34,6 @@ export * from './repositories/project-write-lock.repository.js';
 export * from './ports/gate-port.js';
 export * from './repositories/borrow-request.repository.js';
 export * from './repositories/task-claim.repository.js';
+export * from './repositories/agent-question.repository.js';
 
 export * from './repositories/thread-task-binding.repository.js';

@@ -105,6 +105,7 @@ export function runMigrations(db: AgoraDatabase): void {
     '034_thread_task_bindings.sql',
     '035_thread_task_conversation_binding.sql',
     '036_task_claims.sql',
+    '037_agent_questions.sql',
   ];
   const migrationsDir = resolveMigrationsDir();
 

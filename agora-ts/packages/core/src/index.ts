@@ -435,3 +435,29 @@ export { WorksiteResolverRegistry, resolveScopeAuthorization } from './worksite/
 export type { WorksiteResolver, WorksitePersister } from './worksite/resolver.js';
 export { parseWorksiteUri, formatWorksiteUri, type WorksiteType, type WorksiteUri } from './worksite/uri.js';
 export { deriveScopeAuthorization } from './worksite/scope-auth-policy.js';
+
+// ─── org-aware-work-os S5: Agent question push (2026-08-30) ──────────────────
+export type {
+  AgentQuestionKind,
+  AgentQuestionRecord,
+  AgentQuestionTarget,
+} from './agent-question-service.js';
+export type {
+  AgentQuestionServiceOptions,
+  CreateAgentQuestionInput,
+} from './agent-question-service.js';
+export type {
+  AgentQuestionResult,
+  AgentQuestionListResult,
+  RouteQuestionInput,
+  RouteQuestionResult,
+  QuestionMessagingPort,
+} from './agent-question-service.js';
+export { AgentQuestionService, routeQuestion } from './agent-question-service.js';
+export type {
+  TaskAskCommandDeps,
+  TaskAskCommandResult,
+  TaskAskSubcommand,
+  RunTaskAskCommandOptions,
+} from './task-ask-command.js';
+export { runTaskAskCommand } from './task-ask-command.js';

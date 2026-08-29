@@ -759,3 +759,59 @@ export interface ITaskClaimRepository {
     at: string,
   ): TaskClaimRecord | null;
 }
+
+// ─── section 31: Agent questions (org-aware-work-os S5) ─────────────────────
+
+export type AgentQuestionStatus = 'pending' | 'answered' | 'escalated' | 'closed';
+export type AgentQuestionKind = 'clarify' | 'resource' | 'approval' | 'info' | 'research';
+export type AgentQuestionTarget = 'assistant' | 'ceo';
+
+export interface AgentQuestionRecord {
+  id: string;
+  taskId: string | null;
+  agentRef: string;
+  kind: AgentQuestionKind;
+  question: string;
+  context: string | null;
+  target: AgentQuestionTarget;
+  status: AgentQuestionStatus;
+  answer: string | null;
+  answeredBy: string | null;
+  answeredAt: string | null;
+  escalatedAt: string | null;
+  closedAt: string | null;
+  createdAt: string;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface IAgentQuestionRepository {
+  insert(input: {
+    id?: string;
+    taskId?: string | null;
+    agentRef: string;
+    kind: AgentQuestionKind;
+    question: string;
+    context?: string | null;
+    target: AgentQuestionTarget;
+    metadata?: Record<string, unknown> | null;
+  }): AgentQuestionRecord;
+  getById(id: string): AgentQuestionRecord | null;
+  listByStatus(status: AgentQuestionStatus): AgentQuestionRecord[];
+  listByAgent(agentRef: string): AgentQuestionRecord[];
+  listOpen(): AgentQuestionRecord[];
+  updateStatus(
+    id: string,
+    status: AgentQuestionStatus,
+    at: string,
+  ): AgentQuestionRecord | null;
+  updateAnswer(
+    id: string,
+    answer: string,
+    answeredBy: string,
+    answeredAt: string,
+  ): AgentQuestionRecord | null;
+  updateTarget(
+    id: string,
+    target: AgentQuestionTarget,
+  ): AgentQuestionRecord | null;
+}
