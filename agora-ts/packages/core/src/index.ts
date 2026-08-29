@@ -390,6 +390,54 @@ export {
 } from './thread-bind-command.js';
 export { runBorrowCommand } from './borrow-command.js';
 
+// ─── org-aware-work-os S2: Task claiming (2026-08-30) ────────────────────────
+export type {
+  ClaimTaskInput,
+  TaskClaimServiceOptions,
+  ClaimResult,
+} from './task-claim-service.js';
+export { TaskClaimService } from './task-claim-service.js';
+export type {
+  ClaimMatcherAgent,
+  ClaimMatcherTask,
+  MatchResult,
+} from './task-claim-matcher.js';
+export { matchTaskToAgent } from './task-claim-matcher.js';
+export type {
+  PollerAgent,
+  PollerDeps,
+  PollResult,
+} from './resident-agent-poller.js';
+export { ResidentAgentPoller } from './resident-agent-poller.js';
+export type {
+  TaskClaimCommandDeps,
+  TaskClaimCommandResult,
+  TaskClaimSubcommand,
+  RunTaskClaimCommandOptions,
+} from './task-claim-command.js';
+export { runTaskClaimCommand, runTaskClaimPollCommand } from './task-claim-command.js';
+export type {
+  GroupMemoryEntry,
+  GroupMemoryHit,
+  GroupMemoryPort,
+  GroupMemoryAddInput,
+  GroupMemoryQueryInput,
+  GroupMemoryListInput,
+} from './group-memory-ports.js';
+export { GroupMemoryService } from './group-memory-service.js';
+export { TeamService } from './team-service.js';
+export { OrgHierarchyResolver } from './org-hierarchy-resolver.js';
+export { DelegateRouter } from './delegate-router.js';
+export { ForumService, FORUM_CATEGORIES } from './forum-service.js';
+export { ReflectionService } from './reflection-service.js';
+export type { ForumResult, CreatePostInput, RelevantPostsInput } from './forum-service.js';
+export type { ReflectionReport, ReflectInput, ScorecardSnapshot } from './reflection-service.js';
+export type { DelegateNotifyPayload, DelegateSubtreeInput, DelegateSubtreeResult, EscalateUpInput, EscalateUpResult } from './delegate-router.js';
+export type { TeamResult } from './team-service.js';
+export type { OrgTeamNode } from './org-hierarchy-resolver.js';
+
+
+
 // ─── Phase 3.5 worksite re-exports for CLI composition ───────────────────────
 export type { Permission, Posture, ScopeAuthorization } from './worksite/types.js';
 export {
@@ -408,3 +456,38 @@ export { WorksiteResolverRegistry, resolveScopeAuthorization } from './worksite/
 export type { WorksiteResolver, WorksitePersister } from './worksite/resolver.js';
 export { parseWorksiteUri, formatWorksiteUri, type WorksiteType, type WorksiteUri } from './worksite/uri.js';
 export { deriveScopeAuthorization } from './worksite/scope-auth-policy.js';
+
+// ─── org-aware-work-os S5: Agent question push (2026-08-30) ──────────────────
+export type {
+  AgentQuestionKind,
+  AgentQuestionRecord,
+  AgentQuestionTarget,
+} from './agent-question-service.js';
+export type {
+  AgentQuestionServiceOptions,
+  CreateAgentQuestionInput,
+} from './agent-question-service.js';
+export type {
+  AgentQuestionResult,
+  AgentQuestionListResult,
+  RouteQuestionInput,
+  RouteQuestionResult,
+  QuestionMessagingPort,
+} from './agent-question-service.js';
+export { AgentQuestionService, routeQuestion } from './agent-question-service.js';
+// ─── org-aware-work-os S6: evolution (2026-08-30) ────────────────────────────
+export type {
+  EvolutionResult,
+  EvolutionMetadata,
+  EvolutionServiceOptions,
+  ProposeFromReportInput,
+  ApplyInput,
+} from './evolution-service.js';
+export { EvolutionService } from './evolution-service.js';
+export type {
+  TaskAskCommandDeps,
+  TaskAskCommandResult,
+  TaskAskSubcommand,
+  RunTaskAskCommandOptions,
+} from './task-ask-command.js';
+export { runTaskAskCommand } from './task-ask-command.js';

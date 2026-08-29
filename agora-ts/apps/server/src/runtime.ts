@@ -113,6 +113,7 @@ function createObservationScheduler(runtime: {
     };
   };
   projectBrainIndexWorkerService?: Pick<ProjectBrainIndexWorkerService, 'drainPendingJobs'>;
+  notificationDispatcher?: { scan: () => Promise<{ delivered: number; failed: number }> };
 }): ObservationSchedulerController {
   const { scheduler } = runtime.config;
   const intervalMs = scheduler.enabled ? scheduler.scan_interval_sec * 1000 : null;
@@ -161,6 +162,17 @@ function createObservationScheduler(runtime: {
     timer = setInterval(() => {
       try {
         tick();
+      } catch (error) {
+        console.error('[agora] observation scheduler tick failed', error);
+      }
+      void runtime.notificationDispatcher?.scan().catch((error: unknown) => {
+        emitStructuredLog(structuredLogs, {
+          module: 'scheduler',
+          msg: 'notification_scan_tick',
+          result: 'error',
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
         if (runtime.projectBrainIndexWorkerService) {
           void runtime.projectBrainIndexWorkerService
             .drainPendingJobs({ limit: 25 })
@@ -187,9 +199,6 @@ function createObservationScheduler(runtime: {
               console.error('[agora] project brain index worker tick failed', error);
             });
         }
-      } catch (error) {
-        console.error('[agora] observation scheduler tick failed', error);
-      }
     }, intervalMs);
     timer.unref?.();
   }
@@ -344,6 +353,7 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
   const observationScheduler = createObservationScheduler({
     config,
     taskService,
+    ...(composition.notificationDispatcher ? { notificationDispatcher: composition.notificationDispatcher } : {}),
     ...(projectBrainIndexWorkerService ? { projectBrainIndexWorkerService } : {}),
   });
   const coordinationIntervalMs = Number(process.env.AGORA_COORDINATION_RECONCILE_MS ?? 3_000);

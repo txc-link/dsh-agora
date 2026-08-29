@@ -128,6 +128,7 @@ import { ClaudeCraftsmanAdapter, CodexCraftsmanAdapter, GeminiCraftsmanAdapter }
 import { OsHostResourcePort } from '@agora-ts/adapters-host';
 import { AcpCraftsmanInputPort, AcpCraftsmanProbePort, AcpCraftsmanTailPort, AcpRuntimeRecoveryPort, createDefaultCraftsmanAdapters, DirectAcpxRuntimePort, TmuxCraftsmanInputPort, TmuxCraftsmanProbePort, TmuxCraftsmanTailPort, TmuxRuntimeRecoveryPort, TmuxRuntimeService } from '@agora-ts/adapters-runtime';
 import { loadOpenClawDiscordAccountTokens, OpenClawAgentRegistry, OpenClawCitizenProjectionAdapter } from '@agora-ts/adapters-openclaw';
+import { MatrixIMMessagingAdapter } from '@agora-ts/adapters-matrix';
 import { DiscordIMMessagingAdapter, DiscordIMProvisioningAdapter } from '@agora-ts/adapters-discord';
 import { ObsidianContextSourceRetrievalAdapter } from '@agora-ts/adapters-obsidian';
 import type { TransactionManager } from '@agora-ts/contracts';
@@ -337,6 +338,15 @@ export function createDefaultCliCompositionFactories(): CliCompositionFactories 
     },
     createIMMessagingPort: (context) => {
       const { im } = context.config;
+      if (im.provider === 'matrix' && im.matrix) {
+        const m = im.matrix;
+        return new MatrixIMMessagingAdapter({
+          homeserverUrl: m.homeserver_url,
+          accessToken: m.access_token,
+          defaultRoomId: m.default_room_id,
+          roomByRef: m.room_by_ref,
+        });
+      }
       if (im.provider === 'discord' && im.discord?.bot_token) {
         return new DiscordIMMessagingAdapter({ botToken: im.discord.bot_token });
       }

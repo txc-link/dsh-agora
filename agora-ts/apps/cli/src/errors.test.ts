@@ -1,5 +1,22 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { classifyCliError, CLI_EXIT_CODES, renderCliError } from './errors.js';
+
+// 断言默认按 en-US 文案编写 (zh-CN 场景有独立用例并自行设置 env);
+// 固定 locale 使测试与运行环境 LANG 无关。
+let previousLocale: string | undefined;
+
+beforeAll(() => {
+  previousLocale = process.env.AGORA_LOCALE;
+  process.env.AGORA_LOCALE = 'en-US';
+});
+
+afterAll(() => {
+  if (previousLocale === undefined) {
+    delete process.env.AGORA_LOCALE;
+  } else {
+    process.env.AGORA_LOCALE = previousLocale;
+  }
+});
 
 describe('cli errors', () => {
   it('classifies usage errors and adds a help hint', () => {

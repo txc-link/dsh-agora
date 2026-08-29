@@ -13,6 +13,8 @@ export interface NotificationDispatcherOptions {
   bindingRepository: ITaskContextBindingRepository;
   messagingPort: IMMessagingPort;
   batchSize?: number;
+  /** 无 binding 通知的兜底投递目标（如组织默认房间 targetRef）；未配置则静默跳过 */
+  defaultTargetRef?: string | null;
 }
 
 export class NotificationDispatcher {
@@ -21,6 +23,7 @@ export class NotificationDispatcher {
   private readonly bindings: ITaskContextBindingRepository;
   private readonly messagingPort: IMMessagingPort;
   private readonly batchSize: number;
+  private readonly defaultTargetRef: string | null;
 
   constructor(options: NotificationDispatcherOptions) {
     this.outbox = options.outboxRepository;
@@ -28,6 +31,7 @@ export class NotificationDispatcher {
     this.bindings = options.bindingRepository;
     this.messagingPort = options.messagingPort;
     this.batchSize = options.batchSize ?? 50;
+    this.defaultTargetRef = options.defaultTargetRef ?? null;
   }
 
   async scan(): Promise<{ delivered: number; failed: number }> {
@@ -62,7 +66,7 @@ export class NotificationDispatcher {
 
   private resolveTarget(notification: NotificationOutboxRecord): string | null {
     if (!notification.target_binding_id) {
-      return null;
+      return this.defaultTargetRef;
     }
     const binding = this.bindings.getById(notification.target_binding_id);
     if (!binding) {

@@ -73,6 +73,7 @@ import { OsHostResourcePort } from '@agora-ts/adapters-host';
 import { AcpCraftsmanInputPort, AcpCraftsmanProbePort, AcpCraftsmanTailPort, AcpRuntimeRecoveryPort, createDefaultCraftsmanAdapters, DirectAcpxRuntimePort, TmuxCraftsmanInputPort, TmuxCraftsmanProbePort, TmuxCraftsmanTailPort, TmuxRuntimeRecoveryPort, TmuxRuntimeService } from '@agora-ts/adapters-runtime';
 import { loadOpenClawDiscordAccountTokens, OpenClawAgentRegistry, OpenClawCitizenProjectionAdapter, OpenClawLogPresenceSource } from '@agora-ts/adapters-openclaw';
 import { DiscordGatewayPresenceService, DiscordIMMessagingAdapter, DiscordIMProvisioningAdapter } from '@agora-ts/adapters-discord';
+import { MatrixIMMessagingAdapter } from '@agora-ts/adapters-matrix';
 import { ObsidianContextSourceRetrievalAdapter } from '@agora-ts/adapters-obsidian';
 import { agoraDataDirPath, hasInstalledBrainPack, refineProjectNomosDraftFromSpec, resolveAgoraProjectStateLayout, resolveProjectNomosRuntimePaths, resolveProjectNomosState, syncBundledBrainPackContents, type AgoraConfig } from '@agora-ts/config';
 import type { IFlowLogRepository, IProgressLogRepository, LiveSessionDto } from '@agora-ts/contracts';
@@ -575,6 +576,15 @@ export function createDefaultServerCompositionFactories(): ServerCompositionFact
       if (im.provider === 'discord' && im.discord?.bot_token) {
         return new DiscordIMMessagingAdapter({ botToken: im.discord.bot_token });
       }
+      if (im.provider === 'matrix' && im.matrix) {
+        const m = im.matrix;
+        return new MatrixIMMessagingAdapter({
+          homeserverUrl: m.homeserver_url,
+          accessToken: m.access_token,
+          defaultRoomId: m.default_room_id,
+          roomByRef: m.room_by_ref,
+        });
+      }
       return new StubIMMessagingPort();
     },
     createIMProvisioningPort: (context) => {
@@ -696,12 +706,23 @@ export function createDefaultServerCompositionFactories(): ServerCompositionFact
       accountRepository: new HumanAccountRepository(context.db),
       identityBindingRepository: new HumanIdentityBindingRepository(context.db),
     }),
-    createNotificationDispatcher: (context, deps) => new NotificationDispatcher({
-      outboxRepository: new NotificationOutboxRepository(context.db),
-      conversationRepository: new TaskConversationRepository(context.db),
-      bindingRepository: new TaskContextBindingRepository(context.db),
-      messagingPort: deps.messagingPort,
-    }),
+    createNotificationDispatcher: (context, deps) => {
+      const { im } = context.config;
+      // 无 binding 通知（如 task_created 公告）的兜底目标: 按 provider 取默认房间/频道
+      const defaultTargetRef =
+        im.provider === 'matrix'
+          ? im.matrix?.default_room_id ?? null
+          : im.provider === 'discord'
+            ? im.discord?.default_channel_id ?? null
+            : null;
+      return new NotificationDispatcher({
+        outboxRepository: new NotificationOutboxRepository(context.db),
+        conversationRepository: new TaskConversationRepository(context.db),
+        bindingRepository: new TaskContextBindingRepository(context.db),
+        messagingPort: deps.messagingPort,
+        ...(defaultTargetRef ? { defaultTargetRef } : {}),
+      });
+    },
     createTaskConversationService: (context) => new TaskConversationService({
       bindingRepository: new TaskContextBindingRepository(context.db),
       conversationRepository: new TaskConversationRepository(context.db),

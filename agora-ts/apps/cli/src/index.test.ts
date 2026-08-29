@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ArchiveJobRepository, createAgoraDatabase, HumanAccountRepository, HumanIdentityBindingRepository, runMigrations, SubtaskRepository, TaskContextBindingRepository, TaskConversationReadCursorRepository, TaskConversationRepository, TaskRepository, TemplateRepository, type AgoraDatabase } from '@agora-ts/db';
+import { ArchiveJobRepository, createAgoraDatabase, HumanAccountRepository, HumanIdentityBindingRepository, NotificationOutboxRepository, runMigrations, SubtaskRepository, TaskContextBindingRepository, TaskConversationReadCursorRepository, TaskConversationRepository, TaskRepository, TemplateRepository, type AgoraDatabase } from '@agora-ts/db';
 import type { CcConnectInspectionService, CcConnectManagementService, DashboardQueryService, RetrievalService, TaskService } from '@agora-ts/core';
 import { HumanAccountService, ProjectBrainAutomationService, ProjectBrainService, StubCraftsmanAdapter, StubIMProvisioningPort, TaskConversationService, TaskContextBindingService, TemplateAuthoringService } from '@agora-ts/core';
 import { FilesystemProjectBrainQueryAdapter, FilesystemProjectKnowledgeAdapter } from '@agora-ts/adapters-brain';
@@ -344,6 +344,11 @@ describe('agora-ts cli', () => {
   it('renders redirect help for agora users --help', async () => {
     const stdout = createBuffer();
     const stderr = createBuffer();
+
+    // addRedirectCommand 在 program 构造时捕获 locale; 必须在 createCliProgram 之前 pin。
+    const previousLocale = process.env.AGORA_LOCALE;
+    process.env.AGORA_LOCALE = 'en-US';
+
     const program = createCliProgram({
       configPath: '/definitely/missing/agora.json',
       stdout,
@@ -354,6 +359,12 @@ describe('agora-ts cli', () => {
       await program.parseAsync(['users', '--help'], { from: 'user' });
     } catch {
       // Commander may surface help as an exit signal.
+    } finally {
+      if (previousLocale === undefined) {
+        delete process.env.AGORA_LOCALE;
+      } else {
+        process.env.AGORA_LOCALE = previousLocale;
+      }
     }
 
     expect(stderr.value).toBe('');
@@ -5414,5 +5425,61 @@ token = "MTQ5MTc4MTM0NDY2NDIyNzk0Mg.fake.fake"
     expect(stderr.value).toBe('');
     expect(calls).toEqual([{ runningAfterMs: 60000, waitingAfterMs: 15000 }]);
     expect(stdout.value).toContain('"probed": 1');
+  });
+});
+
+describe('cli task create task_created notification', () => {
+  it('writes a task_created outbox row when im.matrix.notify_on_task_create is on', async () => {
+    const dir = makeTempDir('agora-ts-cli-notify-');
+    const dbPath = join(dir, 'agora.db');
+    const configPath = join(dir, 'agora.json');
+    writeFileSync(configPath, JSON.stringify({
+      db_path: dbPath,
+      im: {
+        provider: 'matrix',
+        matrix: {
+          homeserver_url: 'http://127.0.0.1:8008',
+          access_token: 'syt_test',
+          user_id: '@dsh-bridge-node-a:agent-hub.local',
+          default_room_id: '!room:agent-hub.local',
+          notify_on_task_create: true,
+        },
+      },
+    }));
+    const stdout = createBuffer();
+    const stderr = createBuffer();
+    const program = createCliProgram({ configPath, dbPath, stdout, stderr }).exitOverride();
+
+    await program.parseAsync(['create', 'notify smoke', '-c', 'agent:dev-1'], { from: 'user' });
+
+    expect(stderr.value).toBe('');
+    expect(stdout.value).toContain('任务已创建:');
+    const db = createAgoraDatabase({ dbPath });
+    runMigrations(db);
+    const rows = new NotificationOutboxRepository(db).listPending(10);
+    const row = rows.find((r) => r.event_type === 'task_created');
+    expect(row).toBeTruthy();
+    expect(row!.id).toBe(`notify-${stdout.value.split('\n').find((l) => l.includes('任务已创建: '))?.split(': ')[1]}`);
+    expect((row!.payload as Record<string, unknown>).creator).toBe('agent:dev-1');
+    db.close();
+  });
+
+  it('writes no outbox row when im.provider is none', async () => {
+    const dir = makeTempDir('agora-ts-cli-notify-none-');
+    const dbPath = join(dir, 'agora.db');
+    const configPath = join(dir, 'agora.json');
+    writeFileSync(configPath, JSON.stringify({ db_path: dbPath, im: { provider: 'none' } }));
+    const stdout = createBuffer();
+    const stderr = createBuffer();
+    const program = createCliProgram({ configPath, dbPath, stdout, stderr }).exitOverride();
+
+    await program.parseAsync(['create', 'no notify', '-c', 'agent:dev-1'], { from: 'user' });
+
+    expect(stderr.value).toBe('');
+    expect(stdout.value).toContain('任务已创建:');
+    const db = createAgoraDatabase({ dbPath });
+    runMigrations(db);
+    expect(new NotificationOutboxRepository(db).listPending(10).filter((r) => r.event_type === 'task_created')).toEqual([]);
+    db.close();
   });
 });

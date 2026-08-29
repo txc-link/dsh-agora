@@ -7,11 +7,29 @@
   },
   "permissions": {
     "allowAgents": {
-      "opus": { "canCall": ["sonnet", "glm5", "haiku", "claude_code"], "canAdvance": true },
-      "sonnet": { "canCall": ["haiku"], "canAdvance": false },
-      "*": { "canCall": [], "canAdvance": false }
+      "opus": {
+        "canCall": [
+          "sonnet",
+          "glm5",
+          "haiku",
+          "claude_code"
+        ],
+        "canAdvance": true
+      },
+      "sonnet": {
+        "canCall": [
+          "haiku"
+        ],
+        "canAdvance": false
+      },
+      "*": {
+        "canCall": [],
+        "canAdvance": false
+      }
     },
-    "archonUsers": ["lizeyu"]
+    "archonUsers": [
+      "lizeyu"
+    ]
   },
   "im": {
     "provider": "discord",
@@ -22,6 +40,14 @@
       "gateway_presence_enabled": true,
       "gateway_presence_status": "online",
       "gateway_presence_activity": "Agora"
+    },
+    "matrix": {
+      "homeserver_url": "http://localhost:8008",
+      "access_token": "syt_your_token",
+      "user_id": "@dsh-bridge-node-a:agent-hub.local",
+      "default_room_id": "!your-room-id:agent-hub.local",
+      "room_by_ref": {},
+      "notify_on_task_create": true
     }
   },
   "craftsmen": {

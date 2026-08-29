@@ -1,0 +1,109 @@
+# Checklist — 公司化 Agent 组织 OS（S1–S6 执行清单）
+
+> 用途: 本工作流唯一细粒度执行清单。每轮迭代开发→测试循环后更新勾选状态与证据引用。
+> 来源: 用户愿景 (turn 158-160) + 差距盘点 (turn 163) + 实施进度 (2026-08-30 起)
+> 规则: 每个条目完成 = worktree + TDD + build/gates + 冒烟 + 合并 + SSoT/walkthrough 回写 + 本文件勾选
+> 汇总索引见 README.md（本文件为细粒度唯一清单, 不另设平行表）
+
+## 迭代循环纪律（每条目固定流程）
+
+1. 读蓝图对应子文档 + §3 建 task_dir（task_plan/findings/progress）
+2. worktree（`.dsh/workspaces/<slug>`）
+3. TDD: red 测试 → green 实现 → 回归全绿
+4. `npm run build` + gate:core-architecture + gate:barrel-governance
+5. 真实冒烟（隔离 HOME 跑真 CLI，对着真实生命周期验证）
+6. merge 回 develop → 删 worktree（Hygiene）
+7. 回写: SSoT Change Log + task_dir progress + 蓝图子文档实施记录 + 本文件勾选 + walkthrough
+8. gm_record 更新长期记忆
+
+---
+
+## S1 组织架构（Team / 层级 / 职责域）
+
+- [x] 调研: Core 已有 CitizenService / RolePackService / ProjectAgentRosterService / team-member-kind（turn 163）
+- [x] `TeamService`: Team 聚合模型（lead / members / responsibility / parent）+ 持久化（090ca6d, migration 038, 13 新测试）
+- [x] `OrgHierarchyResolver`: reportTo / subordinates 层级解析（090ca6d）
+- [x] CLI: `agora org` / `agora team` 配置入口（090ca6d; 冒烟 4/4）
+- [x] 与 ProjectMembership 的关系定型（统一 or 并存）→ U6 已决: **并存**（Team=组织汇报关系, ProjectMembership=项目协作关系; SSoT 2026-08-30 拍板）
+
+## S2 主动任务接取（✅ 主体已完成 505ce4d）
+
+- [x] `TaskClaimService` 状态机（claim/release/expire）— 测试 9/9
+- [x] `matchTaskToAgent` 职责匹配（skills_ref ↔ skill_policy）— 测试 9/9
+- [x] `ResidentAgentPoller` 定时轮询 — 测试 7/7
+- [x] CLI `agora claim {create,release,list,claimable}` — 测试 7/7 + 冒烟 8/8
+- [x] migration 036_task_claims + TaskClaimRepository
+- [x] 认领超时 expire 周期性执行: `TaskClaimService.expireStale` + poller 每轮先扫（8b0d3e6）
+- [x] Poller 落地: `agora claim poll [--interval-ms]` 常驻轮询入口（设计修正: poller 属 agent 侧, 认领=agent 真在场, server 不代劳 — 见 walkthrough）
+
+## S3 委派路由（依赖 S1 Team 模型）
+
+- [x] `DelegateRouter`: 组织架构 → 下级 agent 委派（349a04d: delegateSubtree 子树全员 + escalateUp 上报链）
+- [x] 委派任务群发通知（notify 端口 = IMMessagingPort.sendNotification 形状; 事件 task_delegated/task_escalated; IM 实通道 Phase 6 绑定）
+- [x] 委派深度限制（maxDepth 默认 4）+ 环路检测（parent 链 visited 显式拒绝）
+
+## S4 共享记忆（mem0 + ProjectBrain + obsidian）
+
+- [x] mem0 部署形态调研定型: 本机 REST server `:8888` 已运行（postgres + JWT + 本地 vLLM Qwen2.5-0.5B + bge-m3, 源码仓 /root/mem0-deploy/mem0）— U3 已决
+- [x] `adapters-mem0`: Mem0RestAdapter + `agora experience` CLI（993e7b6; 真实全链等 AGORA_MEM0_TOKEN）
+- [x] 群组维度接入点: `agora experience` 写/读（手动 CLI 口径）; forum learn 任务开始注入
+- [x] obsidian vault 分组映射（61a3b6c: ForumVaultWriter + `agora forum export --vault`; 分组 <vault>/<base>/<project>/<category>/, frontmatter tags, 评论线程, id 索引幂等; vault=本地文件夹, Obsidian 自动刷新）
+- [ ] 跨节点 L4 记忆（federation P2 实现; **不需要多 homeserver**——当前单 homeserver + 多 DSH 节点拓扑下即可做, node-b/c 接入后跨节点场景即存在; 2026-08-30 用户拍板: 优先级延后, 待三机跑起来观察真实需求再启动, 不做超前开发）
+
+## S5 主动对话 push（✅ 主体已完成 d002792, 2026-08-30）
+
+- [x] `AgentQuestionService`: 状态机 pending→answered|escalated→answered; *→closed — 测试 11/11
+- [x] `routeQuestion`: 助手优先 → CEO（assistantRef 可配置解耦 U2）
+- [x] `agora ask` CLI: {create,list,show,answer,escalate,close} — 测试 7/7 + 冒烟 7/7
+- [x] QuestionMessagingPort 推送缝（create/escalate 通知; core 零平台名）
+- [x] IM 真实通道绑定（2609572 adapters-matrix + 92a56b0/9c37655: live 现网 task_created 45s 自动送达 Synapse ✅ 2026-08-30）
+- [x] ResearchRequestService: 以 kind=research + answer 承载（D1 修正, 不单独建服务, 见 planning D1）
+- [x] 调研结果自动写回共享记忆（c0e5c9a: answer(kind=research) → GroupMemoryPort.add, 真实 mem0 :8888 冒烟 scope=task:org 分区写入 ✅ 2026-08-30）
+
+## S6 反思进化 + 论坛
+
+- [x] `ReflectionService`: 读 scorecard → 反思报告生成（92938b0）
+- [x] `ForumService`: 帖子模型（lesson/howto/insight/question/proposal）+ CRUD + 搜索 → U4 已决: SQLite ForumRepository(migration 039)（92938b0）
+- [x] `AgentEvolutionService`: 反思 → 配置更新 = **建议+确认** 模式（c0e5c9a: 反思报告→proposal 帖, apply 状态机 proposed→applied, 不隐式改配置文件; 真库冒烟 ✅）
+- [x] 学习注入: 新任务开始时检索相关帖子进上下文（92938b0: ForumService.relevantPosts + CLI）
+- [x] CLI: `agora reflect` / `agora post` / `agora forum` / `agora evolution {propose,apply}`（92938b0 + c0e5c9a）
+
+## 部署与入口（Phase 6）
+
+- [x] dsh-matrix-connector transport 真实化（matrix 仓 develop `ee789e3`: src/transport/matrix-js-sdk.ts v0.4.0+v0.5; **真实 Synapse :8008 冒烟 PASS** 2026-08-30: connect/createRoom/send/joinedMembers/sync）
+- [x] worksite thread resolver 实现（core/src/worksite/thread-resolver.ts; worksite 套件 85 测试; ThreadSourcePort 抽象, §1 合规）
+- [x] 3 台机拓扑默认拍板 **方案 C**（Linux 中央 home server = agora + mem0 + Synapse; Win/Mac 客户端接入; runbook = matrix 仓 deploy/01-04 脚本; 实机部署由用户执行）→ U5 如用户另选可改
+- [x] E2EE 决定（R-D: disabled by default; initRustCrypto 非致命; 加密房间后续轮）
+- [ ] federation P3（自动团队组建; 后续轮, 同 P2: 不需要多 homeserver, 单 homeserver 多 DSH 节点即可; 用户拍板优先级延后）
+- [x] Discord 冒烟（R-G 已闭环 2026-08-30: 三台 bot token 存 .secrets/discord.env; austin_l bot REST + adapter 真机冒烟 ✅）
+
+---
+
+## 已完成里程碑
+
+| 日期 | 交付 | commit | 证据 |
+|---|---|---|---|
+| 2026-08-30 | 蓝图 7 文档落盘 | `bf3bc72` | Doc/03-ARCHITECTURE/org-aware-work-os/ |
+| 2026-08-30 | S2 任务认领主体（service/matcher/poller/CLI/migration） | `505ce4d` | 33 新测试 + 回归 592/592 + 冒烟 8/8 |
+| 2026-08-30 | S2 回写（SSoT/progress/walkthrough/checklist） | `80056f3` | Doc/10-WALKTHROUGH/2026-08-30-org-aware-task-claiming.md |
+| 2026-08-30 | S1-S6 细粒度执行清单建立 | `3f54c41` | checklist.md + host goal + 图谱记忆 |
+| 2026-08-30 | S5 主动提问 push（service/route/CLI/migration 037） | `d002792` | 18 新测试 + 回归 610/610 + 冒烟 7/7 |
+| 2026-08-30 | S2 收尾（expireStale + claim poll 常驻入口） | `8b0d3e6` | 8 新测试 + 回归 618/618 + 冒烟 4/4 |
+| 2026-08-30 | S4 R1（mem0 adapter + experience CLI） | `993e7b6` | 11 新测试 + 回归 629/629 + 冒烟 6/6 |
+| 2026-08-30 | S1 组织模型（teams + 层级 + CLI） | `090ca6d` | 13 新测试 + 回归 638/638 + 冒烟 4/4 |
+| 2026-08-30 | S3 委派路由（DelegateRouter + CLI） | `349a04d` | 7 新测试 + 回归 645/645 + 冒烟 4/4 |
+| 2026-08-30 | S6 反思论坛（Forum + Reflection + CLI） | `92938b0` | 8 新测试 + 回归 653/653 + 冒烟 5/5 |
+| 2026-08-30 | Phase 6 R-B matrix transport 真实化 + 真机冒烟 | matrix 仓 `ee789e3` | smoke-real-homeserver PASS (Synapse :8008) |
+| 2026-08-30 | Phase 6 S5/S3 IM 通道绑定 (adapters-matrix) | `2609572` | 回归 1239/1239 + 真机发 2 条通知回读落盘 |
+| 2026-08-30 | Phase 6 server E2E + roomId 直发 | `92a56b0` | 一次性 server(:18018) → outbox → dispatcher → Synapse 落盘 {delivered:1} |
+| 2026-08-30 | S4 obsidian 资料沉淀分组 (forum export) | `61a3b6c` | obsidian 套件 10/10 + 真帖导出冒烟 |
+| 2026-08-30 | task_created 自动通知链路（dispatcher defaultTargetRef + REST 挂点 + 周期扫描） | `9c37655` | 回归 1418/1418 + live 现网 45s 自动送达 Synapse |
+| 2026-08-30 | S5/S6 checklist 清零（research 写回 + EvolutionService） | `c0e5c9a` | 回归 1423/1423 + mem0/evolution 真实冒烟 ✅ |
+
+## 迭代顺序（按用户优先级 D5: S2→S5→S4→S6→部署）
+
+1. ✅ S2 主动任务接取（505ce4d）
+2. ✅ S5 主动对话 push 主体（d002792）
+3. ✅ S2 收尾（8b0d3e6）
+4. ⏭ **S4 剩余**: MEM0 token（待用户提供）→ 真实全链冒烟; obsidian 分组映射; 跨节点 L4
+8. ✅ Phase 6 完成: transport 真实化 (matrix 仓 `ee789e3` 真机冒烟) + thread resolver (85 测试) + S5/S3 IM 通道 (`2609572` MatrixIMMessagingAdapter, 真机回读验证) + 拓扑方案 C 默认; 剩 federation P3 / Discord R-G 两项环境依赖

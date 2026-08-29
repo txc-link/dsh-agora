@@ -721,3 +721,204 @@ export interface IBorrowRequestRepository {
     decidedAt: string,
   ): BorrowRequestRecord | null;
 }
+
+// ─── 30. TaskClaim (org-aware-work-os S2, 2026-08-30) ───────────────────
+
+export type TaskClaimStatus = 'pending' | 'claimed' | 'released' | 'expired';
+
+export interface TaskClaimRecord {
+  id: string;
+  taskId: string;
+  agentRef: string;
+  status: TaskClaimStatus;
+  claimedAt: string | null;
+  releasedAt: string | null;
+  expiresAt: string | null;
+  reason: string | null;
+  createdAt: string;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface ITaskClaimRepository {
+  insert(input: {
+    id?: string;
+    taskId: string;
+    agentRef: string;
+    reason?: string | null;
+    expiresAt?: string | null;
+    metadata?: Record<string, unknown> | null;
+  }): TaskClaimRecord;
+  getById(id: string): TaskClaimRecord | null;
+  getByTaskId(taskId: string): TaskClaimRecord | null;
+  listByAgent(agentRef: string): TaskClaimRecord[];
+  listPending(): TaskClaimRecord[];
+  listClaimed(): TaskClaimRecord[];
+  updateStatus(
+    id: string,
+    status: TaskClaimStatus,
+    at: string,
+  ): TaskClaimRecord | null;
+}
+
+// ─── section 31: Agent questions (org-aware-work-os S5) ─────────────────────
+
+export type AgentQuestionStatus = 'pending' | 'answered' | 'escalated' | 'closed';
+export type AgentQuestionKind = 'clarify' | 'resource' | 'approval' | 'info' | 'research';
+export type AgentQuestionTarget = 'assistant' | 'ceo';
+
+export interface AgentQuestionRecord {
+  id: string;
+  taskId: string | null;
+  agentRef: string;
+  kind: AgentQuestionKind;
+  question: string;
+  context: string | null;
+  target: AgentQuestionTarget;
+  status: AgentQuestionStatus;
+  answer: string | null;
+  answeredBy: string | null;
+  answeredAt: string | null;
+  escalatedAt: string | null;
+  closedAt: string | null;
+  createdAt: string;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface IAgentQuestionRepository {
+  insert(input: {
+    id?: string;
+    taskId?: string | null;
+    agentRef: string;
+    kind: AgentQuestionKind;
+    question: string;
+    context?: string | null;
+    target: AgentQuestionTarget;
+    metadata?: Record<string, unknown> | null;
+  }): AgentQuestionRecord;
+  getById(id: string): AgentQuestionRecord | null;
+  listByStatus(status: AgentQuestionStatus): AgentQuestionRecord[];
+  listByAgent(agentRef: string): AgentQuestionRecord[];
+  listOpen(): AgentQuestionRecord[];
+  updateStatus(
+    id: string,
+    status: AgentQuestionStatus,
+    at: string,
+  ): AgentQuestionRecord | null;
+  updateAnswer(
+    id: string,
+    answer: string,
+    answeredBy: string,
+    answeredAt: string,
+  ): AgentQuestionRecord | null;
+  updateTarget(
+    id: string,
+    target: AgentQuestionTarget,
+  ): AgentQuestionRecord | null;
+}
+
+// ─── 32. Org teams (S1 组织模型: team 聚合 + 层级) ──────────────────────────
+
+export type TeamRecordMemberList = string[];
+
+export interface TeamRecord {
+  id: string;
+  project_id: string;
+  name: string;
+  /** team lead agent ref */
+  lead: string;
+  /** member agent refs (含 lead) */
+  members: TeamRecordMemberList;
+  /** 职责域 (如 dev/research/ops), 与任务 skill 匹配 */
+  responsibilities: string[];
+  /** 上级 team id; null = 组织根直属 */
+  parent_id: string | null;
+  created_at: string;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface TeamInsertInput {
+  id?: string;
+  project_id: string;
+  name: string;
+  lead: string;
+  members?: TeamRecordMemberList;
+  responsibilities?: string[];
+  parent_id?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface TeamUpdateInput {
+  lead?: string;
+  members?: TeamRecordMemberList;
+  responsibilities?: string[];
+  parent_id?: string | null;
+}
+
+export interface ITeamRepository {
+  insert(input: TeamInsertInput): TeamRecord;
+  getById(id: string): TeamRecord | null;
+  getByName(projectId: string, name: string): TeamRecord | null;
+  listByProject(projectId: string): TeamRecord[];
+  listByMember(agentRef: string): TeamRecord[];
+  update(id: string, patch: TeamUpdateInput): TeamRecord | null;
+  delete(id: string): boolean;
+}
+
+// ─── 33. Forum (S6 反思论坛) ────────────────────────────────────────────────
+
+export type ForumCategory = 'lesson' | 'howto' | 'insight' | 'question' | 'proposal';
+
+export interface ForumPostRecord {
+  id: string;
+  project_id: string;
+  author: string;
+  title: string;
+  category: ForumCategory;
+  content: string;
+  /** 关联任务/文档 ref */
+  refs: string[];
+  tags: string[];
+  created_at: string;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface ForumCommentRecord {
+  id: string;
+  post_id: string;
+  author: string;
+  content: string;
+  created_at: string;
+}
+
+export interface ForumPostInsertInput {
+  id?: string;
+  project_id: string;
+  author: string;
+  title: string;
+  category: ForumCategory;
+  content: string;
+  refs?: string[];
+  tags?: string[];
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface ForumPostQuery {
+  project_id: string;
+  category?: ForumCategory;
+  tag?: string;
+  author?: string;
+  /** 关键词 (title/content LIKE) */
+  keyword?: string;
+  limit?: number;
+}
+
+export interface IForumRepository {
+  insertPost(input: ForumPostInsertInput): ForumPostRecord;
+  getPost(id: string): ForumPostRecord | null;
+  /** 最小可变能力: 进化/审核类状态写回 (metadata patch); 不支持改不可变字段 */
+  updatePost(id: string, patch: Partial<ForumPostRecord>): ForumPostRecord | null;
+  listPosts(query: ForumPostQuery): ForumPostRecord[];
+  deletePost(id: string): boolean;
+  insertComment(postId: string, author: string, content: string): ForumCommentRecord;
+  listComments(postId: string): ForumCommentRecord[];
+}

@@ -35,6 +35,14 @@ export function createAppFromRuntime(runtime: ReturnType<typeof createServerRunt
     taskParticipationService: runtime.taskParticipationService,
     humanAccountService: runtime.humanAccountService,
     notificationDispatcher: runtime.notificationDispatcher,
+    taskCreatedNotify: {
+      enabled:
+        runtime.config?.im?.provider === 'matrix'
+          ? runtime.config.im.matrix?.notify_on_task_create !== false
+          : runtime.config?.im?.provider === 'discord'
+            ? runtime.config.im.discord?.notify_on_task_create !== false
+            : false,
+    },
     apiAuth: runtime.apiAuth,
     dashboardAuth: runtime.dashboardAuth,
     rateLimit: runtime.rateLimit,

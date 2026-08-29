@@ -2,6 +2,11 @@
 
 baseline: matrix main `71c01f6` (turn 117 盘点)
 
+> **2026-08-30 更新**: 本文是 turn 117 盘点快照, 已过时。matrix 仓 develop `ee789e3` 已完成:
+> R-B transport 真实化 (`src/transport/matrix-js-sdk.ts` v0.4.0: connect/createRoom/send/edit/upload/joinedMembers + v0.5 R-D inbound timeline) +
+> **真实 homeserver 冒烟 PASS** (2026-08-30, `tests/smoke-real-homeserver.mjs` 对 Synapse localhost:8008: connect → createRoom `!…:agent-hub.local` → sendRoomMessage eventId → joinedMembers → sync lifecycle; 凭据 deploy/node-a.env)。
+> E2EE 决定已落 (R-D: disabled by default, initRustCrypto 非致命)。T-0 thread resolver 在 dsh-agora 主仓已实现 (worksite/thread-resolver.ts, worksite 套件 85 测试)。
+
 ## 1. 仓库
 
 - 仓: `txc-link/dsh-matrix-connector` (独立仓, 不在 monorepo)

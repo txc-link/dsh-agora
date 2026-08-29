@@ -13,7 +13,9 @@
     { "path": "./packages/adapters-openclaw/tsconfig.build.json" },
     { "path": "./packages/adapters-cc-connect/tsconfig.build.json" },
     { "path": "./packages/adapters-obsidian/tsconfig.build.json" },
+    { "path": "./packages/adapters-mem0/tsconfig.build.json" },
     { "path": "./packages/adapters-discord/tsconfig.build.json" },
+    { "path": "./packages/adapters-matrix/tsconfig.build.json" },
     { "path": "./packages/testing/tsconfig.build.json" },
     { "path": "./apps/server/tsconfig.build.json" },
     { "path": "./apps/cli/tsconfig.build.json" }

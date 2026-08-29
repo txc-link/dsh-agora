@@ -290,6 +290,8 @@ export interface BuildAppOptions {
   inboxReplyService?: InboxReplyService;
   taskParticipationService?: TaskParticipationService;
   notificationDispatcher?: NotificationDispatcher;
+  /** im.notify_on_task_create: 建任务后写 task_created 公告行, 由 scheduler 周期扫描推送 */
+  taskCreatedNotify?: { enabled: boolean };
   imProvisioningPort?: IMProvisioningPort;
   humanAccountService?: HumanAccountService;
   apiAuth?: {
@@ -2281,6 +2283,24 @@ export function buildApp(options: BuildAppOptions = {}) {
       const enriched = appendDashboardHumanImParticipantRef(payload, humanActor, humanAccountService);
       const created = taskService.createTask(enriched);
       recordTaskAction(metrics, 'create', 'success');
+      if (options.taskCreatedNotify?.enabled && options.db) {
+        try {
+          new NotificationOutboxRepository(options.db).insert({
+            id: `notify-${created.id}`,
+            task_id: created.id,
+            event_type: 'task_created',
+            target_binding_id: null,
+            payload: {
+              title: created.title,
+              creator: created.creator,
+              ...(created.project_id ? { project_id: created.project_id } : {}),
+            },
+            sequence_no: Date.now(),
+          });
+        } catch {
+          // 通知公告写入失败不阻塞建任务
+        }
+      }
       emitStructuredLog(structuredLogs, {
         module: 'task',
         msg: 'task_action',

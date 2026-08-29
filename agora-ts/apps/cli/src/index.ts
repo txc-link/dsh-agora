@@ -75,18 +75,33 @@ import {
   type MergeCoordinatorService,
   BorrowService,
   runBorrowCommand,
+  TaskClaimService,
+  runTaskClaimCommand,
+  runTaskClaimPollCommand,
+  GroupMemoryService,
+  type GroupMemoryPort,
+  TeamService,
+  OrgHierarchyResolver,
+  DelegateRouter,
+  ForumService,
+  ReflectionService,
+  EvolutionService,
+  AgentQuestionService,
+  runTaskAskCommand,
   ThreadTaskBindingService,
   runThreadBindCommand,
   type RunThreadBindCommandOptions,
   isDeveloperRegressionEnabled,
 } from '@agora-ts/core';
-import type { IBorrowRequestRepository, IThreadTaskBindingRepository } from '@agora-ts/contracts';
-import { TaskRepository } from '@agora-ts/db';
+import { Mem0RestAdapter } from '@agora-ts/adapters-mem0';
+import { ForumVaultWriter } from '@agora-ts/adapters-obsidian';
+import type { IAgentQuestionRepository, IBorrowRequestRepository, ITaskClaimRepository, IThreadTaskBindingRepository, ITeamRepository, IForumRepository } from '@agora-ts/contracts';
+import { NotificationOutboxRepository, TaskRepository } from '@agora-ts/db';
 import { ThreadTaskBindingRepository } from '@agora-ts/db';
 import { OpenAiCompatibleProjectBrainEmbeddingAdapter } from '@agora-ts/adapters-brain';
 import { buildCcConnectAgentId, CcConnectAgentRegistry, loadCcConnectProjectTargets } from '@agora-ts/adapters-cc-connect';
 import { ProjectContextBriefingMaterializer, RuntimeRepoShimMaterializer, RuntimeRepoShimWritebackService } from '@agora-ts/adapters-materialization';
-import { ProjectBrainIndexJobRepository, RuntimeTargetOverlayRepository, BorrowRequestRepository, type AgoraDatabase } from '@agora-ts/db';
+import { ProjectBrainIndexJobRepository, RuntimeTargetOverlayRepository, AgentQuestionRepository, BorrowRequestRepository, TaskClaimRepository, TeamRepository, ForumRepository, CoordinationRepository, type AgoraDatabase } from '@agora-ts/db';
 import { LiveRegressionActor } from '@agora-ts/testing';
 import type { DashboardSessionClient } from './dashboard-session-client.js';
 import type {
@@ -230,6 +245,12 @@ export interface CliDependencies {
   mergeCoordinatorService?: Pick<MergeCoordinatorService, 'create' | 'get' | 'list' | 'execute'>;
   borrowService?: BorrowService;
   borrowRequestRepository?: IBorrowRequestRepository;
+  taskClaimService?: TaskClaimService;
+  taskClaimRepository?: ITaskClaimRepository;
+  agentQuestionService?: AgentQuestionService;
+  agentQuestionRepository?: IAgentQuestionRepository;
+  teamRepository?: ITeamRepository;
+  forumRepository?: IForumRepository;
   threadTaskBindingRepository?: IThreadTaskBindingRepository;
   ccConnectInspectionService?: CcConnectInspectionService;
   ccConnectManagementService?: CcConnectManagementService;
@@ -650,6 +671,20 @@ export function createCliProgram(deps: CliDependencies = {}) {
   const mergeCoordinatorService = createLazyObject(() => deps.mergeCoordinatorService ?? resolveComposition().mergeCoordinatorService);
   const borrowService = createLazyObject(() => deps.borrowService ?? resolveComposition().borrowService);
   const getBorrowRequestRepository = () => deps.borrowRequestRepository ?? new BorrowRequestRepository(resolveComposition().db);
+  const getTaskClaimRepository = (): ITaskClaimRepository => deps.taskClaimRepository ?? new TaskClaimRepository(resolveComposition().db);
+  const getTaskClaimService = () => deps.taskClaimService ?? new TaskClaimService({
+    claimRepo: getTaskClaimRepository(),
+    taskExists: (taskId) => new TaskRepository(resolveComposition().db).getTask(taskId) !== null,
+  });
+  const getAgentQuestionRepository = (): IAgentQuestionRepository => deps.agentQuestionRepository ?? new AgentQuestionRepository(resolveComposition().db);
+  const getAgentQuestionService = () => deps.agentQuestionService ?? new AgentQuestionService({
+    questionRepo: getAgentQuestionRepository(),
+    // S1 组织模型落地后从配置/roster 读取 assistantRef; 当前默认直达 ceo
+    assistantRef: null,
+    ceoRef: 'human:ceo',
+    // S5: research 类问题 answer 时自动沉淀到共享记忆 (mem0; 不可用时静默)
+    groupMemory: { add: (input) => getGroupMemoryService().record(input) },
+  });
   const getThreadTaskBindingRepository = () => deps.threadTaskBindingRepository ?? new ThreadTaskBindingRepository(resolveComposition().db);
   const getThreadTaskBindingService = () => new ThreadTaskBindingService({
     repo: getThreadTaskBindingRepository(),
@@ -949,6 +984,646 @@ export function createCliProgram(deps: CliDependencies = {}) {
       if (!result.ok) process.exitCode = 1;
     });
 
+  const claim = program.command('claim').description('Task claiming for resident agents (org-aware-work-os S2)');
+  const claimDeps = () => ({
+    claimService: getTaskClaimService(),
+    claimRepo: getTaskClaimRepository(),
+    taskRepo: new TaskRepository(resolveComposition().db),
+  });
+  claim
+    .command('create')
+    .description('claim a task for an agent')
+    .requiredOption('--task <taskId>', 'agora task id')
+    .requiredOption('--agent <agentRef>', 'agent ref (e.g. agent:dev-1)')
+    .option('--reason <reason>', 'why this agent claims the task')
+    .option('--ttl-ms <ttlMs>', 'claim time-to-live in ms (expired claims are released)', (v: string) => Number.parseInt(v, 10), undefined)
+    .action(async (options: { task: string; agent: string; reason?: string; ttlMs?: number }) => {
+      const result = await runTaskClaimCommand(claimDeps(), {
+        subcommand: 'claim',
+        taskId: options.task,
+        agentRef: options.agent,
+        ...(options.reason !== undefined ? { reason: options.reason } : {}),
+        ...(options.ttlMs !== undefined ? { ttlMs: options.ttlMs } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  claim
+    .command('release')
+    .description('release a claim (owner agent only)')
+    .requiredOption('--claim <claimId>', 'claim id')
+    .requiredOption('--agent <agentRef>', 'agent ref (must be the claim owner)')
+    .action(async (options: { claim: string; agent: string }) => {
+      const result = await runTaskClaimCommand(claimDeps(), {
+        subcommand: 'release',
+        claimId: options.claim,
+        agentRef: options.agent,
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  claim
+    .command('list')
+    .description('list claims (--agent <agentRef> for one agent, else all claimed)')
+    .option('--agent <agentRef>', 'filter by agent ref')
+    .action(async (options: { agent?: string }) => {
+      const result = await runTaskClaimCommand(claimDeps(), {
+        subcommand: 'list',
+        ...(options.agent !== undefined ? { listAgent: options.agent } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  claim
+    .command('claimable')
+    .description('list claimable (state=created, unclaimed) tasks matching an agent responsibility')
+    .option('--agent <agentRef>', 'agent ref for matching context', 'agent:cli')
+    .requiredOption('--role <roleId>', 'agent role id (e.g. role-dev)')
+    .option('--skills <skills>', 'comma-separated agent skills (e.g. typescript,node)', '')
+    .action(async (options: { agent: string; role: string; skills: string }) => {
+      const result = await runTaskClaimCommand(claimDeps(), {
+        subcommand: 'claimable',
+        matchAgentRef: options.agent,
+        matchRoleId: options.role,
+        matchSkills: options.skills,
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  const ask = program.command('ask').description('Agent proactive questions to assistant/CEO (org-aware-work-os S5)');
+  const askDeps = () => ({
+    questionService: getAgentQuestionService(),
+    questionRepo: getAgentQuestionRepository(),
+  });
+  ask
+    .command('create')
+    .description('ask a question to the assistant (or CEO when no assistant configured)')
+    .requiredOption('--agent <agentRef>', 'asking agent ref')
+    .requiredOption('--question <text>', 'question text')
+    .option('--kind <kind>', 'clarify|resource|approval|info|research', 'clarify')
+    .option('--task <taskId>', 'related task id')
+    .option('--context <text>', 'supporting context for the question')
+    .action(async (options: { agent: string; question: string; kind?: string; task?: string; context?: string }) => {
+      const result = await runTaskAskCommand(askDeps(), {
+        subcommand: 'create',
+        createAgentRef: options.agent,
+        askQuestion: options.question,
+        ...(options.kind !== undefined ? { askKind: options.kind } : {}),
+        ...(options.task !== undefined ? { askTaskId: options.task } : {}),
+        ...(options.context !== undefined ? { askContext: options.context } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  ask
+    .command('list')
+    .description('list questions (--open for pending+escalated only, --agent <agentRef> for one agent)')
+    .option('--open', 'only pending + escalated questions')
+    .option('--agent <agentRef>', 'filter by agent ref')
+    .action(async (options: { open?: boolean; agent?: string }) => {
+      const result = await runTaskAskCommand(askDeps(), {
+        subcommand: 'list',
+        ...(options.open ? { listOpenOnly: true } : {}),
+        ...(options.agent !== undefined ? { listAgent: options.agent } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  ask
+    .command('show')
+    .description('show one question by id')
+    .requiredOption('--id <questionId>', 'question id')
+    .action(async (options: { id: string }) => {
+      const result = await runTaskAskCommand(askDeps(), { subcommand: 'show', questionId: options.id });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  ask
+    .command('answer')
+    .description('answer a question (assistant or CEO side)')
+    .requiredOption('--id <questionId>', 'question id')
+    .requiredOption('--by <ref>', 'who answers (ref, e.g. agent:assistant)')
+    .requiredOption('--answer <text>', 'answer text')
+    .action(async (options: { id: string; by: string; answer: string }) => {
+      const result = await runTaskAskCommand(askDeps(), {
+        subcommand: 'answer', questionId: options.id, answeredBy: options.by, answerText: options.answer,
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  ask
+    .command('escalate')
+    .description('escalate a pending question directly to the CEO')
+    .requiredOption('--id <questionId>', 'question id')
+    .action(async (options: { id: string }) => {
+      const result = await runTaskAskCommand(askDeps(), { subcommand: 'escalate', questionId: options.id });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  ask
+    .command('close')
+    .description('close/withdraw a question')
+    .requiredOption('--id <questionId>', 'question id')
+    .action(async (options: { id: string }) => {
+      const result = await runTaskAskCommand(askDeps(), { subcommand: 'close', questionId: options.id });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  claim
+    .command('poll')
+    .description('resident poll: expire stale claims then auto-claim first matching task (loops with --interval-ms until claimed)')
+    .requiredOption('--agent <agentRef>', 'polling agent ref')
+    .requiredOption('--role <roleId>', 'agent role id')
+    .option('--skills <skills>', 'comma-separated agent skills', '')
+    .option('--interval-ms <n>', 'poll interval; keeps polling until a task is claimed', (v: string) => Number.parseInt(v, 10), undefined)
+    .action(async (options: { agent: string; role: string; skills: string; intervalMs?: number }) => {
+      const pollOnce = async (): Promise<{ ok: boolean; data?: unknown; error?: string }> =>
+        runTaskClaimPollCommand(claimDeps(), {
+          agentRef: options.agent,
+          roleId: options.role,
+          skills: options.skills,
+        });
+      if (options.intervalMs === undefined) {
+        const result = await pollOnce();
+        writeLine(stdout, JSON.stringify(result, null, 2));
+        if (!result.ok) process.exitCode = 1;
+        return;
+      }
+      // 常驻模式: 周期轮询, 认领成功即退出 (agent 领到活去干活)
+      const timer = setInterval(async () => {
+        const result = await pollOnce();
+        if (!result.ok) {
+          clearInterval(timer);
+          writeLine(stdout, JSON.stringify(result, null, 2));
+          process.exitCode = 1;
+          return;
+        }
+        const claimed = (result.data as { claimed: { taskId: string } | null }).claimed;
+        if (claimed !== null) {
+          clearInterval(timer);
+          writeLine(stdout, JSON.stringify(result, null, 2));
+        }
+      }, Math.max(1, options.intervalMs));
+    });
+
+  let groupMemoryService: GroupMemoryService | null = null;
+  function getGroupMemoryService(): GroupMemoryService {
+    if (!groupMemoryService) {
+      const memoryPort: GroupMemoryPort = new Mem0RestAdapter({
+        baseUrl: process.env.AGORA_MEM0_URL ?? 'http://127.0.0.1:8888',
+        token: process.env.AGORA_MEM0_TOKEN ?? null,
+      });
+      groupMemoryService = new GroupMemoryService({ memoryPort });
+    }
+    return groupMemoryService;
+  }
+
+  const experience = program
+    .command('experience')
+    .description('Group shared memory (mem0 adapter): agents share experiences across the group (org-aware-work-os S4)')
+    .option('--scope <scopeRef>', 'memory scope override (default AGORA_GROUP_SCOPE or group:default)')
+    .option('--agent <agentRef>', 'agent ref override (default AGORA_AGENT_REF or agent:cli)');
+
+  experience
+    .command('add')
+    .description('record an experience entry')
+    .requiredOption('--kind <kind>', 'lesson | howto | fact | decision | research')
+    .requiredOption('--text <text>', 'experience text (stored verbatim)')
+    .option('--metadata <json>', 'extra metadata JSON object', '')
+    .action(async (options: { kind: string; text: string; metadata: string; scope?: string; agent?: string }) => {
+      const scopeRef = options.scope ?? process.env.AGORA_GROUP_SCOPE ?? 'group:default';
+      const agentRef = options.agent ?? process.env.AGORA_AGENT_REF ?? 'agent:cli';
+      let metadata: Record<string, unknown> | null = null;
+      if (options.metadata) {
+        try {
+          metadata = JSON.parse(options.metadata) as Record<string, unknown>;
+        } catch {
+          writeLine(stderr, JSON.stringify({ ok: false, error: '--metadata must be a JSON object' }));
+          process.exitCode = 1;
+          return;
+        }
+      }
+      const result = await getGroupMemoryService().record({
+        scopeRef,
+        agentRef,
+        kind: options.kind,
+        text: options.text,
+        metadata,
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  experience
+    .command('search')
+    .description('semantic search within a scope')
+    .requiredOption('--query <text>', 'search query')
+    .option('--limit <n>', 'max hits', (v: string) => Number.parseInt(v, 10), undefined)
+    .action(async (options: { query: string; limit?: number; scope?: string; agent?: string }) => {
+      const scopeRef = options.scope ?? process.env.AGORA_GROUP_SCOPE ?? 'group:default';
+      const result = await getGroupMemoryService().recall({ scopeRef, query: options.query, ...(options.limit !== undefined ? { limit: options.limit } : {}) });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  experience
+    .command('list')
+    .description('list entries within a scope')
+    .option('--limit <n>', 'max entries', (v: string) => Number.parseInt(v, 10), undefined)
+    .action(async (options: { limit?: number; scope?: string; agent?: string }) => {
+      const scopeRef = options.scope ?? process.env.AGORA_GROUP_SCOPE ?? 'group:default';
+      const result = await getGroupMemoryService().list({ scopeRef, ...(options.limit !== undefined ? { limit: options.limit } : {}) });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  const getTeamRepository = (): ITeamRepository => deps.teamRepository ?? new TeamRepository(resolveComposition().db);
+  let teamService: TeamService | null = null;
+  function getTeamService(): TeamService {
+    if (!teamService) {
+      teamService = new TeamService({ teamRepo: getTeamRepository() });
+    }
+    return teamService;
+  }
+  let orgResolver: OrgHierarchyResolver | null = null;
+  function getOrgResolver(): OrgHierarchyResolver {
+    if (!orgResolver) {
+      orgResolver = new OrgHierarchyResolver({ teamRepo: getTeamRepository() });
+    }
+    return orgResolver;
+  }
+
+  const team = program
+    .command('team')
+    .description('team CRUD + 层级 (org-aware-work-os S1)');
+
+  team
+    .command('create')
+    .description('create a team')
+    .requiredOption('--name <name>', 'team name (unique per project)')
+    .requiredOption('--lead <agentRef>', 'team lead agent ref')
+    .option('--project-id <projectId>', 'project scope', 'default')
+    .option('--members <refs>', 'comma-separated member agent refs', '')
+    .option('--responsibilities <list>', 'comma-separated responsibility domains', '')
+    .option('--parent <teamId>', 'parent team id')
+    .action((options: { name: string; lead: string; projectId: string; members: string; responsibilities: string; parent?: string }) => {
+      const members = options.members.split(',').map((m) => m.trim()).filter((m) => m.length > 0);
+      const responsibilities = options.responsibilities.split(',').map((r) => r.trim()).filter((r) => r.length > 0);
+      const result = getTeamService().createTeam({
+        projectId: options.projectId,
+        name: options.name,
+        lead: options.lead,
+        ...(members.length > 0 ? { members } : {}),
+        ...(responsibilities.length > 0 ? { responsibilities } : {}),
+        ...(options.parent ? { parentId: options.parent } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  team
+    .command('list')
+    .description('list teams in a project')
+    .option('--project-id <projectId>', 'project scope', 'default')
+    .action((options: { projectId: string }) => {
+      writeLine(stdout, JSON.stringify({ ok: true, data: getTeamService().listByProject(options.projectId) }, null, 2));
+    });
+
+  team
+    .command('show')
+    .description('show one team')
+    .requiredOption('--id <teamId>', 'team id')
+    .action((options: { id: string }) => {
+      const found = getTeamService().get(options.id);
+      if (!found) {
+        writeLine(stdout, JSON.stringify({ ok: false, error: `team '${options.id}' not found` }, null, 2));
+        process.exitCode = 1;
+        return;
+      }
+      writeLine(stdout, JSON.stringify({ ok: true, data: found }, null, 2));
+    });
+
+  team
+    .command('add-member')
+    .requiredOption('--id <teamId>', 'team id')
+    .requiredOption('--agent <agentRef>', 'agent ref to add')
+    .action((options: { id: string; agent: string }) => {
+      const result = getTeamService().addMember(options.id, options.agent);
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  team
+    .command('remove-member')
+    .requiredOption('--id <teamId>', 'team id')
+    .requiredOption('--agent <agentRef>', 'agent ref to remove')
+    .action((options: { id: string; agent: string }) => {
+      const result = getTeamService().removeMember(options.id, options.agent);
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  team
+    .command('set-lead')
+    .requiredOption('--id <teamId>', 'team id')
+    .requiredOption('--agent <agentRef>', 'new lead agent ref')
+    .action((options: { id: string; agent: string }) => {
+      const result = getTeamService().setLead(options.id, options.agent);
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  team
+    .command('set-parent')
+    .description('set/clear parent team (cycle-guarded)')
+    .requiredOption('--id <teamId>', 'team id')
+    .option('--parent <teamId>', 'parent team id; omit to clear')
+    .action((options: { id: string; parent?: string }) => {
+      const result = getTeamService().setParent(options.id, options.parent ?? null);
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  team
+    .command('rm')
+    .description('delete a team (leaf only)')
+    .requiredOption('--id <teamId>', 'team id')
+    .action((options: { id: string }) => {
+      const result = getTeamService().deleteTeam(options.id);
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  let delegateRouter: DelegateRouter | null = null;
+  function getDelegateRouter(): DelegateRouter {
+    if (!delegateRouter) {
+      delegateRouter = new DelegateRouter({ teamRepo: getTeamRepository(), resolver: getOrgResolver() });
+    }
+    return delegateRouter;
+  }
+
+  const delegate = program
+    .command('delegate')
+    .description('delegate tasks along the org hierarchy (org-aware-work-os S3; IM 通知通道 Phase 6 绑定)');
+
+  delegate
+    .command('subtree')
+    .description('delegate a task to all agents under a team (cycle + depth guarded)')
+    .requiredOption('--team <teamId>', 'target team id (subtree)')
+    .requiredOption('--task <taskId>', 'task id to delegate')
+    .option('--from <agentRef>', 'delegator agent ref (excluded from recipients)')
+    .option('--max-depth <n>', 'delegation depth limit', (v: string) => Number.parseInt(v, 10), undefined)
+    .action((options: { team: string; task: string; from?: string; maxDepth?: number }) => {
+      const router = options.maxDepth !== undefined
+        ? new DelegateRouter({ teamRepo: getTeamRepository(), resolver: getOrgResolver(), maxDepth: options.maxDepth })
+        : getDelegateRouter();
+      const result = router.delegateSubtree({
+        teamId: options.team,
+        taskId: options.task,
+        fromRef: options.from ?? null,
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  delegate
+    .command('escalate')
+    .description('route an issue up the chain to the nearest lead')
+    .requiredOption('--agent <agentRef>', 'escalating agent ref')
+    .option('--task <taskId>', 'related task id')
+    .action((options: { agent: string; task?: string }) => {
+      const result = getDelegateRouter().escalateUp({ agentRef: options.agent, taskId: options.task ?? null });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  const getForumRepository = () => deps.forumRepository ?? new ForumRepository(resolveComposition().db);
+  let forumService: ForumService | null = null;
+  function getForumService(): ForumService {
+    if (!forumService) {
+      forumService = new ForumService({ forumRepo: getForumRepository() });
+    }
+    return forumService;
+  }
+  function getReflectionService(): ReflectionService {
+    return new ReflectionService({
+      listScorecards: (agentRef, taskType) => new CoordinationRepository(resolveComposition().db).listScorecards(agentRef, taskType),
+    });
+  }
+
+  const post = program
+    .command('post')
+    .description('forum posts — agent 经验沉淀与互学 (org-aware-work-os S6)');
+
+  post
+    .command('create')
+    .requiredOption('--title <title>', 'post title')
+    .requiredOption('--category <category>', 'lesson | howto | insight | question | proposal')
+    .requiredOption('--content <content>', 'post content')
+    .requiredOption('--author <agentRef>', 'author agent ref')
+    .option('--project-id <projectId>', 'project scope', 'default')
+    .option('--tags <list>', 'comma-separated tags', '')
+    .option('--refs <list>', 'comma-separated task/doc refs', '')
+    .action((options: { title: string; category: ForumService extends never ? never : Parameters<ForumService['createPost']>[0]['category']; content: string; author: string; projectId: string; tags: string; refs: string }) => {
+      const tags = options.tags.split(',').map((t) => t.trim()).filter((t) => t.length > 0);
+      const refs = options.refs.split(',').map((r) => r.trim()).filter((r) => r.length > 0);
+      const result = getForumService().createPost({
+        projectId: options.projectId,
+        author: options.author,
+        title: options.title,
+        category: options.category,
+        content: options.content,
+        ...(tags.length > 0 ? { tags } : {}),
+        ...(refs.length > 0 ? { refs } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  post
+    .command('list')
+    .option('--project-id <projectId>', 'project scope', 'default')
+    .option('--category <category>', 'filter by category')
+    .option('--author <agentRef>', 'filter by author')
+    .option('--tag <tag>', 'filter by tag')
+    .option('--limit <count>', 'max posts', parseIntegerOption, 20)
+    .action((options: { projectId: string; category?: string; author?: string; tag?: string; limit: number }) => {
+      writeLine(stdout, JSON.stringify({
+        ok: true,
+        data: getForumService().listPosts({
+          project_id: options.projectId,
+          ...(options.category ? { category: options.category as 'lesson' | 'howto' | 'insight' | 'question' | 'proposal' } : {}),
+          ...(options.author ? { author: options.author } : {}),
+          ...(options.tag ? { tag: options.tag } : {}),
+          limit: options.limit,
+        }),
+      }, null, 2));
+    });
+
+  post
+    .command('show')
+    .requiredOption('--id <postId>', 'post id')
+    .action((options: { id: string }) => {
+      const found = getForumService().getPost(options.id);
+      if (!found) {
+        writeLine(stdout, JSON.stringify({ ok: false, error: `post '${options.id}' not found` }, null, 2));
+        process.exitCode = 1;
+        return;
+      }
+      writeLine(stdout, JSON.stringify({ ok: true, data: { post: found, comments: getForumService().listComments(options.id) } }, null, 2));
+    });
+
+  post
+    .command('comment')
+    .requiredOption('--id <postId>', 'post id')
+    .requiredOption('--author <agentRef>', 'comment author agent ref')
+    .requiredOption('--content <content>', 'comment content')
+    .action((options: { id: string; author: string; content: string }) => {
+      const result = getForumService().comment(options.id, options.author, options.content);
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  const forum = program
+    .command('forum')
+    .description('forum search + 学习注入 (org-aware-work-os S6)');
+
+  forum
+    .command('search')
+    .option('--project-id <projectId>', 'project scope', 'default')
+    .requiredOption('--keyword <keyword>', 'keyword (title/content)')
+    .action((options: { projectId: string; keyword: string }) => {
+      writeLine(stdout, JSON.stringify({ ok: true, data: getForumService().listPosts({ project_id: options.projectId, keyword: options.keyword }) }, null, 2));
+    });
+
+  forum
+    .command('export')
+    .description('帖子按 project/category 分组导出为 obsidian vault markdown (S4 资料沉淀分组)')
+    .requiredOption('--vault <dir>', 'obsidian vault 根目录 (本地文件夹)')
+    .option('--project-id <projectId>', 'project scope', 'default')
+    .option('--base-folder <folder>', 'vault 内分组根文件夹', 'Agora')
+    .action((options: { vault: string; projectId: string; baseFolder: string }) => {
+      try {
+        const repo = getForumRepository();
+        const posts = repo.listPosts({ project_id: options.projectId, limit: 1000 });
+        const comments = posts.flatMap((p) => repo.listComments(p.id));
+        const writer = new ForumVaultWriter({ vaultRoot: options.vault, baseFolder: options.baseFolder });
+        const result = writer.syncPosts(posts, comments);
+        writeLine(stdout, JSON.stringify({ ok: true, data: { written: result.written.length, skipped: result.skipped, vault_root: options.vault, base_folder: options.baseFolder } }, null, 2));
+      } catch (error) {
+        writeLine(stderr, `forum export 失败: ${error instanceof Error ? error.message : String(error)}`);
+        process.exitCode = 1;
+      }
+    });
+
+  forum
+    .command('learn')
+    .description('检索相关经验帖子供任务上下文注入 (新任务开始时调用)')
+    .option('--project-id <projectId>', 'project scope', 'default')
+    .option('--task-type <taskType>', 'match posts tagged with task type')
+    .option('--tags <list>', 'comma-separated tags', '')
+    .option('--limit <count>', 'max posts', parseIntegerOption, 5)
+    .action((options: { projectId: string; taskType?: string; tags: string; limit: number }) => {
+      const tags = options.tags.split(',').map((t) => t.trim()).filter((t) => t.length > 0);
+      const posts = getForumService().relevantPosts({
+        projectId: options.projectId,
+        ...(options.taskType ? { taskType: options.taskType } : {}),
+        ...(tags.length > 0 ? { tags } : {}),
+        limit: options.limit,
+      });
+      writeLine(stdout, JSON.stringify({ ok: true, data: posts }, null, 2));
+    });
+
+  const reflect = program
+    .command('reflect')
+    .description('reflection reports from scorecards (org-aware-work-os S6; 进化=建议+显式应用)');
+
+  reflect
+    .command('run')
+    .description('generate a reflection report for an agent')
+    .requiredOption('--agent <agentRef>', 'agent ref (= runtime_target_ref dimension)')
+    .option('--task-type <taskType>', 'restrict to task type')
+    .action((options: { agent: string; taskType?: string }) => {
+      const result = getReflectionService().reflect({
+        agentRef: options.agent,
+        ...(options.taskType ? { taskType: options.taskType } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  const evolution = program
+    .command('evolution')
+    .description('reflection → evolution proposal (org-aware-work-os S6; 建议+确认)');
+
+  evolution
+    .command('propose')
+    .description('generate a reflection report and file it as a forum proposal post')
+    .requiredOption('--agent <agentRef>', 'agent ref')
+    .requiredOption('--project <projectId>', 'project scope for the proposal post')
+    .option('--task-type <taskType>', 'restrict reflection to task type')
+    .action((options: { agent: string; project: string; taskType?: string }) => {
+      const reportResult = getReflectionService().reflect({
+        agentRef: options.agent,
+        ...(options.taskType ? { taskType: options.taskType } : {}),
+      });
+      if (!reportResult.ok) {
+        writeLine(stdout, JSON.stringify(reportResult, null, 2));
+        process.exitCode = 1;
+        return;
+      }
+      const result = new EvolutionService({ forumService: getForumService() }).proposeFromReport({
+        report: reportResult.data,
+        projectId: options.project,
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  evolution
+    .command('apply')
+    .description('mark a proposal post as applied (human/agent confirmation)')
+    .requiredOption('--post <postId>', 'forum proposal post id')
+    .requiredOption('--by <appliedBy>', 'who confirmed the evolution')
+    .action((options: { post: string; by: string }) => {
+      const result = new EvolutionService({ forumService: getForumService() }).apply({
+        postId: options.post,
+        appliedBy: options.by,
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  const org = program
+    .command('org')
+    .description('organization view + hierarchy resolution (org-aware-work-os S1)');
+
+  org
+    .command('show')
+    .description('project org tree')
+    .option('--project-id <projectId>', 'project scope', 'default')
+    .action((options: { projectId: string }) => {
+      const tree = getOrgResolver().orgTree(options.projectId);
+      writeLine(stdout, JSON.stringify({ ok: true, data: { project_id: options.projectId, tree } }, null, 2));
+    });
+
+  org
+    .command('chain')
+    .description('report-to chain for an agent (leads above, near → far)')
+    .requiredOption('--agent <agentRef>', 'agent ref')
+    .action((options: { agent: string }) => {
+      writeLine(stdout, JSON.stringify({
+        ok: true,
+        data: {
+          agent_ref: options.agent,
+          teams: getOrgResolver().teamsOf(options.agent).map((t) => ({ id: t.id, name: t.name, project_id: t.project_id })),
+          leads_above: getOrgResolver().leadsAbove(options.agent),
+        },
+      }, null, 2));
+    });
+
   const thread = program.command('thread').description('Thread ↔ Task binding (Phase 4 / R-C T-1.5)');
   const threadDeps = () => ({
     bindingService: getThreadTaskBindingService(),
@@ -1143,6 +1818,32 @@ export function createCliProgram(deps: CliDependencies = {}) {
         options.controller,
         parseRoleBindings(options.bind),
       ));
+      // task_created 通知公告行: 推送由常驻 server 的周期扫描统一执行(单一扫描者)
+      const { im } = resolveComposition().config;
+      const notifyOnTaskCreate =
+        im.provider === 'matrix'
+          ? im.matrix?.notify_on_task_create !== false
+          : im.provider === 'discord'
+            ? im.discord?.notify_on_task_create !== false
+            : false;
+      if (notifyOnTaskCreate) {
+        try {
+          new NotificationOutboxRepository(resolveComposition().db).insert({
+            id: `notify-${task.id}`,
+            task_id: task.id,
+            event_type: 'task_created',
+            target_binding_id: null,
+            payload: {
+              title: task.title,
+              creator: task.creator,
+              ...(task.project_id ? { project_id: task.project_id } : {}),
+            },
+            sequence_no: Date.now(),
+          });
+        } catch {
+          // 通知公告写入失败不阻塞建任务
+        }
+      }
       writeLine(stdout, `任务已创建: ${task.id}`);
       writeLine(stdout, `标题: ${task.title}`);
       writeLine(stdout, `类型: ${task.type}`);
