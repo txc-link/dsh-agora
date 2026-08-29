@@ -53,6 +53,12 @@
 | `DelegateRouter` | 组织架构 → 下级 agent 委派 | `core/src/` |
 | CLI: `agora poll` / `agora claim` / `agora delegate` | agent 操作入口 | `apps/cli/` |
 
+### 2.35 实现记录（2026-08-30, develop `349a04d`）
+
+- `DelegateRouter` (core): delegateSubtree（子树全员, 排除发起者）+ escalateUp（leadsAbove 最近 lead）; 深度限制 maxDepth 默认 4; parent 链显式环检测拒绝
+- notify 端口 = `IMMessagingPort.sendNotification` 形状（可选注入; IM 实通道 Phase 6 绑定, 同 S5 D4）
+- CLI: `agora delegate subtree --team --task [--from] [--max-depth]` / `agora delegate escalate --agent [--task]`
+
 ### 2.4 与现有服务的关系
 
 - 复用 `TaskService`（读任务）+ `TaskBroadcastService`（群发）+ `CoordinationService`（评分）

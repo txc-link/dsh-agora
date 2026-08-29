@@ -38,9 +38,9 @@
 
 ## S3 委派路由（依赖 S1 Team 模型）
 
-- [ ] `DelegateRouter`: 组织架构 → 下级 agent 委派
-- [ ] 委派任务群发通知（复用 TaskBroadcastService）
-- [ ] 委派深度限制 + 环路检测
+- [x] `DelegateRouter`: 组织架构 → 下级 agent 委派（349a04d: delegateSubtree 子树全员 + escalateUp 上报链）
+- [x] 委派任务群发通知（notify 端口 = IMMessagingPort.sendNotification 形状; 事件 task_delegated/task_escalated; IM 实通道 Phase 6 绑定）
+- [x] 委派深度限制（maxDepth 默认 4）+ 环路检测（parent 链 visited 显式拒绝）
 
 ## S4 共享记忆（mem0 + ProjectBrain + obsidian）
 
@@ -91,6 +91,7 @@
 | 2026-08-30 | S2 收尾（expireStale + claim poll 常驻入口） | `8b0d3e6` | 8 新测试 + 回归 618/618 + 冒烟 4/4 |
 | 2026-08-30 | S4 R1（mem0 adapter + experience CLI） | `993e7b6` | 11 新测试 + 回归 629/629 + 冒烟 6/6 |
 | 2026-08-30 | S1 组织模型（teams + 层级 + CLI） | `090ca6d` | 13 新测试 + 回归 638/638 + 冒烟 4/4 |
+| 2026-08-30 | S3 委派路由（DelegateRouter + CLI） | `349a04d` | 7 新测试 + 回归 645/645 + 冒烟 4/4 |
 
 ## 迭代顺序（按用户优先级 D5: S2→S5→S4→S6→部署）
 
@@ -98,6 +99,6 @@
 2. ✅ S5 主动对话 push 主体（d002792）
 3. ✅ S2 收尾（8b0d3e6）
 4. ⏭ **S4 剩余**: MEM0 token（待用户提供）→ 真实全链冒烟; obsidian 分组映射; 跨节点 L4
-5. ⏭ **下一轮: S3 委派路由**（DelegateRouter: 按 org 链路由 + 群发通知 + 环路检测; 依赖 S1 resolver 已就绪）
-6. S6 反思论坛
+6. ⏭ **下一轮: S6 反思论坛**（ReflectionService/ForumService/AgentEvolutionService/学习注入 + CLI）
+7. Phase 6 部署
 7. Phase 6 部署 + matrix 真实化（含 S5 IM 通道绑定）
