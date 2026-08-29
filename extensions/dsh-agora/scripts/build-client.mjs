@@ -7,7 +7,7 @@ const source = resolve(root, 'client/index.js')
 const output = resolve(root, 'lib/client.js')
 const text = await readFile(source, 'utf8')
 
-if (!text.includes("window.__ModuleLoader__.load({ id: 'dsh-agora'")) {
+if (!text.includes("window.__ModuleLoader__.load({ id: 'dsh-agora-plugin'")) {
   throw new Error('dsh-agora client source does not declare its module-loader id')
 }
 if (/from\s+['"]node:|require\(['"]node:/u.test(text)) {

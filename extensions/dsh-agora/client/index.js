@@ -1,4 +1,4 @@
-window.__ModuleLoader__.load({ id: 'dsh-agora', factory: (require) => {
+window.__ModuleLoader__.load({ id: 'dsh-agora-plugin', factory: (require) => {
   'use strict'
   var module = { exports: {} }
   var exports = module.exports
