@@ -17,6 +17,7 @@
 | 3. R-E Space 嵌套 | ⏳ scoped to connector (matrix 仓), agora-ts 不动 | 见 matrix SSoT phase 3 |
 | 4. R-F thread web 详情面板 | ⏳ scoped to dashboard (主仓前端), agora-ts 不动 | 见 Dashboard SSoT |
 | 5. agora-ts 自身大改 | ⏳ not started | 需新建独立 phase 计划 |
+| **6. Onboarding cross-platform (债 4 闭环)** | ✅ **done (turn 157)** | `agora init --non-interactive` (CI 友好 + `--admin-password-stdin` + `--skip-assets`) + `agora serve` 跨5 平台 (systemd/launchd/windows/docker/bare) + `Doc/scripts/install-agora.sh` 一键 wrapper; 现有 `agora start` dev helper 保持不变; walkthrough `Doc/10-WALKTHROUGH/2026-08-30-agora-onboarding-cross-platform.md` |
 
 **Phase 3 默认原则**：R-E / R-F 严格限定在 connector + dashboard 侧，**agora-ts 这一阶段不主动大改**。仅当 connector / dashboard 侧需要 agora-ts 暴露新能力时，按 §6 流程加 slice。
 
