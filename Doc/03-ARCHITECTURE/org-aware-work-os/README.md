@@ -84,3 +84,10 @@
 **用户愿景可实现**，且**不需要从零造**——复用现有 Core + adapter + 外部服务（mem0 / obsidian / matrix），补 3 个缺失环节（S2 调度器 / S5 push / S6 反思论坛）即可。
 
 **下一步**: 从 S2 主动任务接取开始（用户 turn 159 明确要"定期查看任务台，对应职责的 agent 接取对应任务，委派"）。见 [02-task-claiming.md](./02-task-claiming.md)。
+
+
+## 状态（2026-08-30 终态）
+
+- S1–S6 全部交付并真机冒烟; Phase 6 核心全闭环 (transport 真机 / thread resolver / IM 通道 server E2E / obsidian 沉淀)
+- 用户侧待办唯一入口: [DEPLOYMENT-HANDOFF.md](./DEPLOYMENT-HANDOFF.md) (mem0 token / live wiring / 3 台机 / Discord)
+- 基线: packages+server 1239/1239 · apps/cli 172/172 · 双 gate 过

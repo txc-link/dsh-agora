@@ -22,10 +22,10 @@
 - [ ] 认领超时释放策略
 
 ### U2. 主动 push（S5）
-- [ ] "助手"是 agent 还是人类（用户有真人副手？）
-- [ ] 提问超时自动升级策略
-- [ ] 与 archon review 的关系（复用 or 并行）
-- [ ] 调研能力边界（web / 代码库 / 文档库）
+- [x] "助手"是 agent 还是人类 → **默认两态兼容**: push 走 targetRef 解析 (agentRef→房间映射 / roomId 直发), 人类与 agent 同一通道 (2026-08-30 默认拍板; 92938b0+2609572)
+- [x] 提问超时自动升级策略 → **默认不自动升级** (与 S6 建议制进化一致; 后续如需 escalation 可挂 Dispatcher 定时扫描)
+- [x] 与 archon review 的关系 → **并行** (S5 ask 是主动外呼, review 是网关内呼, 语义不重叠)
+- [ ] 调研能力边界（web / 代码库 / 文档库）→ runtime 侧能力, 随 agent 宿主演进, 不阻塞 OS
 
 ### U3. 共享记忆（S4）
 - [ ] mem0 部署形态（本地 docker / 云端 / REST）
@@ -39,11 +39,11 @@
 - [ ] 论坛存储（SQLite / markdown / obsidian vault）
 - [ ] 帖子可见性（同群组 / 全组织 / 分级）
 
-### U5. 部署（3 台机）
-- [ ] 三台机是一个组织 or 三个组织联邦
-- [ ] Windows/Mac agora 形态（plugin / 独立 server）
-- [ ] matrix 中央 homeserver or 联邦
-- [ ] 角色分配（Linux 集中 vs 三台联邦）→ 推荐 C 混合
+### U5. 部署（3 台机）→ **默认方案 C 拍板 (2026-08-30, 详见 DEPLOYMENT-HANDOFF.md)**
+- [x] 三台机是一个组织 → 单组织, Linux 中央 (agora+mem0+Synapse)
+- [x] Windows/Mac agora 形态 → connector plugin 客户端接入中央 (deploy/01-04 runbook)
+- [x] matrix 中央 homeserver or 联邦 → 中央 (localhost:8008); federation P3 留待多 homeserver 需求出现
+- [x] 角色分配 → 方案 C 混合 (Linux 集中 + Win/Mac 客户端)
 
 ### U6. 组织模型（S1）
 - [ ] ProjectMembership 与 Team 的关系
