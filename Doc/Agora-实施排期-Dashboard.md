@@ -15,6 +15,7 @@
 | 1. Dashboard 已有详情面板基础 | ✅ exists | `WorkbenchDetailSheet.tsx` + `ProjectDetailPage.tsx` |
 | **2. R-F thread web 详情面板 (R-F.1)** | ✅ **done (turn 144)** | walkthrough `Doc/10-WALKTHROUGH/2026-08-30-r-f-thread-web-detail-v01.md` |
 | **3. R-F real-time updates (R-F.2)** | ✅ **done (turn 146)** | 4s 短轮询 + 三层 race 防护 + i18n; walkthrough `Doc/10-WALKTHROUGH/2026-08-30-r-f-thread-web-detail-v02.md` |
+| **4. R-F.2 polling verify (Layer 1 + Layer 2)** | ✅ **done (turn 149)** | Layer 1 API-level 8/8 pass (avg 4009.4ms); Layer 2 playwright UI spec 就绪, 生产 `PLAYWRIGHT_E2E=1` 启用; walkthrough `Doc/10-WALKTHROUGH/2026-08-30-r-f-visual-verify.md` |
 
 ---
 
