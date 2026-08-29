@@ -72,3 +72,23 @@
 - 多个 agent 同时匹配同一任务 → 竞争策略（先到先得？按 scorecard？）
 - 委派深度（几级？）
 - 认领后超时未执行 → 释放策略
+
+## 5. 实施记录（2026-08-30, develop `505ce4d`）
+
+**已实现**（TDD 33 新测试 + core/db 回归 592/592 + 真实冒烟 8/8）:
+
+| 设计组件 | 实现 | 文件 |
+|---|---|---|
+| TaskClaimService | ✅ claim/release/expire | `core/src/task-claim-service.ts` |
+| TaskClaimMatcher | ✅ matchTaskToAgent (skills_ref ↔ skill_policy, enforcement 语义) | `core/src/task-claim-matcher.ts` |
+| ResidentAgentPoller | ✅ 轮询 + 匹配 + 自动认领 (deps 注入) | `core/src/resident-agent-poller.ts` |
+| CLI | ✅ `agora claim {create,release,list,claimable}` | `apps/cli/src/index.ts` + `core/src/task-claim-command.ts` |
+| 存储 | ✅ migration 036_task_claims + TaskClaimRepository | `db/src/` |
+| 契约 | ✅ TaskClaimRecord + ITaskClaimRepository (contracts section 30) | `contracts/src/repository-interfaces.ts` |
+
+**实施修正**（对照真实生命周期）:
+- claimable 状态过滤 = created + **active**（`agora create` 新任务直达 active, 不滞留 created）
+- 竞争策略 = 先到先得（claim 原子写入, 重复认领明确报错）
+- 超时释放 = claim 带 expiresAt（--ttl-ms）, `expire()` 状态机支持; poller 周期性 expire 未排本轮
+
+**未做（下一轮）**: DelegateRouter（组织架构 → 下级 agent 委派路由, 见 01-org-model.md）
