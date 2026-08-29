@@ -147,6 +147,7 @@ import {
 } from '@agora-ts/contracts';
 import { runInitCommand } from './init-command.js';
 import { runStartCommand } from './start-command.js';
+import { runServeCommand, type RunServeCommandOptions } from './serve-command.js';
 import { classifyCliError, CliError, CLI_EXIT_CODES, renderCliError } from './errors.js';
 import { cliText, resolveCliLocale } from './locale.js';
 import type { HumanAccountService } from '@agora-ts/core';
@@ -4943,21 +4944,26 @@ export function createCliProgram(deps: CliDependencies = {}) {
         adminPassword = Buffer.concat(chunks).toString('utf8').trim();
       }
       const imProvider = cmdOptions.im === 'discord' ? 'discord' : 'none';
+      const discordOptions = cmdOptions.im === 'discord'
+        ? {
+            ...(cmdOptions.discordBotToken !== undefined ? { botToken: cmdOptions.discordBotToken } : {}),
+            ...(cmdOptions.discordDefaultChannelId !== undefined
+              ? { defaultChannelId: cmdOptions.discordDefaultChannelId }
+              : {}),
+            notifyOnTaskCreate: cmdOptions.discordNotifyOnTaskCreate !== 'false',
+            ...(cmdOptions.discordHumanUserId !== undefined
+              ? { humanUserId: cmdOptions.discordHumanUserId }
+              : {}),
+          }
+        : undefined;
       await runInitCommand({
         humanAccountService,
-        nonInteractive: cmdOptions.nonInteractive,
-        skipAssets: cmdOptions.skipAssets,
-        adminUsername: cmdOptions.adminUsername,
-        adminPassword,
+        ...(cmdOptions.nonInteractive !== undefined ? { nonInteractive: cmdOptions.nonInteractive } : {}),
+        ...(cmdOptions.skipAssets !== undefined ? { skipAssets: cmdOptions.skipAssets } : {}),
+        ...(cmdOptions.adminUsername !== undefined ? { adminUsername: cmdOptions.adminUsername } : {}),
+        ...(adminPassword !== undefined ? { adminPassword } : {}),
         imProvider,
-        discord: cmdOptions.im === 'discord'
-          ? {
-              botToken: cmdOptions.discordBotToken,
-              defaultChannelId: cmdOptions.discordDefaultChannelId,
-              notifyOnTaskCreate: cmdOptions.discordNotifyOnTaskCreate !== 'false',
-              humanUserId: cmdOptions.discordHumanUserId,
-            }
-          : undefined,
+        ...(discordOptions ? { discord: discordOptions } : {}),
       });
     });
 
@@ -5529,6 +5535,69 @@ export function createCliProgram(deps: CliDependencies = {}) {
         ...(deps.startCommandFallbackRoot ? { fallbackRoot: deps.startCommandFallbackRoot } : {}),
         ...(deps.startCommandRunner ? { runner: deps.startCommandRunner } : {}),
       });
+    });
+
+  program
+    .command('serve')
+    .description('Install & start agora-ts server as a managed OS service (systemd / launchd / windows / docker / bare). Use `agora start` for local dev instead.')
+    .option('--platform <name>', 'Service platform: systemd | launchd | windows | docker | bare (auto-detected when omitted)')
+    .option('--port <port>', 'Server listen port', '18008')
+    .option('--host <host>', 'Server bind host', '127.0.0.1')
+    .option('--user <user>', 'OS user to run the server as (systemd / bare)')
+    .option('--unit-name <name>', 'Service / unit / label name', 'agora')
+    .option('--descriptor-path <path>', 'Override the platform-default service descriptor output path')
+    .option('--log-path <path>', 'Override the platform-default server log path')
+    .option('--pidfile-path <path>', 'Override the platform-default pidfile path (bare only)')
+    .option('--server-entry <path>', 'Override the path to the compiled server entry (default: <cwd>/agora-ts/apps/server/dist/index.js)')
+    .option('--working-directory <path>', 'Server working directory', process.cwd())
+    .option('--no-enable', 'Write the descriptor but do not start the service')
+    .option('--dry-run', 'Render the descriptor in memory and report what would be written; do not execute platform commands')
+    .option('--print', 'Print the resolved descriptor to stdout (implies --dry-run)')
+    .action(async (cmdOptions: {
+      platform?: string;
+      port?: string;
+      host?: string;
+      user?: string;
+      unitName?: string;
+      descriptorPath?: string;
+      logPath?: string;
+      pidfilePath?: string;
+      serverEntry?: string;
+      workingDirectory?: string;
+      enable?: boolean;
+      dryRun?: boolean;
+      print?: boolean;
+    }) => {
+      const validPlatforms: Array<RunServeCommandOptions['platform']> = ['systemd', 'launchd', 'windows', 'docker', 'bare'];
+      let platform: RunServeCommandOptions['platform'] | undefined;
+      if (cmdOptions.platform) {
+        if (!validPlatforms.includes(cmdOptions.platform as RunServeCommandOptions['platform'])) {
+          throw new Error(
+            `invalid --platform "${cmdOptions.platform}". Supported: ${validPlatforms.join(', ')}`,
+          );
+        }
+        platform = cmdOptions.platform as RunServeCommandOptions['platform'];
+      }
+      const result = await runServeCommand({
+        ...(platform ? { platform } : {}),
+        ...(cmdOptions.port ? { port: Number(cmdOptions.port) } : {}),
+        ...(cmdOptions.host ? { host: cmdOptions.host } : {}),
+        ...(cmdOptions.user ? { user: cmdOptions.user } : {}),
+        ...(cmdOptions.unitName ? { unitName: cmdOptions.unitName } : {}),
+        ...(cmdOptions.descriptorPath ? { descriptorPath: cmdOptions.descriptorPath } : {}),
+        ...(cmdOptions.logPath ? { logPath: cmdOptions.logPath } : {}),
+        ...(cmdOptions.pidfilePath ? { pidfilePath: cmdOptions.pidfilePath } : {}),
+        ...(cmdOptions.serverEntry ? { serverEntry: cmdOptions.serverEntry } : {}),
+        ...(cmdOptions.workingDirectory ? { workingDirectory: cmdOptions.workingDirectory } : {}),
+        enable: cmdOptions.enable !== false,
+        dryRun: cmdOptions.dryRun ?? cmdOptions.print ?? false,
+        printOnly: cmdOptions.print ?? false,
+      });
+      if (cmdOptions.print) {
+        process.stdout.write(result.descriptorContent);
+        return;
+      }
+      console.log(result.message);
     });
 
   return program;
