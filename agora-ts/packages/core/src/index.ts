@@ -397,3 +397,12 @@ export {
   type ThreadSourcePort,
   toThreadWorksite,
 } from './worksite/thread-resolver.js';
+export {
+  TaskWorksiteResolver,
+  type TaskWorksiteResolverOptions,
+  toTaskWorksite,
+} from './worksite/task-resolver.js';
+export { WorksiteResolverRegistry, resolveScopeAuthorization } from './worksite/resolver.js';
+export type { WorksiteResolver, WorksitePersister } from './worksite/resolver.js';
+export { parseWorksiteUri, formatWorksiteUri, type WorksiteType, type WorksiteUri } from './worksite/uri.js';
+export { deriveScopeAuthorization } from './worksite/scope-auth-policy.js';

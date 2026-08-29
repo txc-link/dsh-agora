@@ -10,6 +10,7 @@
 import type { ITaskRepository, TaskRecord } from '@agora-ts/contracts';
 
 import type { WorksiteResolver } from './resolver.js';
+import { deriveScopeAuthorization } from './scope-auth-policy.js';
 import { formatWorksiteUri, type WorksiteType } from './uri.js';
 import type {
   TaskWorksite,
@@ -44,12 +45,18 @@ export class TaskWorksiteResolver implements WorksiteResolver {
  * Phase 1: refs are empty. Future phases can compute refs from task
  * relationships (e.g. parent task, project, linked commits) but those
  * are adapter-side joins and should NOT be implemented in Phase 1.
+ *
+ * Phase 3.5-3a (R-H / T-2): scopeAuthorization is populated from the
+ * task record via deriveScopeAuthorization(). Phase 2 will replace the
+ * policy with a real ACL lookup; signature stays the same.
  */
 export function toTaskWorksite(task: TaskRecord): TaskWorksite {
+  const scopeAuth = deriveScopeAuthorization(task);
   return Object.freeze({
     type: 'task',
     id: task.id,
     uri: formatWorksiteUri('task', task.id),
     refs: Object.freeze([]),
+    scopeAuthorization: scopeAuth,
   });
 }
