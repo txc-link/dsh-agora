@@ -85,6 +85,10 @@ import {
   CoordinationService,
   ArtifactService,
   BorrowService,
+  WorksiteResolverRegistry,
+  TaskWorksiteResolver,
+  parseWorksiteUri,
+  deriveScopeAuthorization,
   MemoryService,
   RuntimeNodeCredentialService,
   MergeCoordinatorService,
@@ -560,7 +564,7 @@ export function createDefaultCliCompositionFactories(): CliCompositionFactories 
     }),
     createBorrowService: (context) => new BorrowService({
       borrowRepo: new BorrowRequestRepository(context.db),
-      scopeAuthResolver: () => scopeAuthorizationFromEnv(process.env),
+      scopeAuthResolver: makeWorksiteScopeAuthResolver(context.db),
     }),
     createArchiveJobNotifier: (context) => {
       const outboxDir = process.env.AGORA_ARCHIVE_WRITER_OUTBOX_DIR
@@ -904,4 +908,39 @@ function scopeAuthorizationFromEnv(env: NodeJS.ProcessEnv): ScopeAuthorization |
     return undefined;
   }
   return { scope, posture: postureRaw, permissions };
+}
+
+/**
+ * makeWorksiteScopeAuthResolver — Phase 3.5-3a (R-H / T-2).
+ *
+ * Constructs a synchronous scopeAuthResolver that:
+ *   1. Builds a WorksiteResolverRegistry with TaskWorksiteResolver registered
+ *      (Phase 1). Thread resolver is left to R-C-2 (matrix adapter-side).
+ *   2. For `target` URIs of type `task`, derives ScopeAuthorization from
+ *      the task record via deriveScopeAuthorization(). Other types return
+ *      undefined → borrow decisions fail-safe to deny.
+ *
+ * Phase 2 will replace the direct deriveScopeAuthorization call with a
+ * registry-mediated lookup (so adapters can contribute scope auth).
+ */
+function makeWorksiteScopeAuthResolver(db: AgoraDatabase): (target: string) => ScopeAuthorization | undefined {
+  const taskRepo = new TaskRepository(db);
+  const registry = new WorksiteResolverRegistry();
+  registry.register(new TaskWorksiteResolver({ taskRepository: taskRepo }));
+
+  // Reference the registry so it is reachable for future thread-resolver
+  // registration (R-C-2) and so test doubles can inspect composition state.
+  void registry;
+
+  return (target: string): ScopeAuthorization | undefined => {
+    try {
+      const parsed = parseWorksiteUri(target);
+      if (parsed.type !== 'task') return undefined;
+      const task = taskRepo.getTask(parsed.id);
+      if (!task) return undefined;
+      return deriveScopeAuthorization(task);
+    } catch {
+      return undefined;
+    }
+  };
 }
