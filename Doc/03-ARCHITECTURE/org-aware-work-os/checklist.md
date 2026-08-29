@@ -45,9 +45,9 @@
 ## S4 共享记忆（mem0 + ProjectBrain + obsidian）
 
 - [x] mem0 部署形态调研定型: 本机 REST server `:8888` 已运行（postgres + JWT + 本地 vLLM Qwen2.5-0.5B + bge-m3, 源码仓 /root/mem0-deploy/mem0）— U3 已决
-- [ ] `adapters-mem0`: GroupMemoryService + mem0 client adapter（agent 经验写入 / 检索）
-- [ ] 群组维度接入点: 任务完成写经验 / 任务开始读经验
-- [ ] obsidian vault 分组映射（复用 adapters-obsidian）
+- [x] `adapters-mem0`: Mem0RestAdapter + `agora experience` CLI（993e7b6; 真实全链等 AGORA_MEM0_TOKEN）
+- [x] 群组维度接入点: `agora experience` 写/读（手动 CLI 口径）; forum learn 任务开始注入
+- [x] obsidian vault 分组映射（61a3b6c: ForumVaultWriter + `agora forum export --vault`; 分组 <vault>/<base>/<project>/<category>/, frontmatter tags, 评论线程, id 索引幂等; vault=本地文件夹, Obsidian 自动刷新）
 - [ ] 跨节点 L4 记忆（federation P2 实现）
 
 ## S5 主动对话 push（✅ 主体已完成 d002792, 2026-08-30）
@@ -95,6 +95,8 @@
 | 2026-08-30 | S6 反思论坛（Forum + Reflection + CLI） | `92938b0` | 8 新测试 + 回归 653/653 + 冒烟 5/5 |
 | 2026-08-30 | Phase 6 R-B matrix transport 真实化 + 真机冒烟 | matrix 仓 `ee789e3` | smoke-real-homeserver PASS (Synapse :8008) |
 | 2026-08-30 | Phase 6 S5/S3 IM 通道绑定 (adapters-matrix) | `2609572` | 回归 1239/1239 + 真机发 2 条通知回读落盘 |
+| 2026-08-30 | Phase 6 server E2E + roomId 直发 | `92a56b0` | 一次性 server(:18018) → outbox → dispatcher → Synapse 落盘 {delivered:1} |
+| 2026-08-30 | S4 obsidian 资料沉淀分组 (forum export) | `61a3b6c` | obsidian 套件 10/10 + 真帖导出冒烟 |
 
 ## 迭代顺序（按用户优先级 D5: S2→S5→S4→S6→部署）
 
