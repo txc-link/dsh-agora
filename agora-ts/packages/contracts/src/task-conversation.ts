@@ -30,7 +30,10 @@ export type TaskConversationInboundActionDto = z.infer<typeof taskConversationIn
 export const taskConversationEntrySchema = z.object({
   id: z.string(),
   task_id: z.string(),
-  binding_id: z.string(),
+  /** legacy task_context_bindings id — nullable for R-D inbound replies */
+  binding_id: z.string().nullable(),
+  /** turn 122 thread_task_bindings key (opaque) — R-D links inbound replies */
+  thread_task_binding_id: z.string().nullable(),
   provider: z.string(),
   provider_message_ref: z.string().nullable(),
   parent_message_ref: z.string().nullable(),
