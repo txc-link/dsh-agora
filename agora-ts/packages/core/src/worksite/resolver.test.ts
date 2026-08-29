@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   TaskWorksiteResolver,
+  ThreadWorksiteResolver,
+  type ThreadMetadata,
+  type ThreadSourcePort,
   WorksiteNotFoundError,
   WorksiteNotImplementedError,
   WorksiteResolverRegistry,
@@ -199,6 +202,39 @@ describe('worksite/resolver', () => {
       for (const ws of all) {
         expect(['task', 'thread', 'commit', 'watch', 'workspace', 'session']).toContain(ws.type);
       }
+    });
+  });
+
+  // T-0: thread resolver closes the Phase 1 stub gap.
+  describe('ThreadWorksiteResolver registered', () => {
+    class StubThreadSource implements ThreadSourcePort {
+      private readonly byRoom = new Map<string, ThreadMetadata>();
+      set(m: ThreadMetadata): void { this.byRoom.set(m.roomId, m); }
+      async getThreadMetadata(roomId: string) { return this.byRoom.get(roomId); }
+      async listRooms() { return [...this.byRoom.keys()]; }
+    }
+
+    it('registers and resolves thread URIs (closes Phase 1 stub gap)', async () => {
+      const source = new StubThreadSource();
+      source.set({
+        roomId: '!room:server',
+        scopeAuthorization: { scope: 'agora://workspace/repoA', posture: 'Auto', permissions: ['read'] },
+      });
+      const reg = new WorksiteResolverRegistry();
+      reg.register(new ThreadWorksiteResolver({ threadSource: source }));
+      expect(reg.has('thread')).toBe(true);
+      expect(reg.list()).toEqual(['thread']);
+      const ws = await reg.resolveWorksite('agora://thread/!room:server');
+      expect(ws.type).toBe('thread');
+      expect(ws.id).toBe('!room:server');
+      expect(ws.scopeAuthorization?.scope).toBe('agora://workspace/repoA');
+    });
+
+    it('throws WorksiteNotFoundError when thread metadata missing', async () => {
+      const reg = new WorksiteResolverRegistry();
+      reg.register(new ThreadWorksiteResolver({ threadSource: new StubThreadSource() }));
+      await expect(reg.resolveWorksite('agora://thread/mx_missing'))
+        .rejects.toBeInstanceOf(WorksiteNotFoundError);
     });
   });
 });

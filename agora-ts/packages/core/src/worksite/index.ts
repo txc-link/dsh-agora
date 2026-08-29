@@ -54,3 +54,10 @@ export {
   TaskWorksiteResolver,
   type TaskWorksiteResolverOptions,
 } from './task-resolver.js';
+export {
+  ThreadWorksiteResolver,
+  type ThreadWorksiteResolverOptions,
+  type ThreadMetadata,
+  type ThreadSourcePort,
+  toThreadWorksite,
+} from './thread-resolver.js';

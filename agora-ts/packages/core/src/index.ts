@@ -378,3 +378,10 @@ export { runBorrowCommand } from './borrow-command.js';
 
 // ─── Phase 3.5 worksite re-exports for CLI composition ───────────────────────
 export type { Permission, Posture, ScopeAuthorization } from './worksite/types.js';
+export {
+  ThreadWorksiteResolver,
+  type ThreadWorksiteResolverOptions,
+  type ThreadMetadata,
+  type ThreadSourcePort,
+  toThreadWorksite,
+} from './worksite/thread-resolver.js';
