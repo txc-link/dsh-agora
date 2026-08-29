@@ -11,6 +11,9 @@
 
 本文档从空白环境开始，给出一套可复制的中央服务器、多节点、Web 界面和 Discord 配置流程。
 
+> **节点装机速览（2026-08-30）**: 本插件已发布 npm 包 `dsh-agora-plugin@0.6.0`（与仓库最新代码一致）。新节点安装 = `dsh plugin --profile web add dsh-agora-plugin` + agora row patch（nodeApiToken 用 CORE `agora node-credentials issue` 签发的 scoped token）。完整两插件（本插件 + dsh-matrix-connector）装机指引见 `dsh-matrix-connector` 仓 `deploy/README.md` 第 5 节；两仓/两插件关系见 `dsh-agora` 主仓 `Doc/10-WALKTHROUGH/2026-08-30-agora-ecosystem-deployment-map.md`。
+
+
 ## 部署拓扑
 
 一套协同网络只需要一个中央 Agora Server。每个参与执行的 DSH 安装一个 `dsh-agora`；只有需要登录 IM Bot 的节点才安装 dsh-im：
