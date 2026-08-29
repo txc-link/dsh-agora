@@ -360,3 +360,21 @@ export type { WorkdirIsolationRequest, WorkdirIsolator, GitWorktreeWorkdirIsolat
 export { GitWorktreeWorkdirIsolator } from './workdir-isolator.js';
 export type { WorkspaceBootstrapServiceOptions } from './workspace-bootstrap-service.js';
 export { WorkspaceBootstrapService } from './workspace-bootstrap-service.js';
+
+// ─── Phase 3.5 Borrow CLI orchestration (P3.5-2) ───────────────────────────
+export type {
+  BorrowServiceOptions,
+  CreateBorrowInput,
+  CreateBorrowResult,
+} from './borrow-service.js';
+export { BorrowService } from './borrow-service.js';
+export type {
+  BorrowCommandDeps,
+  BorrowCommandResult,
+  BorrowSubcommand,
+  RunBorrowCommandOptions,
+} from './borrow-command.js';
+export { runBorrowCommand } from './borrow-command.js';
+
+// ─── Phase 3.5 worksite re-exports for CLI composition ───────────────────────
+export type { Permission, Posture, ScopeAuthorization } from './worksite/types.js';

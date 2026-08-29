@@ -38,6 +38,7 @@ import {
   TodoRepository,
   ArchiveJobRepository,
   ApprovalRequestRepository,
+  BorrowRequestRepository,
   InboxRepository,
   NotificationOutboxRepository,
   TemplateRepository,
@@ -83,6 +84,7 @@ import {
   RuntimeNodeRegistryService,
   CoordinationService,
   ArtifactService,
+  BorrowService,
   MemoryService,
   RuntimeNodeCredentialService,
   MergeCoordinatorService,
@@ -109,6 +111,9 @@ import {
   type AgentRuntimePort,
   type IMMessagingPort,
   type IMProvisioningPort,
+  type Permission,
+  type Posture,
+  type ScopeAuthorization,
 } from '@agora-ts/core';
 import { FilesystemContextSourceRetrievalAdapter, FilesystemSkillCatalogAdapter, FilesystemProjectBrainQueryAdapter, FilesystemProjectKnowledgeAdapter, FilesystemTaskBrainWorkspaceAdapter, OpenAiCompatibleProjectBrainEmbeddingAdapter, QdrantProjectBrainVectorIndexAdapter } from '@agora-ts/adapters-brain';
 import { FilesystemArtifactContentStore, ProjectContextBriefingMaterializer, RuntimeRepoShimMaterializer } from '@agora-ts/adapters-materialization';
@@ -209,6 +214,7 @@ export interface CliCompositionFactories {
   createTaskConversationService: (context: CliCompositionContext) => TaskConversationService;
   createTemplateAuthoringService: (context: CliCompositionContext) => TemplateAuthoringService;
   createRolePackService: (context: CliCompositionContext) => RolePackService;
+  createBorrowService: (context: CliCompositionContext) => BorrowService;
   createArchiveJobNotifier: (context: CliCompositionContext) => FileArchiveJobNotifier;
   createArchiveJobReceiptIngestor: (context: CliCompositionContext) => FileArchiveJobReceiptIngestor;
   createDashboardQueryService: (
@@ -267,6 +273,7 @@ export interface CliComposition {
   taskConversationService: TaskConversationService;
   templateAuthoringService: TemplateAuthoringService;
   rolePackService: RolePackService;
+  borrowService: BorrowService;
   dashboardQueryService: DashboardQueryService;
   taskBrainBindingService: TaskBrainBindingService;
   coordinationService: CoordinationService;
@@ -551,6 +558,10 @@ export function createDefaultCliCompositionFactories(): CliCompositionFactories 
       roleBindings: new RoleBindingRepository(context.db),
       rolePacksDir: context.rolePackDir,
     }),
+    createBorrowService: (context) => new BorrowService({
+      borrowRepo: new BorrowRequestRepository(context.db),
+      scopeAuthResolver: () => scopeAuthorizationFromEnv(process.env),
+    }),
     createArchiveJobNotifier: (context) => {
       const outboxDir = process.env.AGORA_ARCHIVE_WRITER_OUTBOX_DIR
         ?? join(dirname(resolvePath(context.config.db_path)), 'archive-outbox');
@@ -784,6 +795,7 @@ export function createCliComposition(
     artifactService,
     projectId => projectService.getProjectRepoPath(projectId),
   );
+  const borrowService = factories.createBorrowService(context);
   return {
     config,
     db,
@@ -805,6 +817,7 @@ export function createCliComposition(
     taskConversationService,
     templateAuthoringService,
     rolePackService,
+    borrowService,
     dashboardQueryService,
     taskBrainBindingService,
     coordinationService,
@@ -863,4 +876,32 @@ function createTransactionManager(db: AgoraDatabase): TransactionManager {
     commit: () => db.exec('COMMIT'),
     rollback: () => db.exec('ROLLBACK'),
   };
+}
+
+/**
+ * Resolve scope authorization for the borrow service from environment.
+ *
+ * P3.5-2 stub: composition root reads AGORA_BORROW_SCOPE / _POSTURE / _PERMISSIONS.
+ * P3.5-3 will replace this with a worksite-registry-backed resolver that reads
+ * `scopeAuthorization` from the target WorkSite metadata. Until then, an
+ * unset env returns `undefined` and the borrow service denies (fail-safe).
+ */
+function scopeAuthorizationFromEnv(env: NodeJS.ProcessEnv): ScopeAuthorization | undefined {
+  const scope = env['AGORA_BORROW_SCOPE'];
+  const postureRaw = env['AGORA_BORROW_POSTURE'];
+  const permissionsRaw = env['AGORA_BORROW_PERMISSIONS'];
+  if (scope === undefined || scope === '' || postureRaw === undefined || permissionsRaw === undefined) {
+    return undefined;
+  }
+  if (postureRaw !== 'Strict' && postureRaw !== 'Auto' && postureRaw !== 'Dangerous') {
+    return undefined;
+  }
+  const permissions = permissionsRaw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s): s is Permission => s === 'read' || s === 'write' || s === 'delete' || s === 'execute');
+  if (permissions.length === 0) {
+    return undefined;
+  }
+  return { scope, posture: postureRaw, permissions };
 }
