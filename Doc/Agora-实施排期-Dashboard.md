@@ -17,6 +17,7 @@
 | **3. R-F real-time updates (R-F.2)** | ✅ **done (turn 146)** | 4s 短轮询 + 三层 race 防护 + i18n; walkthrough `Doc/10-WALKTHROUGH/2026-08-30-r-f-thread-web-detail-v02.md` |
 | **4. R-F.2 polling verify (Layer 1 + Layer 2)** | ✅ **done (turn 149)** | Layer 1 API-level 8/8 pass (avg 4009.4ms); Layer 2 playwright UI spec 就绪, 生产 `PLAYWRIGHT_E2E=1` 启用; walkthrough `Doc/10-WALKTHROUGH/2026-08-30-r-f-visual-verify.md` |
 | **5. Dashboard baseline cleanup (债 1 闭环)** | ✅ **done (turn 152)** | 编译 `agora-ts/packages/contracts` 生成 dist (消除 97 个 zod resolve errors) + 改 3 个真实 typedrift (`task.ts:277 binding_id` nullable + 2 fixture); `npx tsc -b` 0 errors; walkthrough `Doc/10-WALKTHROUGH/2026-08-30-dashboard-baseline-cleanup.md` |
+| **6. Dashboard vitest cleanup (债 2 闭环)** | ✅ **done (turn 153)** | vitest config exclude `tests/api/**` + `tests/e2e/**` (R-F.2 visual verify stale FAIL) + 改 4 处 `project-workbench-pages` fixture 同步 R-F.1 `Link → button` + aria-label; `npm test` 62 files / 378 tests 全绿; walkthrough `Doc/10-WALKTHROUGH/2026-08-30-dashboard-vitest-cleanup.md` |
 
 ---
 
