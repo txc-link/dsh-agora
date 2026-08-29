@@ -33,8 +33,8 @@
 - [x] `ResidentAgentPoller` 定时轮询 — 测试 7/7
 - [x] CLI `agora claim {create,release,list,claimable}` — 测试 7/7 + 冒烟 8/8
 - [x] migration 036_task_claims + TaskClaimRepository
-- [ ] Poller composition root 落地（server 常驻进程内启动 + 常驻 agent 配置源: citizens/roster 读取）
-- [ ] 认领超时 expire 的周期性执行（poller 内挂 expire 扫描）
+- [x] 认领超时 expire 周期性执行: `TaskClaimService.expireStale` + poller 每轮先扫（8b0d3e6）
+- [x] Poller 落地: `agora claim poll [--interval-ms]` 常驻轮询入口（设计修正: poller 属 agent 侧, 认领=agent 真在场, server 不代劳 — 见 walkthrough）
 
 ## S3 委派路由（依赖 S1 Team 模型）
 
@@ -88,13 +88,14 @@
 | 2026-08-30 | S2 回写（SSoT/progress/walkthrough/checklist） | `80056f3` | Doc/10-WALKTHROUGH/2026-08-30-org-aware-task-claiming.md |
 | 2026-08-30 | S1-S6 细粒度执行清单建立 | `3f54c41` | checklist.md + host goal + 图谱记忆 |
 | 2026-08-30 | S5 主动提问 push（service/route/CLI/migration 037） | `d002792` | 18 新测试 + 回归 610/610 + 冒烟 7/7 |
+| 2026-08-30 | S2 收尾（expireStale + claim poll 常驻入口） | `8b0d3e6` | 8 新测试 + 回归 618/618 + 冒烟 4/4 |
 
 ## 迭代顺序（按用户优先级 D5: S2→S5→S4→S6→部署）
 
 1. ✅ S2 主动任务接取（505ce4d）
 2. ✅ S5 主动对话 push 主体（d002792）
-3. ⏭ **下一轮: S2 收尾**（Poller composition root + expire 周期扫描）
-4. S4 共享记忆（mem0, 用户 turn 160 指定复用）
+3. ✅ S2 收尾（8b0d3e6）
+4. ⏭ **下一轮: S4 共享记忆**（mem0 adapter）
 5. S1+S3 组织模型 + 委派路由
 6. S6 反思论坛
 7. Phase 6 部署 + matrix 真实化（含 S5 IM 通道绑定）

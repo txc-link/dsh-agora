@@ -91,4 +91,11 @@
 - 竞争策略 = 先到先得（claim 原子写入, 重复认领明确报错）
 - 超时释放 = claim 带 expiresAt（--ttl-ms）, `expire()` 状态机支持; poller 周期性 expire 未排本轮
 
+**收尾完成**（2026-08-30, develop `8b0d3e6`）:
+- `TaskClaimService.expireStale()` 批量过期扫描; poller 每轮先 expire（"认领超时释放"落地）
+- `agora claim poll [--interval-ms]`: 单轮/常驻轮询入口, 认领成功即退出（agent 领活去干活）
+- **竞争策略落地**: 先到先得（poll 单轮内首个匹配即认领, 认领原子性由 service 保证）
+
+**设计修正**: poller 属 agent 侧进程（认领=agent 真在场）, 不做 server 代轮询 — 原"server 常驻启动"方案废弃。
+
 **未做（下一轮）**: DelegateRouter（组织架构 → 下级 agent 委派路由, 见 01-org-model.md）

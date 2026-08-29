@@ -2,7 +2,7 @@
 
 > 日期: 2026-08-30
 
-## 状态: ✅ 全部完成 (已合入 develop 505ce4d)
+## 状态: ✅ 全部完成 (505ce4d) + 收尾完成 (8b0d3e6)
 
 | 轮 | 内容 | 状态 |
 |---|---|---|
@@ -55,3 +55,11 @@
 - worktree: `.dsh/workspaces/org-claim`（已删除）
 - 分支: `feat/org-aware-task-claiming`（已合并 develop 505ce4d, 已删除）
 - /tmp 与 /home/ailink 直下均 EROFS 只读, worktree 落在插件约定路径 `.dsh/workspaces/`
+
+## 收尾轮 (2026-08-30, develop 8b0d3e6)
+
+- `TaskClaimService.expireStale()`: 批量扫描 claimed+expiresAt 已过 → expired（3 测试）
+- `ResidentAgentPoller.pollOnce` 每轮先 expireStale（可选依赖, 2 测试）
+- `runTaskClaimPollCommand` 单轮轮询 + CLI `agora claim poll [--interval-ms]`（3 测试）
+- **设计修正（第一性原理）**: poller 属 agent 侧进程——认领语义 = "该 agent 真在场且现在能干活"；server 代所有 agent 认领会出现"任务被认领但 agent 不存在"的坏状态。原 checklist 的 "server 常驻启动" 方案废弃, 以 agent 侧 `claim poll --interval-ms` 常驻替代
+- 验证: 8 新测试, 回归 618/618, 冒烟 4/4（单轮认领/跳过已认领/状态确认/常驻循环）
