@@ -681,3 +681,43 @@ export interface IRuntimeSessionBindingRepository {
     input: ReconcileRuntimeSessionBindingInput,
   ): void;
 }
+
+// ─── 29. BorrowRequest (Phase 3.5, U3=C / U4=A) ──────────────────────────
+
+export interface BorrowRequestRecord {
+  id: string;
+  actor: string;
+  target: string;
+  scope: string;
+  permissions: string[];
+  posture: string;
+  ttlMs: number;
+  reason: string;
+  status: 'pending' | 'granted' | 'denied' | 'needs_confirm' | 'needs_dual';
+  outcome: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface IBorrowRequestRepository {
+  insert(input: {
+    id?: string;
+    actor: string;
+    target: string;
+    scope: string;
+    permissions: string[];
+    posture: string;
+    ttlMs: number;
+    reason: string;
+    metadata?: Record<string, unknown> | null;
+  }): BorrowRequestRecord;
+  getById(id: string): BorrowRequestRecord | null;
+  listByActor(actor: string): BorrowRequestRecord[];
+  listPending(): BorrowRequestRecord[];
+  recordDecision(
+    id: string,
+    outcome: string,
+    decidedAt: string,
+  ): BorrowRequestRecord | null;
+}
