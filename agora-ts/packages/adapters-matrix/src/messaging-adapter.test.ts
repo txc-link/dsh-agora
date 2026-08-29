@@ -35,6 +35,19 @@ describe('MatrixIMMessagingAdapter', () => {
     expect(body.body).toContain('task_delegated');
   });
 
+  it('targetRef 为 roomId (! 开头) 时直接发该房间', async () => {
+    const { calls, fetchImpl } = makeFetchCapture();
+    const adapter = new MatrixIMMessagingAdapter({
+      homeserverUrl: 'http://hs',
+      accessToken: 't',
+      defaultRoomId: '!default:hs',
+      fetchImpl,
+    });
+    await adapter.sendNotification('!conv-room:hs', payload);
+    expect(calls[0].url).toContain(encodeURIComponent('!conv-room:hs'));
+    expect(adapter.resolveRoom('!x:y')).toBe('!x:y');
+  });
+
   it('roomByRef 精确映射优先于 default', async () => {
     const { calls, fetchImpl } = makeFetchCapture();
     const adapter = new MatrixIMMessagingAdapter({

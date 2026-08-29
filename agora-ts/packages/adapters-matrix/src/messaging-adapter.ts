@@ -44,6 +44,10 @@ export class MatrixIMMessagingAdapter implements IMMessagingPort {
   }
 
   resolveRoom(targetRef: string): string {
+    // dispatcher 的 targetRef 可直接是 matrix roomId (conversation_ref 语义: discord=channel, matrix=room)
+    if (targetRef.startsWith('!')) {
+      return targetRef;
+    }
     return this.roomByRef[targetRef] ?? this.defaultRoomId;
   }
 
