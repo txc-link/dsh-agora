@@ -167,4 +167,86 @@ describe('NotificationDispatcher', () => {
       runtime.cleanup();
     }
   });
+
+  it('falls back to defaultTargetRef when the notification has no binding', async () => {
+    const runtime = createTestRuntime();
+    try {
+      const port = new StubIMMessagingPort();
+      const outbox = new NotificationOutboxRepository(runtime.db);
+      const dispatcher = new NotificationDispatcher({
+        outboxRepository: outbox,
+        conversationRepository: new TaskConversationRepository(runtime.db),
+        bindingRepository: new TaskContextBindingRepository(runtime.db),
+        messagingPort: port,
+        defaultTargetRef: '!org-default:example.test',
+      });
+
+      const task = runtime.taskService.createTask({
+        title: 'Notify default target',
+        type: 'coding',
+        creator: 'archon',
+        description: 'test',
+        priority: 'normal',
+      });
+
+      outbox.insert({
+        id: 'notif-default',
+        task_id: task.id,
+        event_type: 'task_created',
+        target_binding_id: null,
+        payload: { title: task.title },
+        sequence_no: 1,
+      });
+
+      const result = await dispatcher.scan();
+
+      expect(result.delivered).toBe(1);
+      expect(port.sent[0]?.targetRef).toBe('!org-default:example.test');
+      expect(port.sent[0]?.payload.event_type).toBe('task_created');
+      const updated = outbox.getById('notif-default');
+      expect(updated?.status).toBe('delivered');
+    } finally {
+      runtime.cleanup();
+    }
+  });
+
+  it('skips notifications with no binding when no defaultTargetRef is configured', async () => {
+    const runtime = createTestRuntime();
+    try {
+      const port = new StubIMMessagingPort();
+      const outbox = new NotificationOutboxRepository(runtime.db);
+      const dispatcher = new NotificationDispatcher({
+        outboxRepository: outbox,
+        conversationRepository: new TaskConversationRepository(runtime.db),
+        bindingRepository: new TaskContextBindingRepository(runtime.db),
+        messagingPort: port,
+      });
+
+      const task = runtime.taskService.createTask({
+        title: 'Notify skip',
+        type: 'coding',
+        creator: 'archon',
+        description: 'test',
+        priority: 'normal',
+      });
+
+      outbox.insert({
+        id: 'notif-skip',
+        task_id: task.id,
+        event_type: 'task_created',
+        target_binding_id: null,
+        payload: {},
+        sequence_no: 1,
+      });
+
+      const result = await dispatcher.scan();
+
+      expect(result.delivered).toBe(0);
+      expect(result.failed).toBe(0);
+      expect(port.sent).toHaveLength(0);
+      expect(outbox.getById('notif-skip')?.status).toBe('delivered');
+    } finally {
+      runtime.cleanup();
+    }
+  });
 });

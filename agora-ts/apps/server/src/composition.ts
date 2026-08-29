@@ -706,12 +706,23 @@ export function createDefaultServerCompositionFactories(): ServerCompositionFact
       accountRepository: new HumanAccountRepository(context.db),
       identityBindingRepository: new HumanIdentityBindingRepository(context.db),
     }),
-    createNotificationDispatcher: (context, deps) => new NotificationDispatcher({
-      outboxRepository: new NotificationOutboxRepository(context.db),
-      conversationRepository: new TaskConversationRepository(context.db),
-      bindingRepository: new TaskContextBindingRepository(context.db),
-      messagingPort: deps.messagingPort,
-    }),
+    createNotificationDispatcher: (context, deps) => {
+      const { im } = context.config;
+      // 无 binding 通知（如 task_created 公告）的兜底目标: 按 provider 取默认房间/频道
+      const defaultTargetRef =
+        im.provider === 'matrix'
+          ? im.matrix?.default_room_id ?? null
+          : im.provider === 'discord'
+            ? im.discord?.default_channel_id ?? null
+            : null;
+      return new NotificationDispatcher({
+        outboxRepository: new NotificationOutboxRepository(context.db),
+        conversationRepository: new TaskConversationRepository(context.db),
+        bindingRepository: new TaskContextBindingRepository(context.db),
+        messagingPort: deps.messagingPort,
+        ...(defaultTargetRef ? { defaultTargetRef } : {}),
+      });
+    },
     createTaskConversationService: (context) => new TaskConversationService({
       bindingRepository: new TaskContextBindingRepository(context.db),
       conversationRepository: new TaskConversationRepository(context.db),
