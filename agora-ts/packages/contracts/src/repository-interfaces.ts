@@ -721,3 +721,41 @@ export interface IBorrowRequestRepository {
     decidedAt: string,
   ): BorrowRequestRecord | null;
 }
+
+// ─── 30. TaskClaim (org-aware-work-os S2, 2026-08-30) ───────────────────
+
+export type TaskClaimStatus = 'pending' | 'claimed' | 'released' | 'expired';
+
+export interface TaskClaimRecord {
+  id: string;
+  taskId: string;
+  agentRef: string;
+  status: TaskClaimStatus;
+  claimedAt: string | null;
+  releasedAt: string | null;
+  expiresAt: string | null;
+  reason: string | null;
+  createdAt: string;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface ITaskClaimRepository {
+  insert(input: {
+    id?: string;
+    taskId: string;
+    agentRef: string;
+    reason?: string | null;
+    expiresAt?: string | null;
+    metadata?: Record<string, unknown> | null;
+  }): TaskClaimRecord;
+  getById(id: string): TaskClaimRecord | null;
+  getByTaskId(taskId: string): TaskClaimRecord | null;
+  listByAgent(agentRef: string): TaskClaimRecord[];
+  listPending(): TaskClaimRecord[];
+  listClaimed(): TaskClaimRecord[];
+  updateStatus(
+    id: string,
+    status: TaskClaimStatus,
+    at: string,
+  ): TaskClaimRecord | null;
+}

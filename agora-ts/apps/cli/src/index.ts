@@ -75,18 +75,20 @@ import {
   type MergeCoordinatorService,
   BorrowService,
   runBorrowCommand,
+  TaskClaimService,
+  runTaskClaimCommand,
   ThreadTaskBindingService,
   runThreadBindCommand,
   type RunThreadBindCommandOptions,
   isDeveloperRegressionEnabled,
 } from '@agora-ts/core';
-import type { IBorrowRequestRepository, IThreadTaskBindingRepository } from '@agora-ts/contracts';
+import type { IBorrowRequestRepository, ITaskClaimRepository, IThreadTaskBindingRepository } from '@agora-ts/contracts';
 import { TaskRepository } from '@agora-ts/db';
 import { ThreadTaskBindingRepository } from '@agora-ts/db';
 import { OpenAiCompatibleProjectBrainEmbeddingAdapter } from '@agora-ts/adapters-brain';
 import { buildCcConnectAgentId, CcConnectAgentRegistry, loadCcConnectProjectTargets } from '@agora-ts/adapters-cc-connect';
 import { ProjectContextBriefingMaterializer, RuntimeRepoShimMaterializer, RuntimeRepoShimWritebackService } from '@agora-ts/adapters-materialization';
-import { ProjectBrainIndexJobRepository, RuntimeTargetOverlayRepository, BorrowRequestRepository, type AgoraDatabase } from '@agora-ts/db';
+import { ProjectBrainIndexJobRepository, RuntimeTargetOverlayRepository, BorrowRequestRepository, TaskClaimRepository, type AgoraDatabase } from '@agora-ts/db';
 import { LiveRegressionActor } from '@agora-ts/testing';
 import type { DashboardSessionClient } from './dashboard-session-client.js';
 import type {
@@ -230,6 +232,8 @@ export interface CliDependencies {
   mergeCoordinatorService?: Pick<MergeCoordinatorService, 'create' | 'get' | 'list' | 'execute'>;
   borrowService?: BorrowService;
   borrowRequestRepository?: IBorrowRequestRepository;
+  taskClaimService?: TaskClaimService;
+  taskClaimRepository?: ITaskClaimRepository;
   threadTaskBindingRepository?: IThreadTaskBindingRepository;
   ccConnectInspectionService?: CcConnectInspectionService;
   ccConnectManagementService?: CcConnectManagementService;
@@ -650,6 +654,11 @@ export function createCliProgram(deps: CliDependencies = {}) {
   const mergeCoordinatorService = createLazyObject(() => deps.mergeCoordinatorService ?? resolveComposition().mergeCoordinatorService);
   const borrowService = createLazyObject(() => deps.borrowService ?? resolveComposition().borrowService);
   const getBorrowRequestRepository = () => deps.borrowRequestRepository ?? new BorrowRequestRepository(resolveComposition().db);
+  const getTaskClaimRepository = (): ITaskClaimRepository => deps.taskClaimRepository ?? new TaskClaimRepository(resolveComposition().db);
+  const getTaskClaimService = () => deps.taskClaimService ?? new TaskClaimService({
+    claimRepo: getTaskClaimRepository(),
+    taskExists: (taskId) => new TaskRepository(resolveComposition().db).getTask(taskId) !== null,
+  });
   const getThreadTaskBindingRepository = () => deps.threadTaskBindingRepository ?? new ThreadTaskBindingRepository(resolveComposition().db);
   const getThreadTaskBindingService = () => new ThreadTaskBindingService({
     repo: getThreadTaskBindingRepository(),
@@ -945,6 +954,73 @@ export function createCliProgram(deps: CliDependencies = {}) {
         { borrowService, borrowRepo: getBorrowRequestRepository() },
         { subcommand: 'show', requestId },
       );
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  const claim = program.command('claim').description('Task claiming for resident agents (org-aware-work-os S2)');
+  const claimDeps = () => ({
+    claimService: getTaskClaimService(),
+    claimRepo: getTaskClaimRepository(),
+    taskRepo: new TaskRepository(resolveComposition().db),
+  });
+  claim
+    .command('create')
+    .description('claim a task for an agent')
+    .requiredOption('--task <taskId>', 'agora task id')
+    .requiredOption('--agent <agentRef>', 'agent ref (e.g. agent:dev-1)')
+    .option('--reason <reason>', 'why this agent claims the task')
+    .option('--ttl-ms <ttlMs>', 'claim time-to-live in ms (expired claims are released)', (v: string) => Number.parseInt(v, 10), undefined)
+    .action(async (options: { task: string; agent: string; reason?: string; ttlMs?: number }) => {
+      const result = await runTaskClaimCommand(claimDeps(), {
+        subcommand: 'claim',
+        taskId: options.task,
+        agentRef: options.agent,
+        ...(options.reason !== undefined ? { reason: options.reason } : {}),
+        ...(options.ttlMs !== undefined ? { ttlMs: options.ttlMs } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  claim
+    .command('release')
+    .description('release a claim (owner agent only)')
+    .requiredOption('--claim <claimId>', 'claim id')
+    .requiredOption('--agent <agentRef>', 'agent ref (must be the claim owner)')
+    .action(async (options: { claim: string; agent: string }) => {
+      const result = await runTaskClaimCommand(claimDeps(), {
+        subcommand: 'release',
+        claimId: options.claim,
+        agentRef: options.agent,
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  claim
+    .command('list')
+    .description('list claims (--agent <agentRef> for one agent, else all claimed)')
+    .option('--agent <agentRef>', 'filter by agent ref')
+    .action(async (options: { agent?: string }) => {
+      const result = await runTaskClaimCommand(claimDeps(), {
+        subcommand: 'list',
+        ...(options.agent !== undefined ? { listAgent: options.agent } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  claim
+    .command('claimable')
+    .description('list claimable (state=created, unclaimed) tasks matching an agent responsibility')
+    .option('--agent <agentRef>', 'agent ref for matching context', 'agent:cli')
+    .requiredOption('--role <roleId>', 'agent role id (e.g. role-dev)')
+    .option('--skills <skills>', 'comma-separated agent skills (e.g. typescript,node)', '')
+    .action(async (options: { agent: string; role: string; skills: string }) => {
+      const result = await runTaskClaimCommand(claimDeps(), {
+        subcommand: 'claimable',
+        matchAgentRef: options.agent,
+        matchRoleId: options.role,
+        matchSkills: options.skills,
+      });
       writeLine(stdout, JSON.stringify(result, null, 2));
       if (!result.ok) process.exitCode = 1;
     });

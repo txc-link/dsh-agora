@@ -390,6 +390,33 @@ export {
 } from './thread-bind-command.js';
 export { runBorrowCommand } from './borrow-command.js';
 
+// ─── org-aware-work-os S2: Task claiming (2026-08-30) ────────────────────────
+export type {
+  ClaimTaskInput,
+  TaskClaimServiceOptions,
+  ClaimResult,
+} from './task-claim-service.js';
+export { TaskClaimService } from './task-claim-service.js';
+export type {
+  ClaimMatcherAgent,
+  ClaimMatcherTask,
+  MatchResult,
+} from './task-claim-matcher.js';
+export { matchTaskToAgent } from './task-claim-matcher.js';
+export type {
+  PollerAgent,
+  PollerDeps,
+  PollResult,
+} from './resident-agent-poller.js';
+export { ResidentAgentPoller } from './resident-agent-poller.js';
+export type {
+  TaskClaimCommandDeps,
+  TaskClaimCommandResult,
+  TaskClaimSubcommand,
+  RunTaskClaimCommandOptions,
+} from './task-claim-command.js';
+export { runTaskClaimCommand } from './task-claim-command.js';
+
 // ─── Phase 3.5 worksite re-exports for CLI composition ───────────────────────
 export type { Permission, Posture, ScopeAuthorization } from './worksite/types.js';
 export {
