@@ -344,6 +344,11 @@ describe('agora-ts cli', () => {
   it('renders redirect help for agora users --help', async () => {
     const stdout = createBuffer();
     const stderr = createBuffer();
+
+    // addRedirectCommand 在 program 构造时捕获 locale; 必须在 createCliProgram 之前 pin。
+    const previousLocale = process.env.AGORA_LOCALE;
+    process.env.AGORA_LOCALE = 'en-US';
+
     const program = createCliProgram({
       configPath: '/definitely/missing/agora.json',
       stdout,
@@ -354,6 +359,12 @@ describe('agora-ts cli', () => {
       await program.parseAsync(['users', '--help'], { from: 'user' });
     } catch {
       // Commander may surface help as an exit signal.
+    } finally {
+      if (previousLocale === undefined) {
+        delete process.env.AGORA_LOCALE;
+      } else {
+        process.env.AGORA_LOCALE = previousLocale;
+      }
     }
 
     expect(stderr.value).toBe('');
