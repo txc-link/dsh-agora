@@ -47,10 +47,17 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), dashboardBaseRedirectPlugin(dashboardBasePath)],
   base: dashboardBasePath,
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-      '@agora-ts/contracts': path.resolve(__dirname, '../agora-ts/packages/contracts/src/index.ts'),
-    },
+    alias: [
+      { find: '@', replacement: path.resolve(__dirname, './src') },
+      // @agora-ts/contracts must point at the BUILT dist (not the src) so vite/vitest
+      // never attempt to resolve `zod` from the contracts source tree (which has no
+      // node_modules in a dashboard worktree). Run `npm run dashboard:setup` once per
+      // worktree to produce dist/. See dashboard/scripts/build-contracts.sh.
+      {
+        find: '@agora-ts/contracts',
+        replacement: path.resolve(__dirname, '../agora-ts/packages/contracts/dist/index.js'),
+      },
+    ],
   },
   test: {
     environment: 'jsdom',

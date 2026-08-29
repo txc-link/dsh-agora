@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "setup": "bash ./scripts/build-contracts.sh",
+    "pretest": "bash ./scripts/build-contracts.sh",
+    "predev": "bash ./scripts/build-contracts.sh",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:compat": "node ./scripts/browser-smoke.mjs",
