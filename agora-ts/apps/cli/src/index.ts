@@ -93,6 +93,7 @@ import {
   isDeveloperRegressionEnabled,
 } from '@agora-ts/core';
 import { Mem0RestAdapter } from '@agora-ts/adapters-mem0';
+import { ForumVaultWriter } from '@agora-ts/adapters-obsidian';
 import type { IAgentQuestionRepository, IBorrowRequestRepository, ITaskClaimRepository, IThreadTaskBindingRepository, ITeamRepository, IForumRepository } from '@agora-ts/contracts';
 import { TaskRepository } from '@agora-ts/db';
 import { ThreadTaskBindingRepository } from '@agora-ts/db';
@@ -1492,6 +1493,26 @@ export function createCliProgram(deps: CliDependencies = {}) {
     .requiredOption('--keyword <keyword>', 'keyword (title/content)')
     .action((options: { projectId: string; keyword: string }) => {
       writeLine(stdout, JSON.stringify({ ok: true, data: getForumService().listPosts({ project_id: options.projectId, keyword: options.keyword }) }, null, 2));
+    });
+
+  forum
+    .command('export')
+    .description('帖子按 project/category 分组导出为 obsidian vault markdown (S4 资料沉淀分组)')
+    .requiredOption('--vault <dir>', 'obsidian vault 根目录 (本地文件夹)')
+    .option('--project-id <projectId>', 'project scope', 'default')
+    .option('--base-folder <folder>', 'vault 内分组根文件夹', 'Agora')
+    .action((options: { vault: string; projectId: string; baseFolder: string }) => {
+      try {
+        const repo = getForumRepository();
+        const posts = repo.listPosts({ project_id: options.projectId, limit: 1000 });
+        const comments = posts.flatMap((p) => repo.listComments(p.id));
+        const writer = new ForumVaultWriter({ vaultRoot: options.vault, baseFolder: options.baseFolder });
+        const result = writer.syncPosts(posts, comments);
+        writeLine(stdout, JSON.stringify({ ok: true, data: { written: result.written.length, skipped: result.skipped, vault_root: options.vault, base_folder: options.baseFolder } }, null, 2));
+      } catch (error) {
+        writeLine(stderr, `forum export 失败: ${error instanceof Error ? error.message : String(error)}`);
+        process.exitCode = 1;
+      }
     });
 
   forum
