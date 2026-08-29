@@ -13,8 +13,8 @@
 |---|---|---|
 | 0. SSoT 建立 (本文件) | ✅ done (turn 142) | 治理基础建立 |
 | 1. Dashboard 已有详情面板基础 | ✅ exists | `WorkbenchDetailSheet.tsx` + `ProjectDetailPage.tsx` |
-| **2. R-F thread web 详情面板 (R-F.1)** | ⏳ **in_progress** | task_plan 在 `Doc/09-PLANNING/TASKS/2026-08-30-r-f-thread-web-detail/` |
-| 3. R-F real-time updates (R-F.2) | ⏳ blocked on R-F.1 | 同 worktree |
+| **2. R-F thread web 详情面板 (R-F.1)** | ✅ **done (turn 144)** | walkthrough `Doc/10-WALKTHROUGH/2026-08-30-r-f-thread-web-detail-v01.md` |
+| 3. R-F real-time updates (R-F.2) | ⏳ blocked on R-F.1, subagent 启动中 | 同 worktree |
 
 ---
 

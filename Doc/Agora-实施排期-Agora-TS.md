@@ -63,6 +63,19 @@
 - E2E smoke (real homeserver + real agora-ts): matrix reply → ingestMatrixReply → POST reply → conversation entry. PASS
 - matrix side walkthrough: `Doc/10-WALKTHROUGH/2026-08-30-shared-work-site-phase-1.md`
 
+### 3.5 Baseline 债务 (R-D 完成后记账, turn 144)
+
+R-F.1 subagent (turn 144) 实测发现主仓 dashboard 侧 baseline 在 R-F.1 启动前已 broken:
+- **3 ts errors** in `dashboard/src/{taskMappers,taskMappers.test,taskStore.live-api.test}.ts` — 字段类型与 `@agora-ts/contracts` typedrift
+- **144 vitest test failures** — React 19 + vitest `React.act is not a function` pre-existing 互动问题
+
+**根因**: R-D hotfix 完成时 (turn 132) 只跑了 agora-ts 侧单测 (1339/1376, 36 EROFS + 1 locale fail), dashboard `npm run check` 未跑全, baseline typedrift 未被发现。
+
+**不在 R-F 范围内修** (按 §1.5 scope 边界), **记账治理债**排未来独立 phase:
+- Phase: "Dashboard baseline cleanup"
+- 修复内容: contracts 字段对齐 (`TaskConversationEntry` 等) + vitest 升级到 React 19 act 兼容版本
+- 触发条件: 任何想跑通 `npm run check` 的 slice 都依赖此 phase 完成
+
 ---
 
 ## 4. Phase 3 Slice Plan
