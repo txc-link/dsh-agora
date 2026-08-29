@@ -96,3 +96,54 @@ interface WorkSite {
 - 不做多租户
 - 不做实时协作 (Tutti 的实时编辑)— 我们是 pull, 不是 push
 - 不做"对象版本控制" (Tutti 的版本历史) — 我们用 git 做版本
+
+---
+
+## 已实现 — Phase 1 (turn 60, commit 4a1861d)
+
+### 状态
+
+| 维度 | 实际 |
+|---|---|
+| Worktree | `.worktrees/feat-shared-work-site-phase-1` |
+| Branch | `feat/shared-work-site-phase-1` |
+| Commit | `4a1861d` (parent `d8d5fce`) |
+| Walkthrough | `Doc/10-WALKTHROUGH/2026-08-30-shared-work-site-phase-1.md` |
+| Tests | 46 new (31 uri + 15 resolver) / 409 total / 0 regression |
+| Gate | `npm run gate:core-architecture` ✅ |
+
+### 落地映射
+
+| 设计 (本文档) | 实现 (Phase 1) |
+|---|---|
+| §1 WorkSite 抽象, Core 内 6 type union | `packages/core/src/worksite/types.ts` — `WorkSite` union 6 variant + `WorksiteResolutionContext` + 2 error class |
+| §1 不写平台名 | `worksite/` 内 grep `matrix\|discord\|openclaw\|sentinel` = 0 命中 |
+| §2 Core URI 协议, opaque id | `packages/core/src/worksite/uri.ts` — `parseWorksiteUri` / `formatWorksiteUri` / `isValidWorksiteUri` + 单 scheme `agora://` |
+| §3 Resolver interface, 6 type 各自投影 | `packages/core/src/worksite/resolver.ts` — `WorksiteResolver` interface + `WorksiteResolverRegistry` + cycle/depth (RESOLVE_MAX_DEPTH=8) |
+| §3 Task 唯一具体 resolver | `packages/core/src/worksite/task-resolver.ts` — `TaskWorksiteResolver` 只依赖 `Pick<ITaskRepository, 'getTask'>` |
+| §1.5 5 个 stub, 无 fallback | 5 个 type 在 union 内, 但 registry `register` 时只挂 task, 其它 type `resolveWorksite` 抛 `WorksiteNotImplementedError` |
+| §3 双向绑定 | 本文 + `02-uri-protocol.md` + walkthrough + task_plan/findings/progress |
+
+### 验证
+
+```
+vitest packages/core  →  69 files / 409 tests passed (baseline 67/363)
+npm run gate:core-architecture  →  core all gate passed
+tsc -b tsconfig.workspace.build.json  →  exit 0
+```
+
+### §1.5 自检 — 已锁定
+
+- ✅ 无 compat layer
+- ✅ 无 silent fallback
+- ✅ Phase 1 范围内最小实现
+- ❌ 未实现 5 个 stub (Phase 2-4 按需)
+- ❌ 未动 matrix-connector / Dashboard / borrow (Phase 2/3)
+- ❌ 未做 CLI / REST 入口 (§2 — adapter 层的事)
+
+### 关联
+
+- task_dir: `Doc/09-PLANNING/TASKS/2026-08-30-shared-work-site-phase-1/`
+- walkthrough: `Doc/10-WALKTHROUGH/2026-08-30-shared-work-site-phase-1.md`
+- 实施来源: turn 55 brainstorm → turn 56 (2 plugin够吗) → turn 59 (matrix 多 Room 调整) → turn 60 ("开搞")
+- Phase 2 起点: `Doc/03-ARCHITECTURE/2026-08-29-shared-work-site/03-deep-reference-pull.md`
