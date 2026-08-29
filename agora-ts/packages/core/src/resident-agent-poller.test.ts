@@ -150,3 +150,20 @@ describe('ResidentAgentPoller.start/stop', () => {
     vi.useRealTimers();
   });
 });
+
+describe('ResidentAgentPoller.pollOnce + expireStale', () => {
+  it('每轮先执行 expireStale 扫描 (过期认领先释放再匹配)', () => {
+    const expireStale = vi.fn(() => 2);
+    const deps = makeDeps({ expireStale });
+    const poller = new ResidentAgentPoller([makeAgent()], deps);
+    poller.pollOnce();
+    expect(expireStale).toHaveBeenCalledTimes(1);
+  });
+
+  it('未注入 expireStale 也可轮询 (可选依赖)', () => {
+    const deps = makeDeps({});
+    const poller = new ResidentAgentPoller([makeAgent()], deps);
+    const result = poller.pollOnce();
+    expect(result.scanned).toBe(0);
+  });
+});

@@ -72,4 +72,16 @@ export class TaskClaimService {
     }
     return claim;
   }
+
+  /** 批量扫描: 所有 claimed 且 expiresAt 已过的认领 → expired. 轮询周期/定时任务调用。 */
+  expireStale(nowIso = new Date().toISOString()): TaskClaimRecord[] {
+    const expired: TaskClaimRecord[] = [];
+    for (const claim of this.opts.claimRepo.listClaimed()) {
+      if (claim.expiresAt && claim.expiresAt <= nowIso) {
+        const updated = this.opts.claimRepo.updateStatus(claim.id, 'expired', nowIso);
+        if (updated) expired.push(updated);
+      }
+    }
+    return expired;
+  }
 }

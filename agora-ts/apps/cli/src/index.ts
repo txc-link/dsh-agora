@@ -77,6 +77,7 @@ import {
   runBorrowCommand,
   TaskClaimService,
   runTaskClaimCommand,
+  runTaskClaimPollCommand,
   AgentQuestionService,
   runTaskAskCommand,
   ThreadTaskBindingService,
@@ -1114,6 +1115,43 @@ export function createCliProgram(deps: CliDependencies = {}) {
       const result = await runTaskAskCommand(askDeps(), { subcommand: 'close', questionId: options.id });
       writeLine(stdout, JSON.stringify(result, null, 2));
       if (!result.ok) process.exitCode = 1;
+    });
+
+  claim
+    .command('poll')
+    .description('resident poll: expire stale claims then auto-claim first matching task (loops with --interval-ms until claimed)')
+    .requiredOption('--agent <agentRef>', 'polling agent ref')
+    .requiredOption('--role <roleId>', 'agent role id')
+    .option('--skills <skills>', 'comma-separated agent skills', '')
+    .option('--interval-ms <n>', 'poll interval; keeps polling until a task is claimed', (v: string) => Number.parseInt(v, 10), undefined)
+    .action(async (options: { agent: string; role: string; skills: string; intervalMs?: number }) => {
+      const pollOnce = async (): Promise<{ ok: boolean; data?: unknown; error?: string }> =>
+        runTaskClaimPollCommand(claimDeps(), {
+          agentRef: options.agent,
+          roleId: options.role,
+          skills: options.skills,
+        });
+      if (options.intervalMs === undefined) {
+        const result = await pollOnce();
+        writeLine(stdout, JSON.stringify(result, null, 2));
+        if (!result.ok) process.exitCode = 1;
+        return;
+      }
+      // 常驻模式: 周期轮询, 认领成功即退出 (agent 领到活去干活)
+      const timer = setInterval(async () => {
+        const result = await pollOnce();
+        if (!result.ok) {
+          clearInterval(timer);
+          writeLine(stdout, JSON.stringify(result, null, 2));
+          process.exitCode = 1;
+          return;
+        }
+        const claimed = (result.data as { claimed: { taskId: string } | null }).claimed;
+        if (claimed !== null) {
+          clearInterval(timer);
+          writeLine(stdout, JSON.stringify(result, null, 2));
+        }
+      }, Math.max(1, options.intervalMs));
     });
 
   const thread = program.command('thread').description('Thread ↔ Task binding (Phase 4 / R-C T-1.5)');

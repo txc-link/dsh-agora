@@ -129,3 +129,60 @@ function runClaimable(deps: TaskClaimCommandDeps, options: RunTaskClaimCommandOp
   }
   return { ok: true, data: { claimable: matched, count: matched.length } };
 }
+
+// ─── claim poll: 常驻 agent 单轮轮询 (expireStale → 匹配 → 认领) ────────────
+
+export interface TaskClaimPollDeps {
+  claimService: TaskClaimService;
+  claimRepo: ITaskClaimRepository;
+  taskRepo: Pick<ITaskRepository, 'getTask' | 'listTasks'>;
+}
+
+export interface TaskClaimPollOptions {
+  agentRef: string;
+  roleId: string;
+  skills: string;
+}
+
+export interface TaskClaimPollResult {
+  expired: number;
+  scanned: number;
+  claimed: { taskId: string; title: string } | null;
+}
+
+/** 单轮轮询: 批量过期 → 扫描 created+active 未认领任务 → 首个匹配即认领 (先到先得)。 */
+export async function runTaskClaimPollCommand(
+  deps: TaskClaimPollDeps,
+  options: TaskClaimPollOptions,
+): Promise<TaskClaimCommandResult> {
+  const missing = requireString(options.agentRef, '--agent') ?? requireString(options.roleId, '--role');
+  if (missing) return { ok: false, error: missing };
+  const skills = options.skills.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
+  const expired = deps.claimService.expireStale().length;
+  const tasks = [...deps.taskRepo.listTasks('created'), ...deps.taskRepo.listTasks('active')];
+  let scanned = 0;
+  for (const task of tasks) {
+    const claim = deps.claimRepo.getByTaskId(task.id);
+    if (claim && claim.status === 'claimed') continue;
+    scanned += 1;
+    const match = matchTaskToAgent(
+      { taskId: task.id, taskType: task.type, skillPolicy: task.skill_policy ?? null },
+      { agentRef: options.agentRef, roleId: options.roleId, skillsRef: skills },
+    );
+    if (!match.matched) continue;
+    try {
+      const result = deps.claimService.claim({ taskId: task.id, agentRef: options.agentRef, reason: 'poll auto-claim' });
+      return {
+        ok: true,
+        data: {
+          expired,
+          scanned,
+          claimed: { taskId: result.claim.taskId, title: task.title },
+        } satisfies TaskClaimPollResult,
+      };
+    } catch {
+      // 认领被拒 (如并发先到) → 继续看下一个任务
+    }
+  }
+  return { ok: true, data: { expired, scanned, claimed: null } satisfies TaskClaimPollResult };
+}

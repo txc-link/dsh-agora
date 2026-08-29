@@ -163,3 +163,34 @@ describe('TaskClaimService.expire', () => {
     expect(repo.updateStatus).not.toHaveBeenCalled();
   });
 });
+
+describe('TaskClaimService.expireStale', () => {
+  it('批量过期: claimed + expiresAt 已过 → expired', () => {
+    const { service, repo } = makeService();
+    repo._records.push(
+      makeRecord({ id: 'c1', taskId: 't1', status: 'claimed', claimedAt: NOW, expiresAt: '2026-08-29T23:00:00.000Z' }),
+      makeRecord({ id: 'c2', taskId: 't2', status: 'claimed', claimedAt: NOW, expiresAt: '2026-08-31T00:00:00.000Z' }),
+      makeRecord({ id: 'c3', taskId: 't3', status: 'claimed', claimedAt: NOW, expiresAt: null }),
+    );
+    const expired = service.expireStale(NOW);
+    expect(expired.map((c) => c.id)).toEqual(['c1']);
+    expect(expired[0].status).toBe('expired');
+    expect(repo.getById('c2')?.status).toBe('claimed');
+    expect(repo.getById('c3')?.status).toBe('claimed');
+  });
+
+  it('无过期认领 → 空数组', () => {
+    const { service, repo } = makeService();
+    repo._records.push(makeRecord({ id: 'c1', status: 'claimed', claimedAt: NOW, expiresAt: null }));
+    expect(service.expireStale(NOW)).toEqual([]);
+  });
+
+  it('released/old 记录不参与扫描 (只扫 claimed)', () => {
+    const { service, repo } = makeService();
+    repo._records.push(
+      makeRecord({ id: 'c1', status: 'released', expiresAt: '2026-08-01T00:00:00.000Z' }),
+      makeRecord({ id: 'c2', status: 'expired', expiresAt: '2026-08-01T00:00:00.000Z' }),
+    );
+    expect(service.expireStale(NOW)).toEqual([]);
+  });
+});

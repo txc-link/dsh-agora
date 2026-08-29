@@ -23,6 +23,8 @@ export interface PollerDeps {
   isTaskClaimed: (taskId: string) => boolean;
   /** 认领任务 (接 TaskClaimService.claim). */
   claim: (taskId: string, agentRef: string) => { ok: true } | { ok: false; reason: string };
+  /** 每轮扫描前批量过期超时认领 (接 TaskClaimService.expireStale), 可选. */
+  expireStale?: () => number;
 }
 
 export interface PollResult {
@@ -30,6 +32,7 @@ export interface PollResult {
   claims: { taskId: string; agentRef: string }[];
   skippedClaimed: number;
   skippedUnmatched: number;
+  expired: number;
 }
 
 export class ResidentAgentPoller {
@@ -41,6 +44,7 @@ export class ResidentAgentPoller {
   ) {}
 
   pollOnce(): PollResult {
+    const expired = this.deps.expireStale?.() ?? 0;
     const tasks = this.deps.listClaimableTasks();
     const claims: { taskId: string; agentRef: string }[] = [];
     let skippedClaimed = 0;
@@ -70,7 +74,7 @@ export class ResidentAgentPoller {
       if (!claimed && !this.deps.isTaskClaimed(task.taskId)) skippedUnmatched += 1;
     }
 
-    return { scanned: tasks.length, claims, skippedClaimed, skippedUnmatched };
+    return { scanned: tasks.length, claims, skippedClaimed, skippedUnmatched, expired };
   }
 
   start(): void {

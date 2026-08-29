@@ -7,7 +7,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ITaskClaimRepository, ITaskRepository, TaskClaimRecord } from '@agora-ts/contracts';
 import { TaskClaimService } from './task-claim-service.js';
-import { runTaskClaimCommand } from './task-claim-command.js';
+import { runTaskClaimCommand, runTaskClaimPollCommand } from './task-claim-command.js';
 
 function makeClaim(overrides: Partial<TaskClaimRecord> = {}): TaskClaimRecord {
   return {
@@ -32,7 +32,11 @@ function makeDeps(overrides: {
   const claims = overrides.claims ?? [];
   const tasks = overrides.tasks ?? [];
   const claimRepo: ITaskClaimRepository = {
-    insert: vi.fn((input) => makeClaim({ taskId: input.taskId, agentRef: input.agentRef, status: 'pending' })),
+    insert: vi.fn((input) => {
+      const rec = makeClaim({ id: `new-${claims.length + 1}`, taskId: input.taskId, agentRef: input.agentRef, status: 'pending' });
+      claims.push(rec);
+      return rec;
+    }),
     getById: vi.fn((id) => claims.find((c) => c.id === id) ?? null),
     getByTaskId: vi.fn((taskId) => claims.find((c) => c.taskId === taskId) ?? null),
     listByAgent: vi.fn((agentRef) => claims.filter((c) => c.agentRef === agentRef)),
@@ -114,5 +118,41 @@ describe('runTaskClaimCommand', () => {
     const result = await runTaskClaimCommand(deps, { subcommand: 'claimable' });
     expect(result.ok).toBe(false);
     expect(result.error).toContain('--role');
+  });
+});
+
+// ─── runTaskClaimPollCommand ────────────────────────────────────────────────
+
+describe('runTaskClaimPollCommand', () => {
+  it('单轮: 过期扫描 → 匹配 → 认领首个匹配任务', async () => {
+    const { deps } = makeDeps({
+      claims: [makeClaim({ taskId: 'task-2' })],
+      tasks: [
+        { id: 'task-1', title: 'dev task', type: 'dev', skill_policy: null, state: 'active' },
+        { id: 'task-2', title: 'claimed', type: 'dev', skill_policy: null, state: 'active' },
+        { id: 'task-3', title: 'done', type: 'dev', skill_policy: null, state: 'done' },
+      ],
+    });
+    const poll = await runTaskClaimPollCommand(deps, { agentRef: 'agent:dev-1', roleId: 'role-dev', skills: '' });
+    expect(poll.ok).toBe(true);
+    const data = poll.data as { expired: number; scanned: number; claimed: { taskId: string } | null };
+    expect(data.claimed?.taskId).toBe('task-1');
+    expect(data.scanned).toBeGreaterThanOrEqual(1);
+  });
+
+  it('全部被认领 → claimed=null', async () => {
+    const { deps } = makeDeps({
+      claims: [makeClaim({ taskId: 'task-1' })],
+      tasks: [{ id: 'task-1', title: 'x', type: 'dev', skill_policy: null, state: 'active' }],
+    });
+    const poll = await runTaskClaimPollCommand(deps, { agentRef: 'agent:dev-1', roleId: 'role-dev', skills: '' });
+    expect(poll.ok).toBe(true);
+    expect((poll.data as { claimed: null }).claimed).toBeNull();
+  });
+
+  it('缺 --role 报错', async () => {
+    const { deps } = makeDeps({});
+    const poll = await runTaskClaimPollCommand(deps, { agentRef: 'a', roleId: '', skills: '' });
+    expect(poll.ok).toBe(false);
   });
 });
