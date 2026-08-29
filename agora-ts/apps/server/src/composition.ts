@@ -45,6 +45,7 @@ import {
   StubIMMessagingPort,
   TaskConversationService,
   TaskInboundService,
+  InboxReplyService,
   TaskContextBindingService,
   TaskParticipationService,
   RuntimeThreadMessageRouter,
@@ -165,6 +166,7 @@ export interface ServerComposition {
   imProvisioningPort?: IMProvisioningPort;
   taskConversationService: TaskConversationService;
   taskInboundService: TaskInboundService;
+  inboxReplyService: InboxReplyService;
   ccConnectSessionMirrorService?: CcConnectSessionMirrorService;
   ccConnectBridgeRuntimeService?: CcConnectBridgeRuntimeController;
   discordPresenceService?: DiscordGatewayPresenceService;
@@ -281,6 +283,7 @@ export interface ServerCompositionFactories {
   createHumanAccountService: (context: ServerCompositionContext) => HumanAccountService;
   createNotificationDispatcher: (context: ServerCompositionContext, deps: { messagingPort: IMMessagingPort }) => NotificationDispatcher;
   createTaskConversationService: (context: ServerCompositionContext) => TaskConversationService;
+  createInboxReplyService: (context: ServerCompositionContext) => InboxReplyService;
   createTaskInboundService: (
     context: ServerCompositionContext,
     deps: {
@@ -702,6 +705,10 @@ export function createDefaultServerCompositionFactories(): ServerCompositionFact
       conversationRepository: new TaskConversationRepository(context.db),
       readCursorRepository: new TaskConversationReadCursorRepository(context.db),
     }),
+    createInboxReplyService: (context) => new InboxReplyService({
+      conversationRepository: new TaskConversationRepository(context.db),
+      taskRepository: new TaskRepository(context.db),
+    }),
     createTaskInboundService: (_context, deps) => new TaskInboundService(
       deps.taskConversationService,
       deps.taskContextBindingService,
@@ -810,6 +817,7 @@ export function buildServerComposition(
   const imProvisioningPort = factories.createIMProvisioningPort(context);
   const messagingPort = factories.createIMMessagingPort(context);
   const taskConversationService = factories.createTaskConversationService(context);
+  const inboxReplyService = factories.createInboxReplyService(context);
   const ccConnectBridgeRuntimeService = factories.createCcConnectBridgeRuntimeService?.(context, {
     imProvisioningPort,
     taskConversationService,
@@ -917,6 +925,7 @@ export function buildServerComposition(
     ...(imProvisioningPort ? { imProvisioningPort } : {}),
     taskConversationService,
     taskInboundService,
+    inboxReplyService,
     ...(ccConnectSessionMirrorService ? { ccConnectSessionMirrorService } : {}),
     ...(ccConnectBridgeRuntimeService ? { ccConnectBridgeRuntimeService } : {}),
     ...(discordPresenceService ? { discordPresenceService } : {}),

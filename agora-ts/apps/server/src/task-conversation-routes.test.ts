@@ -10,8 +10,9 @@ import {
   TaskContextBindingRepository,
   TaskConversationReadCursorRepository,
   TaskConversationRepository,
+  TaskRepository,
 } from '@agora-ts/db';
-import { HumanAccountService, TaskContextBindingService, TaskConversationService, TaskInboundService } from '@agora-ts/core';
+import { HumanAccountService, TaskContextBindingService, TaskConversationService, TaskInboundService, InboxReplyService } from '@agora-ts/core';
 import { createTaskServiceFromDb } from '@agora-ts/testing';
 import { buildApp } from './app.js';
 
@@ -464,5 +465,150 @@ describe('task conversation routes', () => {
         state: 'active',
       },
     });
+  });
+});
+
+describe('inbound reply route (R-D)', () => {
+  it('records an inbound reply and returns receipt', async () => {
+    const db = createAgoraDatabase({ dbPath: makeDbPath() });
+    runMigrations(db);
+    const taskService = createTaskServiceFromDb(db, {
+      templatesDir,
+      taskIdGenerator: () => 'OC-RD-1',
+    });
+    const conversations = createTaskConversationServiceFromDb(db);
+    const task = taskService.createTask({
+      title: 'Reply target',
+      type: 'coding',
+      creator: 'archon',
+      description: '',
+      priority: 'normal',
+    });
+    const inboxReply = new InboxReplyService({
+      conversationRepository: new TaskConversationRepository(db),
+      taskRepository: new TaskRepository(db),
+    });
+
+    const app = buildApp({
+      db,
+      taskService,
+      taskConversationService: conversations,
+      inboxReplyService: inboxReply,
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/tasks/${task.id}/conversation/reply`,
+      payload: {
+        provider: 'matrix',
+        provider_message_ref: '$evt-1',
+        parent_message_ref: '$parent-1',
+        body: '收到，我来处理',
+        author_kind: 'human',
+        author_ref: '@user:agent-hub.local',
+        display_name: 'user',
+        occurred_at: '2026-08-30T12:00:00.000Z',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ deduped: false });
+    expect(res.json().id).toBeTruthy();
+
+    // entry landed in conversation
+    const list = await app.inject({
+      method: 'GET',
+      url: `/api/tasks/${task.id}/conversation`,
+    });
+    expect(list.statusCode).toBe(200);
+    expect(list.json().entries).toHaveLength(1);
+    expect(list.json().entries[0]).toMatchObject({
+      provider: 'matrix',
+      direction: 'inbound',
+      parent_message_ref: '$parent-1',
+      provider_message_ref: '$evt-1',
+      author_kind: 'human',
+      thread_task_binding_id: null,
+    });
+  });
+
+  it('dedupes repeated provider_message_ref', async () => {
+    const db = createAgoraDatabase({ dbPath: makeDbPath() });
+    runMigrations(db);
+    const taskService = createTaskServiceFromDb(db, {
+      templatesDir,
+      taskIdGenerator: () => 'OC-RD-2',
+    });
+    const conversations = createTaskConversationServiceFromDb(db);
+    const task = taskService.createTask({
+      title: 'Dedupe target',
+      type: 'coding',
+      creator: 'archon',
+      description: '',
+      priority: 'normal',
+    });
+    const inboxReply = new InboxReplyService({
+      conversationRepository: new TaskConversationRepository(db),
+      taskRepository: new TaskRepository(db),
+    });
+    const app = buildApp({ db, taskService, taskConversationService: conversations, inboxReplyService: inboxReply });
+
+    const payload = {
+      provider: 'matrix',
+      provider_message_ref: '$evt-dup',
+      body: '重试消息',
+      author_kind: 'agent',
+      author_ref: 'opus',
+      occurred_at: '2026-08-30T12:05:00.000Z',
+    };
+    const first = await app.inject({ method: 'POST', url: `/api/tasks/${task.id}/conversation/reply`, payload });
+    const second = await app.inject({ method: 'POST', url: `/api/tasks/${task.id}/conversation/reply`, payload });
+
+    expect(first.statusCode).toBe(201);
+    expect(first.json().deduped).toBe(false);
+    expect(second.statusCode).toBe(201);
+    expect(second.json().deduped).toBe(true);
+    expect(second.json().id).toBe(first.json().id);
+  });
+
+  it('returns 404 for unknown task', async () => {
+    const db = createAgoraDatabase({ dbPath: makeDbPath() });
+    runMigrations(db);
+    const conversations = createTaskConversationServiceFromDb(db);
+    const inboxReply = new InboxReplyService({
+      conversationRepository: new TaskConversationRepository(db),
+      taskRepository: new TaskRepository(db),
+    });
+    const app = buildApp({ db, taskConversationService: conversations, inboxReplyService: inboxReply });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/tasks/OC-MISSING/conversation/reply',
+      payload: {
+        provider: 'matrix',
+        provider_message_ref: '$evt-x',
+        body: 'reply',
+        author_kind: 'human',
+        occurred_at: '2026-08-30T12:00:00.000Z',
+      },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().message).toMatch(/task not found/i);
+  });
+
+  it('returns 503 when service not configured', async () => {
+    const app = buildApp({});
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/tasks/OC-1/conversation/reply',
+      payload: {
+        provider: 'matrix',
+        provider_message_ref: '$evt-z',
+        body: 'reply',
+        author_kind: 'human',
+        occurred_at: '2026-08-30T12:00:00.000Z',
+      },
+    });
+    expect(res.statusCode).toBe(503);
   });
 });

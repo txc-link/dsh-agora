@@ -89,6 +89,7 @@ import {
   projectContextWriteRepoShimRequestSchema,
   projectContextWriteRepoShimResponseSchema,
   taskConversationMarkReadRequestSchema,
+  recordInboundReplyRequestSchema,
   duplicateTemplateRequestSchema,
   projectContextReferenceBundleRequestSchema,
   projectContextReferenceBundleResponseSchema,
@@ -203,6 +204,7 @@ import {
   ReferenceBundleService,
   type TaskConversationService,
   type TaskInboundService,
+  type InboxReplyService,
   type TaskParticipationService,
   type TaskContextBindingService,
   type TaskService,
@@ -285,6 +287,7 @@ export interface BuildAppOptions {
   taskContextBindingService?: TaskContextBindingService;
   taskConversationService?: TaskConversationService;
   taskInboundService?: TaskInboundService;
+  inboxReplyService?: InboxReplyService;
   taskParticipationService?: TaskParticipationService;
   notificationDispatcher?: NotificationDispatcher;
   imProvisioningPort?: IMProvisioningPort;
@@ -1198,6 +1201,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   const taskParticipationService = options.taskParticipationService;
   const taskConversationService = options.taskConversationService;
   const taskInboundService = options.taskInboundService;
+  const inboxReplyService = options.inboxReplyService;
   const notificationDispatcher = options.notificationDispatcher;
   const imProvisioningPort = options.imProvisioningPort;
   const apiAuth = options.apiAuth;
@@ -5950,6 +5954,40 @@ export function buildApp(options: BuildAppOptions = {}) {
       const { id } = request.params as { id: string };
       const body = taskConversationMarkReadRequestSchema.parse(request.body ?? {});
       return reply.send(taskConversationService.markRead(id, humanActor.account_id, body));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/tasks/:id/conversation/reply', async (request, reply) => {
+    if (!inboxReplyService) {
+      return reply.status(503).send({ message: 'Inbox reply service is not configured' });
+    }
+    try {
+      const { id } = request.params as { id: string };
+      const body = recordInboundReplyRequestSchema.parse(request.body);
+      const receipt = inboxReplyService.recordInboundReply({
+        taskId: id,
+        provider: body.provider,
+        providerMessageRef: body.provider_message_ref,
+        ...(body.parent_message_ref !== undefined && body.parent_message_ref !== null
+          ? { parentMessageRef: body.parent_message_ref }
+          : {}),
+        body: body.body,
+        authorKind: body.author_kind,
+        ...(body.author_ref !== undefined && body.author_ref !== null
+          ? { authorRef: body.author_ref }
+          : {}),
+        ...(body.display_name !== undefined && body.display_name !== null
+          ? { displayName: body.display_name }
+          : {}),
+        occurredAt: body.occurred_at,
+        ...(body.thread_task_binding_key !== undefined && body.thread_task_binding_key !== null
+          ? { threadTaskBindingKey: body.thread_task_binding_key }
+          : {}),
+      });
+      return reply.status(201).send(receipt);
     } catch (error) {
       const translated = translateError(error);
       return reply.status(translated.statusCode).send(translated.body);

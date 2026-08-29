@@ -18,6 +18,7 @@ import type {
   ITaskRepository,
   TaskConversationAuthorKind,
 } from '@agora-ts/contracts';
+import { NotFoundError } from './errors.js';
 
 export interface InboxReplyInput {
   taskId: string;
@@ -55,7 +56,7 @@ export class InboxReplyService {
     }
     const task = this.taskRepository.getTask(input.taskId);
     if (!task) {
-      throw new Error(`task not found: ${input.taskId}`);
+      throw new NotFoundError(`task not found: ${input.taskId}`);
     }
     if (!input.body) {
       throw new Error('body is required');
