@@ -368,12 +368,24 @@ export type {
   CreateBorrowResult,
 } from './borrow-service.js';
 export { BorrowService } from './borrow-service.js';
+export {
+  ThreadTaskBindingService,
+  ThreadTaskBindingNotFoundError,
+  type ThreadTaskBindingServiceOptions,
+} from './thread-task-binding-service.js';
 export type {
   BorrowCommandDeps,
   BorrowCommandResult,
   BorrowSubcommand,
   RunBorrowCommandOptions,
 } from './borrow-command.js';
+export {
+  runThreadBindCommand,
+  type ThreadBindCommandDeps,
+  type ThreadBindCommandResult,
+  type ThreadBindSubcommand,
+  type RunThreadBindCommandOptions,
+} from './thread-bind-command.js';
 export { runBorrowCommand } from './borrow-command.js';
 
 // ─── Phase 3.5 worksite re-exports for CLI composition ───────────────────────

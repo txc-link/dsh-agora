@@ -102,6 +102,7 @@ export function runMigrations(db: AgoraDatabase): void {
     '031_runtime_dispatch_progress.sql',
     '032_coordination_federation.sql',
     '033_borrow_requests.sql',
+    '034_thread_task_bindings.sql',
   ];
   const migrationsDir = resolveMigrationsDir();
 
