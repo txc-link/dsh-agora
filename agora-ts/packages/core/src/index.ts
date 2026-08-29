@@ -416,6 +416,16 @@ export type {
   RunTaskClaimCommandOptions,
 } from './task-claim-command.js';
 export { runTaskClaimCommand, runTaskClaimPollCommand } from './task-claim-command.js';
+export type {
+  GroupMemoryEntry,
+  GroupMemoryHit,
+  GroupMemoryPort,
+  GroupMemoryAddInput,
+  GroupMemoryQueryInput,
+  GroupMemoryListInput,
+} from './group-memory-ports.js';
+export { GroupMemoryService } from './group-memory-service.js';
+
 
 // ─── Phase 3.5 worksite re-exports for CLI composition ───────────────────────
 export type { Permission, Posture, ScopeAuthorization } from './worksite/types.js';

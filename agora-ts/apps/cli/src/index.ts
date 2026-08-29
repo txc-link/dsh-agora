@@ -78,6 +78,8 @@ import {
   TaskClaimService,
   runTaskClaimCommand,
   runTaskClaimPollCommand,
+  GroupMemoryService,
+  type GroupMemoryPort,
   AgentQuestionService,
   runTaskAskCommand,
   ThreadTaskBindingService,
@@ -85,6 +87,7 @@ import {
   type RunThreadBindCommandOptions,
   isDeveloperRegressionEnabled,
 } from '@agora-ts/core';
+import { Mem0RestAdapter } from '@agora-ts/adapters-mem0';
 import type { IAgentQuestionRepository, IBorrowRequestRepository, ITaskClaimRepository, IThreadTaskBindingRepository } from '@agora-ts/contracts';
 import { TaskRepository } from '@agora-ts/db';
 import { ThreadTaskBindingRepository } from '@agora-ts/db';
@@ -1152,6 +1155,77 @@ export function createCliProgram(deps: CliDependencies = {}) {
           writeLine(stdout, JSON.stringify(result, null, 2));
         }
       }, Math.max(1, options.intervalMs));
+    });
+
+  let groupMemoryService: GroupMemoryService | null = null;
+  function getGroupMemoryService(): GroupMemoryService {
+    if (!groupMemoryService) {
+      const memoryPort: GroupMemoryPort = new Mem0RestAdapter({
+        baseUrl: process.env.AGORA_MEM0_URL ?? 'http://127.0.0.1:8888',
+        token: process.env.AGORA_MEM0_TOKEN ?? null,
+      });
+      groupMemoryService = new GroupMemoryService({ memoryPort });
+    }
+    return groupMemoryService;
+  }
+
+  const experience = program
+    .command('experience')
+    .description('Group shared memory (mem0 adapter): agents share experiences across the group (org-aware-work-os S4)')
+    .option('--scope <scopeRef>', 'memory scope override (default AGORA_GROUP_SCOPE or group:default)')
+    .option('--agent <agentRef>', 'agent ref override (default AGORA_AGENT_REF or agent:cli)');
+
+  experience
+    .command('add')
+    .description('record an experience entry')
+    .requiredOption('--kind <kind>', 'lesson | howto | fact | decision | research')
+    .requiredOption('--text <text>', 'experience text (stored verbatim)')
+    .option('--metadata <json>', 'extra metadata JSON object', '')
+    .action(async (options: { kind: string; text: string; metadata: string; scope?: string; agent?: string }) => {
+      const scopeRef = options.scope ?? process.env.AGORA_GROUP_SCOPE ?? 'group:default';
+      const agentRef = options.agent ?? process.env.AGORA_AGENT_REF ?? 'agent:cli';
+      let metadata: Record<string, unknown> | null = null;
+      if (options.metadata) {
+        try {
+          metadata = JSON.parse(options.metadata) as Record<string, unknown>;
+        } catch {
+          writeLine(stderr, JSON.stringify({ ok: false, error: '--metadata must be a JSON object' }));
+          process.exitCode = 1;
+          return;
+        }
+      }
+      const result = await getGroupMemoryService().record({
+        scopeRef,
+        agentRef,
+        kind: options.kind,
+        text: options.text,
+        metadata,
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  experience
+    .command('search')
+    .description('semantic search within a scope')
+    .requiredOption('--query <text>', 'search query')
+    .option('--limit <n>', 'max hits', (v: string) => Number.parseInt(v, 10), undefined)
+    .action(async (options: { query: string; limit?: number; scope?: string; agent?: string }) => {
+      const scopeRef = options.scope ?? process.env.AGORA_GROUP_SCOPE ?? 'group:default';
+      const result = await getGroupMemoryService().recall({ scopeRef, query: options.query, ...(options.limit !== undefined ? { limit: options.limit } : {}) });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  experience
+    .command('list')
+    .description('list entries within a scope')
+    .option('--limit <n>', 'max entries', (v: string) => Number.parseInt(v, 10), undefined)
+    .action(async (options: { limit?: number; scope?: string; agent?: string }) => {
+      const scopeRef = options.scope ?? process.env.AGORA_GROUP_SCOPE ?? 'group:default';
+      const result = await getGroupMemoryService().list({ scopeRef, ...(options.limit !== undefined ? { limit: options.limit } : {}) });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
     });
 
   const thread = program.command('thread').description('Thread ↔ Task binding (Phase 4 / R-C T-1.5)');

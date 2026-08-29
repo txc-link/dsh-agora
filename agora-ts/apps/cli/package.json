@@ -29,6 +29,7 @@
     "@agora-ts/db": "0.0.0",
     "@agora-ts/testing": "0.0.0",
     "@inquirer/prompts": "^8.3.0",
-    "commander": "^14.0.2"
+    "commander": "^14.0.2",
+    "@agora-ts/adapters-mem0": "0.0.0"
   }
 }
