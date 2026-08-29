@@ -56,7 +56,7 @@ test('browser client registers an Agora dashboard and visible launcher', async (
     clearInterval,
   }
   vm.runInNewContext(source, sandbox, { filename: 'dsh-agora-client.js' })
-  assert.equal(registration.id, 'dsh-agora')
+  assert.equal(registration.id, 'dsh-agora-plugin')
 
   const React = { createElement() { return null } }
   const plugin = registration.factory((name) => {
