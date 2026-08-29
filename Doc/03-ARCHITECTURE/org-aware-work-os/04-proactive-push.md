@@ -76,3 +76,23 @@ agent 判断需要外部信息
 - 提问超时未答 → 自动升级策略
 - 与现有 archon review 的关系（复用 or 并行）
 - 调研能力边界（web 搜索 / 代码库 / 文档库）
+
+## 5. 实施记录（2026-08-30, develop `d002792`）
+
+**已实现**（TDD 18 新测试 + core/db 回归 610/610 + 真实冒烟 7/7）:
+
+| 设计组件 | 实现 | 文件 |
+|---|---|---|
+| AgentQuestionService | ✅ create/answer/escalate/close/list 状态机 | `core/src/agent-question-service.ts` |
+| QuestionRouter | ✅ routeQuestion 纯函数 (assistant 优先→ceo, assistantRef 可配置解耦 U2) | 同上 |
+| IM 推送缝 | ✅ QuestionMessagingPort (复用 NotificationPayload; core 零平台名) | 同上 + im-ports |
+| CLI | ✅ `agora ask {create,list,show,answer,escalate,close}` | `apps/cli` + `core/src/task-ask-command.ts` |
+| 存储 | ✅ migration 037_agent_questions + AgentQuestionRepository | `db/src` |
+| ResearchRequestService | ✅ 以 kind=research + answer 承载（D1 修正, 不单独建服务） | planning findings D1 |
+
+**实施偏差**（对照本蓝图, 全部记录于 planning findings）:
+- escalation 是状态不是 kind（D2）
+- answer 不回推 agent, agent 轮询 `ask list/show`（D3; runtime 事件订阅属未来）
+- IM 真实通道绑定（composition root 注入 adapter）归 Phase 6 matrix transport 真实化（D4）
+
+**未决继承**: 提问超时自动升级策略（未实现, 需求方拍板）; 与 archon review 关系（未触碰）

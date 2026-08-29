@@ -41,7 +41,7 @@
 | [01-org-model.md](./01-org-model.md) | 组织模型（团队/角色/职责/委派链） | 规划 |
 | [02-task-claiming.md](./02-task-claiming.md) | 主动任务接取（常驻 agent 轮询 + 职责匹配 + 认领） | **✅ 已实现**（develop `505ce4d`, 2026-08-30） |
 | [03-shared-memory.md](./03-shared-memory.md) | 共享记忆与文档（mem0 + ProjectBrain + obsidian） | 规划 |
-| [04-proactive-push.md](./04-proactive-push.md) | 主动对话 push（agent → 人 提问 / 调研请求） | 规划 |
+| [04-proactive-push.md](./04-proactive-push.md) | 主动对话 push（agent → 人 提问 / 调研请求） | **✅ 已实现**（develop `d002792`, 2026-08-30） |
 | [05-reflection-forum.md](./05-reflection-forum.md) | 反思进化 + 论坛/帖子（scorecard → 反思循环 → 论坛） | 规划 |
 | [06-deployment-topology.md](./06-deployment-topology.md) | 3 台机部署拓扑（Windows/Linux/Mac） | 规划 |
 | [undecided.md](./undecided.md) | 未决事项兜底 | 规划 |
@@ -74,7 +74,7 @@
 | 阶段 | 范围 | 周期 |
 |---|---|---|
 | **Phase 3.5** | S2 主动任务接取（轮询 + 职责匹配认领 + 委派路由）| **✅ 认领/匹配/轮询已实现**（`505ce4d`）；委派路由未做 |
-| **Phase 4** | S5 主动对话 push（agent → 助手/CEO 提问） | 1 周 |
+| **Phase 4** | S5 主动对话 push（agent → 助手/CEO 提问） | **✅ 已实现**（`d002792`） |
 | **Phase 4.5** | S4 共享记忆（mem0 adapter + obsidian 集成验证） | 1-2 周 |
 | **Phase 5** | S6 反思进化 + 论坛（scorecard → 反思循环 → 论坛） | 2-3 周 |
 | **Phase 6** | 3 台机部署 + Matrix transport 真实化 + federation P3 | 2 周 |

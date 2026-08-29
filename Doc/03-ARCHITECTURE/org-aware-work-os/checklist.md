@@ -50,13 +50,15 @@
 - [ ] obsidian vault 分组映射（复用 adapters-obsidian）
 - [ ] 跨节点 L4 记忆（federation P2 实现）
 
-## S5 主动对话 push（下一轮 ⏭）
+## S5 主动对话 push（✅ 主体已完成 d002792, 2026-08-30）
 
-- [ ] `AgentQuestionService`: 提问创建 / 状态机（pending/answered/escalated/closed）
-- [ ] `QuestionRouter`: 助手优先 → CEO 升级路由 → 未决 U2（助手是 agent 还是人）
-- [ ] agent→人 IM push 通道（复用 IMPublishMessageInput）
-- [ ] `ResearchRequestService`: 主动调研发起 / 结果入库
-- [ ] CLI: `agora ask` / `agora research`
+- [x] `AgentQuestionService`: 状态机 pending→answered|escalated→answered; *→closed — 测试 11/11
+- [x] `routeQuestion`: 助手优先 → CEO（assistantRef 可配置解耦 U2）
+- [x] `agora ask` CLI: {create,list,show,answer,escalate,close} — 测试 7/7 + 冒烟 7/7
+- [x] QuestionMessagingPort 推送缝（create/escalate 通知; core 零平台名）
+- [ ] IM 真实通道绑定（composition root 注入真实 adapter — 归 Phase 6 matrix transport 真实化）
+- [x] ResearchRequestService: 以 kind=research + answer 承载（D1 修正, 不单独建服务, 见 planning D1）
+- [ ] 调研结果自动写回共享记忆（依赖 S4）
 
 ## S6 反思进化 + 论坛
 
@@ -84,12 +86,15 @@
 | 2026-08-30 | 蓝图 7 文档落盘 | `bf3bc72` | Doc/03-ARCHITECTURE/org-aware-work-os/ |
 | 2026-08-30 | S2 任务认领主体（service/matcher/poller/CLI/migration） | `505ce4d` | 33 新测试 + 回归 592/592 + 冒烟 8/8 |
 | 2026-08-30 | S2 回写（SSoT/progress/walkthrough/checklist） | `80056f3` | Doc/10-WALKTHROUGH/2026-08-30-org-aware-task-claiming.md |
+| 2026-08-30 | S1-S6 细粒度执行清单建立 | `3f54c41` | checklist.md + host goal + 图谱记忆 |
+| 2026-08-30 | S5 主动提问 push（service/route/CLI/migration 037） | `d002792` | 18 新测试 + 回归 610/610 + 冒烟 7/7 |
 
 ## 迭代顺序（按用户优先级 D5: S2→S5→S4→S6→部署）
 
-1. ⏭ **下一轮: S5 主动对话 push**（用户 turn 159 重点："主动向我要东西"）
-2. S2 收尾: Poller composition root + expire 周期（可与 S5 同轮搭车）
-3. S4 共享记忆（mem0, 用户 turn 160 指定复用）
-4. S1+S3 组织模型 + 委派路由
-5. S6 反思论坛
-6. Phase 6 部署 + matrix 真实化
+1. ✅ S2 主动任务接取（505ce4d）
+2. ✅ S5 主动对话 push 主体（d002792）
+3. ⏭ **下一轮: S2 收尾**（Poller composition root + expire 周期扫描）
+4. S4 共享记忆（mem0, 用户 turn 160 指定复用）
+5. S1+S3 组织模型 + 委派路由
+6. S6 反思论坛
+7. Phase 6 部署 + matrix 真实化（含 S5 IM 通道绑定）
