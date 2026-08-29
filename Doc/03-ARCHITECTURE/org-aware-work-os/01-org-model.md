@@ -93,6 +93,13 @@ interface Team {
 2. 配置 reportTo 层级（assistant → lead → worker）
 3. 委派时按层级路由（S2/S3 联调）
 
+## 5.5 实现记录（2026-08-30, develop `090ca6d`）
+
+- Team 聚合: `org_teams` 表 (migration 038, unique project+name) + `TeamService`
+- 层级: team parent 链即委派链; `OrgHierarchyResolver` 提供 chainToRoot / leadsAbove / subtreeAgents / orgTree
+- CLI: `agora team` (CRUD+成员+层级) + `agora org show|chain`
+- 未决默认拍板: ProjectMembership **并存**; 存储 **SQLite org_teams**; **每项目一个 org**; 助手形态仍 U2
+
 ## 6. 未决
 
 - 现有 ProjectMembership (admin/member) 与 Team 的关系（并存 or 统一）
