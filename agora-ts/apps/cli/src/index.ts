@@ -73,12 +73,15 @@ import {
   type MemoryService,
   type RuntimeNodeCredentialService,
   type MergeCoordinatorService,
+  BorrowService,
+  runBorrowCommand,
   isDeveloperRegressionEnabled,
 } from '@agora-ts/core';
+import type { IBorrowRequestRepository } from '@agora-ts/contracts';
 import { OpenAiCompatibleProjectBrainEmbeddingAdapter } from '@agora-ts/adapters-brain';
 import { buildCcConnectAgentId, CcConnectAgentRegistry, loadCcConnectProjectTargets } from '@agora-ts/adapters-cc-connect';
 import { ProjectContextBriefingMaterializer, RuntimeRepoShimMaterializer, RuntimeRepoShimWritebackService } from '@agora-ts/adapters-materialization';
-import { ProjectBrainIndexJobRepository, RuntimeTargetOverlayRepository, type AgoraDatabase } from '@agora-ts/db';
+import { ProjectBrainIndexJobRepository, RuntimeTargetOverlayRepository, BorrowRequestRepository, type AgoraDatabase } from '@agora-ts/db';
 import { LiveRegressionActor } from '@agora-ts/testing';
 import type { DashboardSessionClient } from './dashboard-session-client.js';
 import type {
@@ -219,6 +222,8 @@ export interface CliDependencies {
   memoryService?: Pick<MemoryService, 'create' | 'get' | 'query'>;
   runtimeNodeCredentialService?: Pick<RuntimeNodeCredentialService, 'issue' | 'list' | 'rotate' | 'revoke'>;
   mergeCoordinatorService?: Pick<MergeCoordinatorService, 'create' | 'get' | 'list' | 'execute'>;
+  borrowService?: BorrowService;
+  borrowRequestRepository?: IBorrowRequestRepository;
   ccConnectInspectionService?: CcConnectInspectionService;
   ccConnectManagementService?: CcConnectManagementService;
   ccConnectThreadSessionService?: CcConnectThreadSessionServiceLike;
@@ -636,6 +641,8 @@ export function createCliProgram(deps: CliDependencies = {}) {
   const memoryService = createLazyObject(() => deps.memoryService ?? resolveComposition().memoryService);
   const runtimeNodeCredentialService = createLazyObject(() => deps.runtimeNodeCredentialService ?? resolveComposition().runtimeNodeCredentialService);
   const mergeCoordinatorService = createLazyObject(() => deps.mergeCoordinatorService ?? resolveComposition().mergeCoordinatorService);
+  const borrowService = createLazyObject(() => deps.borrowService ?? resolveComposition().borrowService);
+  const getBorrowRequestRepository = () => deps.borrowRequestRepository ?? new BorrowRequestRepository(resolveComposition().db);
   const getCcConnectInspectionService = () => deps.ccConnectInspectionService ?? new CcConnectInspectionService();
   const getCcConnectManagementService = () => deps.ccConnectManagementService ?? new CcConnectManagementService();
   const getImProvisioningPort = () => deps.imProvisioningPort ?? resolveComposition().imProvisioningPort;
@@ -861,6 +868,74 @@ export function createCliProgram(deps: CliDependencies = {}) {
     .action((runId: string, options: { reason: string }) => writeLine(stdout, JSON.stringify(coordinationService.cancelRun(runId, options.reason), null, 2)));
   coordination.command('scorecards').option('--target <runtimeTargetRef>').option('--task-type <taskType>')
     .action((options: { target?: string; taskType?: string }) => writeLine(stdout, JSON.stringify(coordinationService.listScorecards(options.target, options.taskType), null, 2)));
+
+  const borrow = program.command('borrow').description('Agent borrow requests (Phase 3.5-2)');
+  borrow
+    .command('create')
+    .description('create a borrow request (persists + decides via 3-posture governance)')
+    .requiredOption('--actor <actor>', 'actor identifier (e.g. agent:matrix-bridge)')
+    .requiredOption('--target <target>', 'target work site URI')
+    .requiredOption('--scope <scope>', 'scope URI for the borrow')
+    .option('--permissions <perms>', 'comma-separated read,write,delete,execute', '')
+    .option('--posture <posture>', 'Strict|Auto|Dangerous', 'Auto')
+    .option('--ttl-ms <ttlMs>', 'time-to-live in ms', (v: string) => Number.parseInt(v, 10), 3600_000)
+    .requiredOption('--reason <reason>', 'human-readable reason for the borrow')
+    .action(async (options: {
+      actor: string;
+      target: string;
+      scope: string;
+      permissions: string;
+      posture: string;
+      ttlMs: number;
+      reason: string;
+    }) => {
+      const result = await runBorrowCommand(
+        { borrowService, borrowRepo: getBorrowRequestRepository() },
+        {
+          subcommand: 'create',
+          actor: options.actor,
+          target: options.target,
+          scope: options.scope,
+          permissions: options.permissions,
+          posture: options.posture as 'Strict' | 'Auto' | 'Dangerous',
+          ttlMs: options.ttlMs,
+          reason: options.reason,
+        },
+      );
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) {
+        process.exitCode = 1;
+      }
+    });
+  borrow
+    .command('list')
+    .description('list borrow requests (pending by default; --actor <actor> for one agent)')
+    .option('--actor <actor>', 'filter by actor')
+    .option('--pending', 'list pending requests only (default when neither --actor nor --pending is set)')
+    .action(async (options: { actor?: string; pending?: boolean }) => {
+      const result = await runBorrowCommand(
+        { borrowService, borrowRepo: getBorrowRequestRepository() },
+        {
+          subcommand: 'list',
+          ...(options.actor !== undefined ? { listActor: options.actor } : {}),
+          ...(options.pending === true ? { listPending: true } : {}),
+        },
+      );
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  borrow
+    .command('show')
+    .description('show a single borrow request by id')
+    .argument('<requestId>', 'borrow request id')
+    .action(async (requestId: string) => {
+      const result = await runBorrowCommand(
+        { borrowService, borrowRepo: getBorrowRequestRepository() },
+        { subcommand: 'show', requestId },
+      );
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
 
   const artifacts = program.command('artifacts').description('content-addressed coordination artifacts');
   artifacts.command('put').requiredOption('--file <path>').requiredOption('--name <name>').requiredOption('--kind <kind>')
