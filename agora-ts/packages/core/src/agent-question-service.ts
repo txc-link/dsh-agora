@@ -16,6 +16,8 @@ export interface QuestionMessagingPort {
 export interface AgentQuestionServiceOptions {
   questionRepo: IAgentQuestionRepository;
   messagingPort?: QuestionMessagingPort;
+  /** 共享记忆缝: kind=research 的问题被 answer 时自动沉淀经验; 失败不阻塞 answer */
+  groupMemory?: { add: (input: { scopeRef: string; agentRef: string; kind: string; text: string; metadata?: Record<string, unknown> | null }) => Promise<unknown> };
   /** 助手 ref; 未配置 → 所有问题直达 ceo */
   assistantRef?: string | null;
   ceoRef: string;
@@ -62,6 +64,7 @@ function targetRef(options: AgentQuestionServiceOptions, target: AgentQuestionTa
 
 export class AgentQuestionService {
   private readonly questionRepo: IAgentQuestionRepository;
+  private readonly groupMemory: AgentQuestionServiceOptions['groupMemory'];
   private readonly messagingPort: QuestionMessagingPort | undefined;
   private readonly assistantRef: string | null;
   private readonly ceoRef: string;
@@ -70,6 +73,7 @@ export class AgentQuestionService {
   constructor(options: AgentQuestionServiceOptions) {
     this.questionRepo = options.questionRepo;
     this.messagingPort = options.messagingPort;
+    this.groupMemory = options.groupMemory;
     this.assistantRef = options.assistantRef ?? null;
     this.ceoRef = options.ceoRef;
     this.now = options.now ?? (() => new Date());
@@ -124,6 +128,20 @@ export class AgentQuestionService {
     const withAnswer = this.questionRepo.updateAnswer(input.questionId, input.answer, input.answeredBy, at);
     if (!withAnswer) return { ok: false, error: `question '${input.questionId}' not found` };
     const updated = this.questionRepo.updateStatus(input.questionId, 'answered', at);
+    if (withAnswer.kind === 'research' && this.groupMemory) {
+      try {
+        // await 而非 fire-and-forget: CLI 进程随命令退出, 不等会把 POST 砍掉
+        await this.groupMemory.add({
+          scopeRef: (withAnswer.metadata as Record<string, unknown> | null)?.scope_ref as string ?? `task:${withAnswer.taskId ?? 'org'}`,
+          agentRef: withAnswer.agentRef,
+          kind: 'research',
+          text: `${withAnswer.question}\n\n${input.answer}`,
+          metadata: { question_id: withAnswer.id, answered_by: input.answeredBy },
+        });
+      } catch {
+        // 共享记忆不可用时静默: answer 主链路不依赖
+      }
+    }
     return { ok: true, question: updated ?? withAnswer };
   }
 

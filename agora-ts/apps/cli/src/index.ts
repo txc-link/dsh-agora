@@ -85,6 +85,7 @@ import {
   DelegateRouter,
   ForumService,
   ReflectionService,
+  EvolutionService,
   AgentQuestionService,
   runTaskAskCommand,
   ThreadTaskBindingService,
@@ -681,6 +682,8 @@ export function createCliProgram(deps: CliDependencies = {}) {
     // S1 组织模型落地后从配置/roster 读取 assistantRef; 当前默认直达 ceo
     assistantRef: null,
     ceoRef: 'human:ceo',
+    // S5: research 类问题 answer 时自动沉淀到共享记忆 (mem0; 不可用时静默)
+    groupMemory: { add: (input) => getGroupMemoryService().record(input) },
   });
   const getThreadTaskBindingRepository = () => deps.threadTaskBindingRepository ?? new ThreadTaskBindingRepository(resolveComposition().db);
   const getThreadTaskBindingService = () => new ThreadTaskBindingService({
@@ -1546,6 +1549,48 @@ export function createCliProgram(deps: CliDependencies = {}) {
       const result = getReflectionService().reflect({
         agentRef: options.agent,
         ...(options.taskType ? { taskType: options.taskType } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  const evolution = program
+    .command('evolution')
+    .description('reflection → evolution proposal (org-aware-work-os S6; 建议+确认)');
+
+  evolution
+    .command('propose')
+    .description('generate a reflection report and file it as a forum proposal post')
+    .requiredOption('--agent <agentRef>', 'agent ref')
+    .requiredOption('--project <projectId>', 'project scope for the proposal post')
+    .option('--task-type <taskType>', 'restrict reflection to task type')
+    .action((options: { agent: string; project: string; taskType?: string }) => {
+      const reportResult = getReflectionService().reflect({
+        agentRef: options.agent,
+        ...(options.taskType ? { taskType: options.taskType } : {}),
+      });
+      if (!reportResult.ok) {
+        writeLine(stdout, JSON.stringify(reportResult, null, 2));
+        process.exitCode = 1;
+        return;
+      }
+      const result = new EvolutionService({ forumService: getForumService() }).proposeFromReport({
+        report: reportResult.data,
+        projectId: options.project,
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  evolution
+    .command('apply')
+    .description('mark a proposal post as applied (human/agent confirmation)')
+    .requiredOption('--post <postId>', 'forum proposal post id')
+    .requiredOption('--by <appliedBy>', 'who confirmed the evolution')
+    .action((options: { post: string; by: string }) => {
+      const result = new EvolutionService({ forumService: getForumService() }).apply({
+        postId: options.post,
+        appliedBy: options.by,
       });
       writeLine(stdout, JSON.stringify(result, null, 2));
       if (!result.ok) process.exitCode = 1;

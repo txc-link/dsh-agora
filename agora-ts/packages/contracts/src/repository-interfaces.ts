@@ -915,6 +915,8 @@ export interface ForumPostQuery {
 export interface IForumRepository {
   insertPost(input: ForumPostInsertInput): ForumPostRecord;
   getPost(id: string): ForumPostRecord | null;
+  /** 最小可变能力: 进化/审核类状态写回 (metadata patch); 不支持改不可变字段 */
+  updatePost(id: string, patch: Partial<ForumPostRecord>): ForumPostRecord | null;
   listPosts(query: ForumPostQuery): ForumPostRecord[];
   deletePost(id: string): boolean;
   insertComment(postId: string, author: string, content: string): ForumCommentRecord;

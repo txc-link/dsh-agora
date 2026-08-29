@@ -94,6 +94,24 @@ export class ForumRepository implements IForumRepository {
     return posts;
   }
 
+  updatePost(id: string, patch: Partial<ForumPostRecord>): ForumPostRecord | null {
+    const current = this.getPost(id);
+    if (!current) return null;
+    const next: ForumPostRecord = { ...current, ...patch };
+    this.db.prepare(
+      'UPDATE forum_posts SET title = ?, category = ?, content = ?, refs = ?, tags = ?, metadata = ? WHERE id = ?',
+    ).run(
+      next.title,
+      next.category,
+      next.content,
+      JSON.stringify(next.refs),
+      JSON.stringify(next.tags),
+      next.metadata ? JSON.stringify(next.metadata) : null,
+      id,
+    );
+    return this.getPost(id);
+  }
+
   deletePost(id: string): boolean {
     const post = this.getPost(id);
     if (!post) return false;

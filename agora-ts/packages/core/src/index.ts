@@ -475,6 +475,15 @@ export type {
   QuestionMessagingPort,
 } from './agent-question-service.js';
 export { AgentQuestionService, routeQuestion } from './agent-question-service.js';
+// ─── org-aware-work-os S6: evolution (2026-08-30) ────────────────────────────
+export type {
+  EvolutionResult,
+  EvolutionMetadata,
+  EvolutionServiceOptions,
+  ProposeFromReportInput,
+  ApplyInput,
+} from './evolution-service.js';
+export { EvolutionService } from './evolution-service.js';
 export type {
   TaskAskCommandDeps,
   TaskAskCommandResult,

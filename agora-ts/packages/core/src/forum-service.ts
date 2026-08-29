@@ -30,6 +30,8 @@ export interface CreatePostInput {
   content: string;
   refs?: string[];
   tags?: string[];
+  /** 结构化扩展（evolution/审核状态等）; 不进正文 */
+  metadata?: Record<string, unknown> | null;
 }
 
 export interface RelevantPostsInput {
@@ -63,12 +65,18 @@ export class ForumService {
       content: input.content,
       refs: input.refs ?? [],
       tags: input.tags ?? [],
+      ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
     });
     return { ok: true, data: post };
   }
 
   getPost(postId: string): ForumPostRecord | null {
     return this.forumRepo.getPost(postId);
+  }
+
+  /** 最小可变能力: 只更新 metadata（evolution/审核状态写回）, 不动内容字段 */
+  updatePostMetadata(postId: string, metadata: Record<string, unknown>): ForumPostRecord | null {
+    return this.forumRepo.updatePost(postId, { metadata });
   }
 
   listPosts(query: ForumPostQuery): ForumPostRecord[] {

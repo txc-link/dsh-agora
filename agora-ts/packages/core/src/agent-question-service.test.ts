@@ -221,4 +221,56 @@ describe('AgentQuestionService', () => {
     expect(result.ok).toBe(true);
     expect(result.questions!.map((q) => q.id).sort()).toEqual(['q-1', 'q-2']);
   });
+
+  it('answer: kind=research 时自动写回共享记忆', async () => {
+    const repo = makeRepo([
+      makeQuestion({ id: 'q-r1', kind: 'research', question: 'qdrant 与 mem0 的取舍' }),
+    ]);
+    const added: Array<Record<string, unknown>> = [];
+    const service = new AgentQuestionService({
+      questionRepo: repo,
+      ceoRef: 'human:ceo',
+      groupMemory: {
+        add: async (input) => {
+          added.push(input as Record<string, unknown>);
+          return { id: 'mem-1' } as never;
+        },
+      },
+    });
+    const result = await service.answer({
+      questionId: 'q-r1',
+      answeredBy: 'agent:dev-1',
+      answer: '结论: mem0 适合对话记忆, qdrant 适合向量检索',
+    });
+    expect(result.ok).toBe(true);
+    expect(added).toHaveLength(1);
+    expect(added[0]!.kind).toBe('research');
+    expect(String(added[0]!.text)).toContain('mem0 适合对话记忆');
+    expect(added[0]!.agentRef).toBe('agent:dev-1');
+  });
+
+  it('answer: kind 非 research 不写共享记忆; 写入失败不影响 answer', async () => {
+    const repo = makeRepo([
+      makeQuestion({ id: 'q-c1', kind: 'clarify' }),
+      makeQuestion({ id: 'q-r2', kind: 'research', question: '调研' }),
+    ]);
+    let calls = 0;
+    const service = new AgentQuestionService({
+      questionRepo: repo,
+      ceoRef: 'human:ceo',
+      groupMemory: {
+        add: async () => {
+          calls += 1;
+          throw new Error('mem0 down');
+        },
+      },
+    });
+    const clarify = await service.answer({ questionId: 'q-c1', answeredBy: 'human:ceo', answer: 'ok' });
+    expect(clarify.ok).toBe(true);
+    expect(calls).toBe(0);
+    const research = await service.answer({ questionId: 'q-r2', answeredBy: 'agent:dev-1', answer: 'findings' });
+    expect(research.ok).toBe(true);
+    expect(calls).toBe(1);
+    expect(repo.getById('q-r2')?.status).toBe('answered');
+  });
 });
