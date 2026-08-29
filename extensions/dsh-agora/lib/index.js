@@ -21,12 +21,12 @@ export * from './harness-runtime.js';
 export { RuntimeNodeWorker } from './node-worker.js';
 export { DshAgoraService } from './service.js';
 export * from './tool.js';
-export const name = 'dsh-agora';
+export const name = 'dsh-agora-plugin';
 // webServer is required for both the local Harness RPC adapter and the runtime
 // node worker. Declaring it here also makes Cordis delay apply() until the web
 // host is initialized instead of silently starting in command-only mode.
 export const inject = ['commands', 'tools', 'webServer'];
-const PLUGIN_VERSION = '0.6.0';
+const PLUGIN_VERSION = '0.6.1';
 export function apply(ctx, config = {}) {
     const commandName = normalizeCommandName(config.commandName ?? 'agora');
     const nodeId = normalizeNodeId(config.nodeId ?? process.env.DSH_AGORA_NODE_ID ?? hostname());

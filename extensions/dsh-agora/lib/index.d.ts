@@ -12,7 +12,7 @@ export * from './harness-runtime.js';
 export { RuntimeNodeWorker } from './node-worker.js';
 export { DshAgoraService } from './service.js';
 export * from './tool.js';
-export declare const name = "dsh-agora";
+export declare const name = "dsh-agora-plugin";
 export declare const inject: string[];
 export interface Config {
     readonly serverUrl?: string;

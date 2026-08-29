@@ -5,7 +5,7 @@
 # Production nodes should override them in the profile's cordis.patch.yml.
 - insert:
     - id: agora
-      name: 'dsh-agora'
+      name: 'dsh-agora-plugin'
       config:
         requestTimeoutMs: 10000
         defaultCreator: 'dsh'
