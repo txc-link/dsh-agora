@@ -26,6 +26,3 @@ dashboard/.artifacts/
 /progress.md
 /notes.md
 agora-ts/apps/server/archive-outbox
-
-# nested clone of dsh-matrix-connector used by dsh-agora for R-B development
-.repos/
