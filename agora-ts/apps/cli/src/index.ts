@@ -83,6 +83,8 @@ import {
   TeamService,
   OrgHierarchyResolver,
   DelegateRouter,
+  ForumService,
+  ReflectionService,
   AgentQuestionService,
   runTaskAskCommand,
   ThreadTaskBindingService,
@@ -91,13 +93,13 @@ import {
   isDeveloperRegressionEnabled,
 } from '@agora-ts/core';
 import { Mem0RestAdapter } from '@agora-ts/adapters-mem0';
-import type { IAgentQuestionRepository, IBorrowRequestRepository, ITaskClaimRepository, IThreadTaskBindingRepository, ITeamRepository } from '@agora-ts/contracts';
+import type { IAgentQuestionRepository, IBorrowRequestRepository, ITaskClaimRepository, IThreadTaskBindingRepository, ITeamRepository, IForumRepository } from '@agora-ts/contracts';
 import { TaskRepository } from '@agora-ts/db';
 import { ThreadTaskBindingRepository } from '@agora-ts/db';
 import { OpenAiCompatibleProjectBrainEmbeddingAdapter } from '@agora-ts/adapters-brain';
 import { buildCcConnectAgentId, CcConnectAgentRegistry, loadCcConnectProjectTargets } from '@agora-ts/adapters-cc-connect';
 import { ProjectContextBriefingMaterializer, RuntimeRepoShimMaterializer, RuntimeRepoShimWritebackService } from '@agora-ts/adapters-materialization';
-import { ProjectBrainIndexJobRepository, RuntimeTargetOverlayRepository, AgentQuestionRepository, BorrowRequestRepository, TaskClaimRepository, TeamRepository, type AgoraDatabase } from '@agora-ts/db';
+import { ProjectBrainIndexJobRepository, RuntimeTargetOverlayRepository, AgentQuestionRepository, BorrowRequestRepository, TaskClaimRepository, TeamRepository, ForumRepository, CoordinationRepository, type AgoraDatabase } from '@agora-ts/db';
 import { LiveRegressionActor } from '@agora-ts/testing';
 import type { DashboardSessionClient } from './dashboard-session-client.js';
 import type {
@@ -246,6 +248,7 @@ export interface CliDependencies {
   agentQuestionService?: AgentQuestionService;
   agentQuestionRepository?: IAgentQuestionRepository;
   teamRepository?: ITeamRepository;
+  forumRepository?: IForumRepository;
   threadTaskBindingRepository?: IThreadTaskBindingRepository;
   ccConnectInspectionService?: CcConnectInspectionService;
   ccConnectManagementService?: CcConnectManagementService;
@@ -1388,6 +1391,141 @@ export function createCliProgram(deps: CliDependencies = {}) {
     .option('--task <taskId>', 'related task id')
     .action((options: { agent: string; task?: string }) => {
       const result = getDelegateRouter().escalateUp({ agentRef: options.agent, taskId: options.task ?? null });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  const getForumRepository = () => deps.forumRepository ?? new ForumRepository(resolveComposition().db);
+  let forumService: ForumService | null = null;
+  function getForumService(): ForumService {
+    if (!forumService) {
+      forumService = new ForumService({ forumRepo: getForumRepository() });
+    }
+    return forumService;
+  }
+  function getReflectionService(): ReflectionService {
+    return new ReflectionService({
+      listScorecards: (agentRef, taskType) => new CoordinationRepository(resolveComposition().db).listScorecards(agentRef, taskType),
+    });
+  }
+
+  const post = program
+    .command('post')
+    .description('forum posts — agent 经验沉淀与互学 (org-aware-work-os S6)');
+
+  post
+    .command('create')
+    .requiredOption('--title <title>', 'post title')
+    .requiredOption('--category <category>', 'lesson | howto | insight | question | proposal')
+    .requiredOption('--content <content>', 'post content')
+    .requiredOption('--author <agentRef>', 'author agent ref')
+    .option('--project-id <projectId>', 'project scope', 'default')
+    .option('--tags <list>', 'comma-separated tags', '')
+    .option('--refs <list>', 'comma-separated task/doc refs', '')
+    .action((options: { title: string; category: ForumService extends never ? never : Parameters<ForumService['createPost']>[0]['category']; content: string; author: string; projectId: string; tags: string; refs: string }) => {
+      const tags = options.tags.split(',').map((t) => t.trim()).filter((t) => t.length > 0);
+      const refs = options.refs.split(',').map((r) => r.trim()).filter((r) => r.length > 0);
+      const result = getForumService().createPost({
+        projectId: options.projectId,
+        author: options.author,
+        title: options.title,
+        category: options.category,
+        content: options.content,
+        ...(tags.length > 0 ? { tags } : {}),
+        ...(refs.length > 0 ? { refs } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  post
+    .command('list')
+    .option('--project-id <projectId>', 'project scope', 'default')
+    .option('--category <category>', 'filter by category')
+    .option('--author <agentRef>', 'filter by author')
+    .option('--tag <tag>', 'filter by tag')
+    .option('--limit <count>', 'max posts', parseIntegerOption, 20)
+    .action((options: { projectId: string; category?: string; author?: string; tag?: string; limit: number }) => {
+      writeLine(stdout, JSON.stringify({
+        ok: true,
+        data: getForumService().listPosts({
+          project_id: options.projectId,
+          ...(options.category ? { category: options.category as 'lesson' | 'howto' | 'insight' | 'question' | 'proposal' } : {}),
+          ...(options.author ? { author: options.author } : {}),
+          ...(options.tag ? { tag: options.tag } : {}),
+          limit: options.limit,
+        }),
+      }, null, 2));
+    });
+
+  post
+    .command('show')
+    .requiredOption('--id <postId>', 'post id')
+    .action((options: { id: string }) => {
+      const found = getForumService().getPost(options.id);
+      if (!found) {
+        writeLine(stdout, JSON.stringify({ ok: false, error: `post '${options.id}' not found` }, null, 2));
+        process.exitCode = 1;
+        return;
+      }
+      writeLine(stdout, JSON.stringify({ ok: true, data: { post: found, comments: getForumService().listComments(options.id) } }, null, 2));
+    });
+
+  post
+    .command('comment')
+    .requiredOption('--id <postId>', 'post id')
+    .requiredOption('--author <agentRef>', 'comment author agent ref')
+    .requiredOption('--content <content>', 'comment content')
+    .action((options: { id: string; author: string; content: string }) => {
+      const result = getForumService().comment(options.id, options.author, options.content);
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  const forum = program
+    .command('forum')
+    .description('forum search + 学习注入 (org-aware-work-os S6)');
+
+  forum
+    .command('search')
+    .option('--project-id <projectId>', 'project scope', 'default')
+    .requiredOption('--keyword <keyword>', 'keyword (title/content)')
+    .action((options: { projectId: string; keyword: string }) => {
+      writeLine(stdout, JSON.stringify({ ok: true, data: getForumService().listPosts({ project_id: options.projectId, keyword: options.keyword }) }, null, 2));
+    });
+
+  forum
+    .command('learn')
+    .description('检索相关经验帖子供任务上下文注入 (新任务开始时调用)')
+    .option('--project-id <projectId>', 'project scope', 'default')
+    .option('--task-type <taskType>', 'match posts tagged with task type')
+    .option('--tags <list>', 'comma-separated tags', '')
+    .option('--limit <count>', 'max posts', parseIntegerOption, 5)
+    .action((options: { projectId: string; taskType?: string; tags: string; limit: number }) => {
+      const tags = options.tags.split(',').map((t) => t.trim()).filter((t) => t.length > 0);
+      const posts = getForumService().relevantPosts({
+        projectId: options.projectId,
+        ...(options.taskType ? { taskType: options.taskType } : {}),
+        ...(tags.length > 0 ? { tags } : {}),
+        limit: options.limit,
+      });
+      writeLine(stdout, JSON.stringify({ ok: true, data: posts }, null, 2));
+    });
+
+  const reflect = program
+    .command('reflect')
+    .description('reflection reports from scorecards (org-aware-work-os S6; 进化=建议+显式应用)');
+
+  reflect
+    .command('run')
+    .description('generate a reflection report for an agent')
+    .requiredOption('--agent <agentRef>', 'agent ref (= runtime_target_ref dimension)')
+    .option('--task-type <taskType>', 'restrict to task type')
+    .action((options: { agent: string; taskType?: string }) => {
+      const result = getReflectionService().reflect({
+        agentRef: options.agent,
+        ...(options.taskType ? { taskType: options.taskType } : {}),
+      });
       writeLine(stdout, JSON.stringify(result, null, 2));
       if (!result.ok) process.exitCode = 1;
     });

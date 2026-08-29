@@ -863,3 +863,60 @@ export interface ITeamRepository {
   update(id: string, patch: TeamUpdateInput): TeamRecord | null;
   delete(id: string): boolean;
 }
+
+// ─── 33. Forum (S6 反思论坛) ────────────────────────────────────────────────
+
+export type ForumCategory = 'lesson' | 'howto' | 'insight' | 'question' | 'proposal';
+
+export interface ForumPostRecord {
+  id: string;
+  project_id: string;
+  author: string;
+  title: string;
+  category: ForumCategory;
+  content: string;
+  /** 关联任务/文档 ref */
+  refs: string[];
+  tags: string[];
+  created_at: string;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface ForumCommentRecord {
+  id: string;
+  post_id: string;
+  author: string;
+  content: string;
+  created_at: string;
+}
+
+export interface ForumPostInsertInput {
+  id?: string;
+  project_id: string;
+  author: string;
+  title: string;
+  category: ForumCategory;
+  content: string;
+  refs?: string[];
+  tags?: string[];
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface ForumPostQuery {
+  project_id: string;
+  category?: ForumCategory;
+  tag?: string;
+  author?: string;
+  /** 关键词 (title/content LIKE) */
+  keyword?: string;
+  limit?: number;
+}
+
+export interface IForumRepository {
+  insertPost(input: ForumPostInsertInput): ForumPostRecord;
+  getPost(id: string): ForumPostRecord | null;
+  listPosts(query: ForumPostQuery): ForumPostRecord[];
+  deletePost(id: string): boolean;
+  insertComment(postId: string, author: string, content: string): ForumCommentRecord;
+  listComments(postId: string): ForumCommentRecord[];
+}
