@@ -275,6 +275,8 @@ export interface TaskConversationEntry {
   id: string;
   task_id: string;
   binding_id: string;
+  /** Opaque adapter-resolved thread key (R-D). Optional in fixtures. */
+  thread_task_binding_id?: string | null;
   provider: string;
   provider_message_ref: string | null;
   parent_message_ref: string | null;

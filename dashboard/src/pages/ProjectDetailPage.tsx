@@ -1,9 +1,10 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router';
 import { ProjectRuntimePolicyPanel } from '@/components/project/ProjectRuntimePolicyPanel';
+import { TaskDetailSheet } from '@/components/task/TaskDetailSheet';
+import { WorkbenchDetailSheet } from '@/components/ui/WorkbenchDetailSheet';
 import { useProjectWorkspacePage } from '@/hooks/useProjectWorkspacePage';
 import { useProjectDetailPageCopy } from '@/lib/dashboardCopy';
-import { buildProjectTaskHref } from '@/lib/projectTaskRoutes';
 import {
   formatWorkspaceTimestamp,
   humanizeWorkspaceFallback,
@@ -122,6 +123,7 @@ export function ProjectDetailPage() {
   const promoteTodo = useTodoStore((state) => state.promoteTodo);
   const [taskFilter, setTaskFilter] = useState<'all' | 'active' | 'review'>('all');
   const [todoFilter, setTodoFilter] = useState<'all' | 'pending'>('all');
+  const [openThreadTaskId, setOpenThreadTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!projectId || projectMembershipsByProject[projectId]) {
@@ -300,18 +302,19 @@ export function ProjectDetailPage() {
             {governanceQueue.length === 0 ? (
               <p className="type-body-sm">{copy.governanceQueueEmpty}</p>
             ) : governanceQueue.map((task) => (
-              <Link
+              <button
                 key={task.id}
-                className="data-row project-workspace-mgo__queue-row"
-                to={buildProjectTaskHref(task.id, project.id)}
+                type="button"
+                className="data-row project-workspace-mgo__queue-row button-ghost"
                 aria-label={`Open governance task ${task.title}`}
+                onClick={() => setOpenThreadTaskId(task.id)}
               >
                 <span>
                   <strong>{task.title}</strong>
                   <small>{task.id}</small>
                 </span>
                 <b>{humanizeWorkspaceFallback(task.state)}</b>
-              </Link>
+              </button>
             ))}
           </div>
         </div>
@@ -324,13 +327,14 @@ export function ProjectDetailPage() {
           {primaryTask ? (
             <div className="project-workspace-mgo__active-task">
               <p className="field-label">{copy.primaryThreadLabel}</p>
-              <Link
-                className="type-heading-sm"
-                to={buildProjectTaskHref(primaryTask.id, project.id)}
+              <button
+                type="button"
+                className="type-heading-sm button-ghost"
                 aria-label={`Open primary task ${primaryTask.title}`}
+                onClick={() => setOpenThreadTaskId(primaryTask.id)}
               >
                 {primaryTask.title}
-              </Link>
+              </button>
               <span className="status-pill status-pill--neutral">{humanizeWorkspaceFallback(primaryTask.state)}</span>
               <div className="project-workspace-mgo__progress">
                 <span style={fillStyle(clampMetric(activeTasks + waitingReviewTasks, Math.max(overview.stats.taskCount, 1)))} />
@@ -441,7 +445,18 @@ export function ProjectDetailPage() {
       <section className="surface-panel surface-panel--workspace project-workspace-mgo__bottom" data-testid="project-current-work-panel">
         <div>
           <p className="field-label">{copy.nextUpLabel}</p>
-          <strong>{primaryTask?.title ?? copy.relatedTasksEmpty}</strong>
+          {primaryTask ? (
+            <button
+              type="button"
+              className="strong button-ghost"
+              aria-label={`Open next-up task ${primaryTask.title}`}
+              onClick={() => setOpenThreadTaskId(primaryTask.id)}
+            >
+              {primaryTask.title}
+            </button>
+          ) : (
+            <strong>{copy.relatedTasksEmpty}</strong>
+          )}
         </div>
         <div>
           <p className="field-label">{copy.focusContextLabel}</p>
@@ -478,7 +493,14 @@ export function ProjectDetailPage() {
                   <div key={task.id} className="data-row">
                     <div className="min-w-0 flex-1">
                       <div className="project-row-titleline">
-                        <Link className="type-heading-sm" to={buildProjectTaskHref(task.id, project.id)}>{task.title}</Link>
+                        <button
+                          type="button"
+                          className="type-heading-sm button-ghost"
+                          aria-label={`Open task ${task.title}`}
+                          onClick={() => setOpenThreadTaskId(task.id)}
+                        >
+                          {task.title}
+                        </button>
                         <span className="status-pill status-pill--neutral">{formatTaskState(task.state)}</span>
                       </div>
                       <div className="type-text-xs project-row-meta">
@@ -549,6 +571,19 @@ export function ProjectDetailPage() {
       </section>
 
       <ProjectRuntimePolicyPanel projectId={project.id} roles={projectRoles} />
+
+      {openThreadTaskId ? (
+        <WorkbenchDetailSheet
+          label={copy.primaryThreadLabel}
+          title={
+            work.tasks.find((task) => task.id === openThreadTaskId)?.title
+              ?? copy.relatedTasksEmpty
+          }
+          onClose={() => setOpenThreadTaskId(null)}
+        >
+          <TaskDetailSheet taskId={openThreadTaskId} />
+        </WorkbenchDetailSheet>
+      ) : null}
     </div>
   );
 }
