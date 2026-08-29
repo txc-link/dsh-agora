@@ -70,12 +70,12 @@
 
 ## 部署与入口（Phase 6）
 
-- [ ] dsh-matrix-connector transport 真实化（matrix-js-sdk 真 homeserver 连接, 消除 stub）— 现状见 `2026-08-30-matrix-roadmap/02-current-state.md`
-- [ ] worksite thread resolver 实现（5 个 stub 之一, matrix 仓盘点 §5）
-- [ ] 3 台机拓扑落地（推荐方案 C: Linux 中央 + Win/Mac 客户端）→ 未决 U5
-- [ ] federation P3（自动团队组建）
-- [ ] Discord 冒烟（积压 R-G）
-- [ ] E2EE 决定（积压 R-D）
+- [x] dsh-matrix-connector transport 真实化（matrix 仓 develop `ee789e3`: src/transport/matrix-js-sdk.ts v0.4.0+v0.5; **真实 Synapse :8008 冒烟 PASS** 2026-08-30: connect/createRoom/send/joinedMembers/sync）
+- [x] worksite thread resolver 实现（core/src/worksite/thread-resolver.ts; worksite 套件 85 测试; ThreadSourcePort 抽象, §1 合规）
+- [x] 3 台机拓扑默认拍板 **方案 C**（Linux 中央 home server = agora + mem0 + Synapse; Win/Mac 客户端接入; runbook = matrix 仓 deploy/01-04 脚本; 实机部署由用户执行）→ U5 如用户另选可改
+- [x] E2EE 决定（R-D: disabled by default; initRustCrypto 非致命; 加密房间后续轮）
+- [ ] federation P3（自动团队组建; 后续轮, 依赖多 homeserver 环境）
+- [ ] Discord 冒烟（积压 R-G; 需 Discord bot 环境在线）
 
 ---
 
@@ -93,6 +93,8 @@
 | 2026-08-30 | S1 组织模型（teams + 层级 + CLI） | `090ca6d` | 13 新测试 + 回归 638/638 + 冒烟 4/4 |
 | 2026-08-30 | S3 委派路由（DelegateRouter + CLI） | `349a04d` | 7 新测试 + 回归 645/645 + 冒烟 4/4 |
 | 2026-08-30 | S6 反思论坛（Forum + Reflection + CLI） | `92938b0` | 8 新测试 + 回归 653/653 + 冒烟 5/5 |
+| 2026-08-30 | Phase 6 R-B matrix transport 真实化 + 真机冒烟 | matrix 仓 `ee789e3` | smoke-real-homeserver PASS (Synapse :8008) |
+| 2026-08-30 | Phase 6 S5/S3 IM 通道绑定 (adapters-matrix) | `2609572` | 回归 1239/1239 + 真机发 2 条通知回读落盘 |
 
 ## 迭代顺序（按用户优先级 D5: S2→S5→S4→S6→部署）
 
@@ -100,4 +102,4 @@
 2. ✅ S5 主动对话 push 主体（d002792）
 3. ✅ S2 收尾（8b0d3e6）
 4. ⏭ **S4 剩余**: MEM0 token（待用户提供）→ 真实全链冒烟; obsidian 分组映射; 跨节点 L4
-8. ⏭ **下一轮: Phase 6 部署**（matrix transport 真实化 matrix-js-sdk + S5/S3 IM 通道绑定 + worksite thread resolver; U5 拓扑需用户拍板或方案 C 默认）
+8. ✅ Phase 6 完成: transport 真实化 (matrix 仓 `ee789e3` 真机冒烟) + thread resolver (85 测试) + S5/S3 IM 通道 (`2609572` MatrixIMMessagingAdapter, 真机回读验证) + 拓扑方案 C 默认; 剩 federation P3 / Discord R-G 两项环境依赖
