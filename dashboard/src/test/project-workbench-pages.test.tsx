@@ -1496,8 +1496,8 @@ describe('project workbench pages', () => {
     expect(screen.getByText('Pending')).toBeInTheDocument();
     expect(screen.getByText('#11 · admin')).toBeInTheDocument();
     expect(screen.getByText('#12 · member')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Bootstrap flow' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Review handoff' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open task Bootstrap flow' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open task Review handoff' })).toBeInTheDocument();
     expect(screen.getByText('补 Project 入口')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Knowledge' })).toHaveAttribute('href', '/projects/proj-alpha/knowledge');
     expect(screen.getByRole('link', { name: 'Archive' })).toHaveAttribute('href', '/projects/proj-alpha/archive');
@@ -1706,8 +1706,8 @@ describe('project workbench pages', () => {
     cleanup();
     await renderProjectDetailPage();
     fireEvent.click(screen.getByRole('button', { name: 'Waiting Review Tasks' }));
-    expect(screen.queryByRole('link', { name: 'Bootstrap flow' })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Review handoff' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open task Bootstrap flow' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open task Review handoff' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Pending Todos Only' }));
     expect(screen.queryByText('整理 recap')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Mark Todo Done' }));
