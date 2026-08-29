@@ -392,6 +392,7 @@ describe('task store live API mode', () => {
         id: 'entry-1',
         task_id: 'OC-001',
         binding_id: 'binding-1',
+        thread_task_binding_id: null,
         provider: 'discord',
         provider_message_ref: 'msg-1',
         parent_message_ref: null,

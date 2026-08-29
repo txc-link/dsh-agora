@@ -274,7 +274,8 @@ export interface RuntimeRecoveryAction {
 export interface TaskConversationEntry {
   id: string;
   task_id: string;
-  binding_id: string;
+  /** Server may not have bound the entry to a thread task yet (R-D auto-bind); nullable in DTO. */
+  binding_id: string | null;
   /** Opaque adapter-resolved thread key (R-D). Optional in fixtures. */
   thread_task_binding_id?: string | null;
   provider: string;

@@ -166,6 +166,7 @@ describe('task mappers', () => {
       id: 'entry-status-1',
       task_id: 'OC-001',
       binding_id: 'binding-1',
+      thread_task_binding_id: null,
       provider: 'discord',
       provider_message_ref: 'msg-status-1',
       parent_message_ref: null,
