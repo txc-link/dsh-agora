@@ -48,7 +48,7 @@
 - [x] `adapters-mem0`: Mem0RestAdapter + `agora experience` CLI（993e7b6; 真实全链等 AGORA_MEM0_TOKEN）
 - [x] 群组维度接入点: `agora experience` 写/读（手动 CLI 口径）; forum learn 任务开始注入
 - [x] obsidian vault 分组映射（61a3b6c: ForumVaultWriter + `agora forum export --vault`; 分组 <vault>/<base>/<project>/<category>/, frontmatter tags, 评论线程, id 索引幂等; vault=本地文件夹, Obsidian 自动刷新）
-- [ ] 跨节点 L4 记忆（federation P2 实现; 留待多 homeserver 需求, 与 P3 同理由用户启动, 不做超前开发 — 2026-08-30 口径）
+- [ ] 跨节点 L4 记忆（federation P2 实现; **不需要多 homeserver**——当前单 homeserver + 多 DSH 节点拓扑下即可做, node-b/c 接入后跨节点场景即存在; 2026-08-30 用户拍板: 优先级延后, 待三机跑起来观察真实需求再启动, 不做超前开发）
 
 ## S5 主动对话 push（✅ 主体已完成 d002792, 2026-08-30）
 
@@ -74,7 +74,7 @@
 - [x] worksite thread resolver 实现（core/src/worksite/thread-resolver.ts; worksite 套件 85 测试; ThreadSourcePort 抽象, §1 合规）
 - [x] 3 台机拓扑默认拍板 **方案 C**（Linux 中央 home server = agora + mem0 + Synapse; Win/Mac 客户端接入; runbook = matrix 仓 deploy/01-04 脚本; 实机部署由用户执行）→ U5 如用户另选可改
 - [x] E2EE 决定（R-D: disabled by default; initRustCrypto 非致命; 加密房间后续轮）
-- [ ] federation P3（自动团队组建; 后续轮, 依赖多 homeserver 环境）
+- [ ] federation P3（自动团队组建; 后续轮, 同 P2: 不需要多 homeserver, 单 homeserver 多 DSH 节点即可; 用户拍板优先级延后）
 - [x] Discord 冒烟（R-G 已闭环 2026-08-30: 三台 bot token 存 .secrets/discord.env; austin_l bot REST + adapter 真机冒烟 ✅）
 
 ---
