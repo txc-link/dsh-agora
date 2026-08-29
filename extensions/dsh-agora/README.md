@@ -1,5 +1,7 @@
 # dsh-agora
 
+> **npm 分发名：`dsh-agora-plugin`**（本插件的安装包名）。npm 上的裸名 `dsh-agora` 被 AgoraIO-Community 的 RTC skill 包占用，与本项目无关；安装请使用 `dsh plugin add dsh-agora-plugin`。插件运行身份（dsh.plugin.json id）保持 `dsh-agora` 不变。
+
 `dsh-agora` 是 Agora 的 DeepSeek Harness（DSH）原生适配器。它把每个 DSH 实例注册成可派发的运行时节点，同时保持以下边界：
 
 - Agora Server 是任务、流程、审批、节点租约、派发队列和 Session 绑定的唯一事实来源；
