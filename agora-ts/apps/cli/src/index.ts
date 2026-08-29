@@ -96,7 +96,7 @@ import {
 import { Mem0RestAdapter } from '@agora-ts/adapters-mem0';
 import { ForumVaultWriter } from '@agora-ts/adapters-obsidian';
 import type { IAgentQuestionRepository, IBorrowRequestRepository, ITaskClaimRepository, IThreadTaskBindingRepository, ITeamRepository, IForumRepository } from '@agora-ts/contracts';
-import { TaskRepository } from '@agora-ts/db';
+import { NotificationOutboxRepository, TaskRepository } from '@agora-ts/db';
 import { ThreadTaskBindingRepository } from '@agora-ts/db';
 import { OpenAiCompatibleProjectBrainEmbeddingAdapter } from '@agora-ts/adapters-brain';
 import { buildCcConnectAgentId, CcConnectAgentRegistry, loadCcConnectProjectTargets } from '@agora-ts/adapters-cc-connect';
@@ -1818,6 +1818,32 @@ export function createCliProgram(deps: CliDependencies = {}) {
         options.controller,
         parseRoleBindings(options.bind),
       ));
+      // task_created 通知公告行: 推送由常驻 server 的周期扫描统一执行(单一扫描者)
+      const { im } = resolveComposition().config;
+      const notifyOnTaskCreate =
+        im.provider === 'matrix'
+          ? im.matrix?.notify_on_task_create !== false
+          : im.provider === 'discord'
+            ? im.discord?.notify_on_task_create !== false
+            : false;
+      if (notifyOnTaskCreate) {
+        try {
+          new NotificationOutboxRepository(resolveComposition().db).insert({
+            id: `notify-${task.id}`,
+            task_id: task.id,
+            event_type: 'task_created',
+            target_binding_id: null,
+            payload: {
+              title: task.title,
+              creator: task.creator,
+              ...(task.project_id ? { project_id: task.project_id } : {}),
+            },
+            sequence_no: Date.now(),
+          });
+        } catch {
+          // 通知公告写入失败不阻塞建任务
+        }
+      }
       writeLine(stdout, `任务已创建: ${task.id}`);
       writeLine(stdout, `标题: ${task.title}`);
       writeLine(stdout, `类型: ${task.type}`);
