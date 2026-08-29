@@ -124,6 +124,8 @@ export type {
 export { StubIMMessagingPort, StubIMProvisioningPort } from './im-ports.js';
 export type { InboxServiceOptions } from './inbox-service.js';
 export { InboxService } from './inbox-service.js';
+export { InboxReplyService } from './inbox-reply-service.js';
+export type { InboxReplyInput, InboxReplyReceipt } from './inbox-reply-service.js';
 export type {
   InteractiveRuntimeDoctor,
   InteractiveRuntimeDoctorPane,

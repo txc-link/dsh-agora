@@ -13,6 +13,7 @@ describe('task conversation contracts', () => {
       id: 'entry-1',
       task_id: 'OC-960',
       binding_id: 'binding-1',
+      thread_task_binding_id: null,
       provider: 'discord',
       provider_message_ref: 'msg-1',
       parent_message_ref: null,
@@ -29,6 +30,8 @@ describe('task conversation contracts', () => {
 
     expect(parsed.provider).toBe('discord');
     expect(parsed.body).toBe('hello world');
+    expect(parsed.binding_id).toBe('binding-1');
+    expect(parsed.thread_task_binding_id).toBeNull();
   });
 
   it('parses an ingest request and list response', () => {
@@ -49,6 +52,7 @@ describe('task conversation contracts', () => {
         id: 'entry-1',
         task_id: 'OC-960',
         binding_id: 'binding-1',
+        thread_task_binding_id: null,
         provider: 'discord',
         provider_message_ref: 'msg-1',
         parent_message_ref: null,
