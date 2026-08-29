@@ -44,7 +44,7 @@
 
 ## S4 共享记忆（mem0 + ProjectBrain + obsidian）
 
-- [ ] mem0 部署形态调研定型（本机 docker / REST）→ 未决 U3
+- [x] mem0 部署形态调研定型: 本机 REST server `:8888` 已运行（postgres + JWT + 本地 vLLM Qwen2.5-0.5B + bge-m3, 源码仓 /root/mem0-deploy/mem0）— U3 已决
 - [ ] `adapters-mem0`: GroupMemoryService + mem0 client adapter（agent 经验写入 / 检索）
 - [ ] 群组维度接入点: 任务完成写经验 / 任务开始读经验
 - [ ] obsidian vault 分组映射（复用 adapters-obsidian）
@@ -89,13 +89,14 @@
 | 2026-08-30 | S1-S6 细粒度执行清单建立 | `3f54c41` | checklist.md + host goal + 图谱记忆 |
 | 2026-08-30 | S5 主动提问 push（service/route/CLI/migration 037） | `d002792` | 18 新测试 + 回归 610/610 + 冒烟 7/7 |
 | 2026-08-30 | S2 收尾（expireStale + claim poll 常驻入口） | `8b0d3e6` | 8 新测试 + 回归 618/618 + 冒烟 4/4 |
+| 2026-08-30 | S4 R1（mem0 adapter + experience CLI） | `993e7b6` | 11 新测试 + 回归 629/629 + 冒烟 6/6 |
 
 ## 迭代顺序（按用户优先级 D5: S2→S5→S4→S6→部署）
 
 1. ✅ S2 主动任务接取（505ce4d）
 2. ✅ S5 主动对话 push 主体（d002792）
 3. ✅ S2 收尾（8b0d3e6）
-4. ⏭ **下一轮: S4 共享记忆**（mem0 adapter）
+4. ⏭ **S4 剩余**: MEM0 token（待用户提供）→ 真实全链冒烟; obsidian 分组映射; 跨节点 L4
 5. S1+S3 组织模型 + 委派路由
 6. S6 反思论坛
 7. Phase 6 部署 + matrix 真实化（含 S5 IM 通道绑定）
