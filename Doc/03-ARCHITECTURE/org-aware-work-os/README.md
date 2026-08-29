@@ -45,6 +45,7 @@
 | [05-reflection-forum.md](./05-reflection-forum.md) | 反思进化 + 论坛/帖子（scorecard → 反思循环 → 论坛） | 规划 |
 | [06-deployment-topology.md](./06-deployment-topology.md) | 3 台机部署拓扑（Windows/Linux/Mac） | 规划 |
 | [undecided.md](./undecided.md) | 未决事项兜底 | 规划 |
+| [checklist.md](./checklist.md) | **S1–S6 细粒度执行清单（唯一执行清单, 每轮迭代后更新）** | 活文档 |
 
 ## 4. 复用 vs 新建 清单（§1.5 最短路径）
 
