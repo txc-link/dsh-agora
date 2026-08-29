@@ -31,6 +31,7 @@ export function createAppFromRuntime(runtime: ReturnType<typeof createServerRunt
     taskContextBindingService: runtime.taskContextBindingService,
     taskConversationService: runtime.taskConversationService,
     taskInboundService: runtime.taskInboundService,
+    inboxReplyService: runtime.inboxReplyService,
     taskParticipationService: runtime.taskParticipationService,
     humanAccountService: runtime.humanAccountService,
     notificationDispatcher: runtime.notificationDispatcher,

@@ -32,3 +32,6 @@ export * from './repositories/federation.repository.js';
 export * from './repositories/task-authority.repository.js';
 export * from './repositories/project-write-lock.repository.js';
 export * from './ports/gate-port.js';
+export * from './repositories/borrow-request.repository.js';
+
+export * from './repositories/thread-task-binding.repository.js';

@@ -7,7 +7,8 @@ import { parseJsonValue, stringifyJsonValue } from './json.js';
 export interface StoredTaskConversationEntry {
   id: string;
   task_id: string;
-  binding_id: string;
+  binding_id: string | null;
+  thread_task_binding_id: string | null;
   provider: string;
   provider_message_ref: string | null;
   parent_message_ref: string | null;
@@ -29,7 +30,8 @@ export class TaskConversationRepository implements ITaskConversationRepository {
   insert(input: {
     id: string;
     task_id: string;
-    binding_id: string;
+    binding_id?: string | null;
+    thread_task_binding_id?: string | null;
     provider: string;
     provider_message_ref?: string | null;
     parent_message_ref?: string | null;
@@ -54,15 +56,17 @@ export class TaskConversationRepository implements ITaskConversationRepository {
     const ingestedAt = input.ingested_at ?? new Date().toISOString();
     this.db.prepare(`
       INSERT INTO task_conversation_entries (
-        id, task_id, binding_id, provider, provider_message_ref, parent_message_ref,
+        id, task_id, binding_id, thread_task_binding_id, provider,
+        provider_message_ref, parent_message_ref,
         direction, author_kind, author_ref, display_name, body, body_format,
         occurred_at, ingested_at, dedupe_key, metadata
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.id,
       input.task_id,
-      input.binding_id,
+      input.binding_id ?? null,
+      input.thread_task_binding_id ?? null,
       input.provider,
       input.provider_message_ref ?? null,
       input.parent_message_ref ?? null,
@@ -141,7 +145,8 @@ export class TaskConversationRepository implements ITaskConversationRepository {
     return {
       id: String(row.id),
       task_id: String(row.task_id),
-      binding_id: String(row.binding_id),
+      binding_id: row.binding_id === null ? null : String(row.binding_id),
+      thread_task_binding_id: row.thread_task_binding_id === null ? null : String(row.thread_task_binding_id),
       provider: String(row.provider),
       provider_message_ref: row.provider_message_ref === null ? null : String(row.provider_message_ref),
       parent_message_ref: row.parent_message_ref === null ? null : String(row.parent_message_ref),

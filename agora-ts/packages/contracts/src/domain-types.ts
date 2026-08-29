@@ -126,7 +126,10 @@ export interface TaskContextBindingRecord {
 export interface TaskConversationEntryRecord {
   id: string;
   task_id: string;
-  binding_id: string;
+  /** legacy task_context_bindings id — nullable for R-D inbound replies */
+  binding_id: string | null;
+  /** turn 122 thread_task_bindings key (opaque) — R-D links inbound replies */
+  thread_task_binding_id: string | null;
   provider: string;
   provider_message_ref: string | null;
   parent_message_ref: string | null;
@@ -527,7 +530,10 @@ export interface UpdateCraftsmanExecutionInput {
 export interface InsertTaskConversationEntryInput {
   id: string;
   task_id: string;
-  binding_id: string;
+  /** legacy task_context_bindings id — optional for R-D inbound replies */
+  binding_id?: string | null;
+  /** turn 122 thread_task_bindings key (opaque) — R-D links inbound replies */
+  thread_task_binding_id?: string | null;
   provider: string;
   provider_message_ref?: string | null;
   parent_message_ref?: string | null;

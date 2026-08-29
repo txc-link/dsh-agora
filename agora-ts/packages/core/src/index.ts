@@ -124,6 +124,8 @@ export type {
 export { StubIMMessagingPort, StubIMProvisioningPort } from './im-ports.js';
 export type { InboxServiceOptions } from './inbox-service.js';
 export { InboxService } from './inbox-service.js';
+export { InboxReplyService } from './inbox-reply-service.js';
+export type { InboxReplyInput, InboxReplyReceipt } from './inbox-reply-service.js';
 export type {
   InteractiveRuntimeDoctor,
   InteractiveRuntimeDoctorPane,
@@ -360,3 +362,49 @@ export type { WorkdirIsolationRequest, WorkdirIsolator, GitWorktreeWorkdirIsolat
 export { GitWorktreeWorkdirIsolator } from './workdir-isolator.js';
 export type { WorkspaceBootstrapServiceOptions } from './workspace-bootstrap-service.js';
 export { WorkspaceBootstrapService } from './workspace-bootstrap-service.js';
+
+// ─── Phase 3.5 Borrow CLI orchestration (P3.5-2) ───────────────────────────
+export type {
+  BorrowServiceOptions,
+  CreateBorrowInput,
+  CreateBorrowResult,
+} from './borrow-service.js';
+export { BorrowService } from './borrow-service.js';
+export {
+  ThreadTaskBindingService,
+  ThreadTaskBindingNotFoundError,
+  type ThreadTaskBindingServiceOptions,
+} from './thread-task-binding-service.js';
+export type {
+  BorrowCommandDeps,
+  BorrowCommandResult,
+  BorrowSubcommand,
+  RunBorrowCommandOptions,
+} from './borrow-command.js';
+export {
+  runThreadBindCommand,
+  type ThreadBindCommandDeps,
+  type ThreadBindCommandResult,
+  type ThreadBindSubcommand,
+  type RunThreadBindCommandOptions,
+} from './thread-bind-command.js';
+export { runBorrowCommand } from './borrow-command.js';
+
+// ─── Phase 3.5 worksite re-exports for CLI composition ───────────────────────
+export type { Permission, Posture, ScopeAuthorization } from './worksite/types.js';
+export {
+  ThreadWorksiteResolver,
+  type ThreadWorksiteResolverOptions,
+  type ThreadMetadata,
+  type ThreadSourcePort,
+  toThreadWorksite,
+} from './worksite/thread-resolver.js';
+export {
+  TaskWorksiteResolver,
+  type TaskWorksiteResolverOptions,
+  toTaskWorksite,
+} from './worksite/task-resolver.js';
+export { WorksiteResolverRegistry, resolveScopeAuthorization } from './worksite/resolver.js';
+export type { WorksiteResolver, WorksitePersister } from './worksite/resolver.js';
+export { parseWorksiteUri, formatWorksiteUri, type WorksiteType, type WorksiteUri } from './worksite/uri.js';
+export { deriveScopeAuthorization } from './worksite/scope-auth-policy.js';

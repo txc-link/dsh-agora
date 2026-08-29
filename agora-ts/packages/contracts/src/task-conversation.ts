@@ -30,7 +30,10 @@ export type TaskConversationInboundActionDto = z.infer<typeof taskConversationIn
 export const taskConversationEntrySchema = z.object({
   id: z.string(),
   task_id: z.string(),
-  binding_id: z.string(),
+  /** legacy task_context_bindings id — nullable for R-D inbound replies */
+  binding_id: z.string().nullable(),
+  /** turn 122 thread_task_bindings key (opaque) — R-D links inbound replies */
+  thread_task_binding_id: z.string().nullable(),
   provider: z.string(),
   provider_message_ref: z.string().nullable(),
   parent_message_ref: z.string().nullable(),
@@ -95,3 +98,31 @@ export const taskConversationMarkReadRequestSchema = z.object({
 });
 
 export type TaskConversationMarkReadRequestDto = z.infer<typeof taskConversationMarkReadRequestSchema>;
+
+/**
+ * R-D (T-3) inbound reply request — consumed by matrix adapter.
+ *
+ * §1 boundary: provider_message_ref / parent_message_ref are opaque
+ * adapter-resolved event ids. thread_task_binding_key is the opaque
+ * turn 122 threadKey. No matrix protocol vocabulary here.
+ */
+export const recordInboundReplyRequestSchema = z.object({
+  provider: z.string().min(1),
+  provider_message_ref: z.string().min(1),
+  parent_message_ref: z.string().min(1).nullable().optional(),
+  body: z.string().min(1),
+  author_kind: taskConversationAuthorKindSchema,
+  author_ref: z.string().min(1).nullable().optional(),
+  display_name: z.string().min(1).nullable().optional(),
+  occurred_at: z.string(),
+  thread_task_binding_key: z.string().min(1).nullable().optional(),
+});
+
+export type RecordInboundReplyRequestDto = z.infer<typeof recordInboundReplyRequestSchema>;
+
+export const recordInboundReplyResponseSchema = z.object({
+  id: z.string(),
+  deduped: z.boolean(),
+});
+
+export type RecordInboundReplyResponseDto = z.infer<typeof recordInboundReplyResponseSchema>;
