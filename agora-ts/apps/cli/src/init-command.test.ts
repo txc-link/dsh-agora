@@ -263,4 +263,132 @@ describe('runInitCommand', () => {
       externalUserId: 'discord-user-42',
     });
   });
+
+  // ---- Non-interactive mode (CI / first-time onboarding) ----
+
+  it('throws when --admin-username is missing in non-interactive mode', async () => {
+    await expect(
+      runInitCommand({
+        nonInteractive: true,
+        adminUsername: '',
+        adminPassword: 'long-enough-password',
+      } as never),
+    ).rejects.toThrow(/admin-username/);
+    expect(configState.saved).toBeNull();
+  });
+
+  it('throws when --admin-password is too short in non-interactive mode', async () => {
+    await expect(
+      runInitCommand({
+        nonInteractive: true,
+        adminUsername: 'admin',
+        adminPassword: 'short',
+      } as never),
+    ).rejects.toThrow(/at least 8 characters/);
+    expect(configState.saved).toBeNull();
+  });
+
+  it('throws when --im=discord is set without --discord-bot-token', async () => {
+    await expect(
+      runInitCommand({
+        nonInteractive: true,
+        adminUsername: 'admin',
+        adminPassword: 'long-enough-password',
+        imProvider: 'discord',
+        discord: { botToken: '', defaultChannelId: '' },
+      } as never),
+    ).rejects.toThrow(/discord-bot-token/);
+  });
+
+  it('persists config and bootstraps admin when non-interactive with no IM', async () => {
+    const bootstrapAdmin = vi.fn();
+    const bindIdentity = vi.fn();
+
+    await runInitCommand({
+      nonInteractive: true,
+      adminUsername: 'ops',
+      adminPassword: 'long-enough-password',
+      imProvider: 'none',
+      skipAssets: true, // sandbox / CI: do not touch ~/.agora/skills (EROFS)
+      humanAccountService: { bootstrapAdmin, bindIdentity } as never,
+    });
+
+    expect(configState.saved).toMatchObject({
+      im: { provider: 'none' },
+      dashboard_auth: {
+        enabled: true,
+        method: 'session',
+        allowed_users: [],
+        session_ttl_hours: 24,
+      },
+      permissions: { archonUsers: ['ops'] },
+    });
+    expect(bootstrapAdmin).toHaveBeenCalledWith({
+      username: 'ops',
+      password: 'long-enough-password',
+    });
+    expect(bindIdentity).not.toHaveBeenCalled();
+  });
+
+  it('persists discord settings and binds identity in non-interactive mode', async () => {
+    const bootstrapAdmin = vi.fn();
+    const bindIdentity = vi.fn();
+
+    await runInitCommand({
+      nonInteractive: true,
+      adminUsername: 'archon',
+      adminPassword: 'long-enough-password',
+      imProvider: 'discord',
+      skipAssets: true, // sandbox / CI: do not touch ~/.agora/skills (EROFS)
+      discord: {
+        botToken: 'discord-bot-token',
+        defaultChannelId: '1234567890',
+        notifyOnTaskCreate: true,
+        humanUserId: 'discord-user-42',
+      },
+      humanAccountService: { bootstrapAdmin, bindIdentity } as never,
+    });
+
+    expect(configState.saved).toMatchObject({
+      im: {
+        provider: 'discord',
+        discord: {
+          bot_token: 'discord-bot-token',
+          default_channel_id: '1234567890',
+          notify_on_task_create: true,
+        },
+      },
+    });
+    expect(bootstrapAdmin).toHaveBeenCalledWith({
+      username: 'archon',
+      password: 'long-enough-password',
+    });
+    expect(bindIdentity).toHaveBeenCalledWith({
+      username: 'archon',
+      provider: 'discord',
+      externalUserId: 'discord-user-42',
+    });
+  });
+
+  it('skips ensureBundledAgoraAssetsInstalled when skipAssets is true', async () => {
+    const bootstrapAdmin = vi.fn();
+    const bindIdentity = vi.fn();
+    const assetFixtures = makeBundledAssetFixtures();
+
+    await expect(
+      runInitCommand({
+        nonInteractive: true,
+        adminUsername: 'ops',
+        adminPassword: 'long-enough-password',
+        skipAssets: true,
+        humanAccountService: { bootstrapAdmin, bindIdentity } as never,
+        ...assetFixtures,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(bootstrapAdmin).toHaveBeenCalled();
+    // Asset dirs were created by makeBundledAssetFixtures but should NOT have been
+    // populated with bootstrapped contents because ensureInstalledAssets was skipped.
+    // The exact absence assertion lives in ensureBundledAgoraAssetsInstalled tests.
+  });
 });

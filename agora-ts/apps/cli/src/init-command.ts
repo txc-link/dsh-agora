@@ -23,9 +23,29 @@ export interface RunInitCommandOptions {
     serverUrl: string;
   };
   setupHybridRetrieval?: typeof setupHybridRetrieval;
+  // Non-interactive mode (CI / first-time onboarding). When `nonInteractive: true`,
+  // the function skips @inquirer/prompts entirely and reads from the explicit
+  // `adminUsername` / `adminPassword` fields below. `skipAssets: true` skips
+  // `ensureBundledAgoraAssetsInstalled` (useful in sandbox / CI / docker layers
+  // where `~/.agora/` is read-only).
+  nonInteractive?: boolean;
+  skipAssets?: boolean;
+  adminUsername?: string;
+  adminPassword?: string;
+  imProvider?: 'none' | 'discord';
+  discord?: {
+    botToken?: string;
+    defaultChannelId?: string;
+    notifyOnTaskCreate?: boolean;
+    humanUserId?: string;
+  };
 }
 
 export async function runInitCommand(options: RunInitCommandOptions = {}): Promise<void> {
+  if (options.nonInteractive) {
+    await runNonInteractiveInit(options);
+    return;
+  }
   console.log('\nAgora 初始化向导\n');
 
   const existing = loadGlobalConfig();
@@ -248,5 +268,104 @@ async function maybeSetupHybridRetrieval(
     console.log('\nProject Brain 语义检索配置失败。');
     console.log(`  原因: ${error instanceof Error ? error.message : String(error)}`);
     console.log('  Agora 基础初始化已完成；修复后可重新运行 `./agora init` 再次配置。');
+  }
+}
+
+/**
+ * Non-interactive variant of `runInitCommand`. Reads all inputs from `options`
+ * instead of stdin, validates them, and produces the same end state as the
+ * interactive wizard. Designed for first-time onboarding (CI, Docker, Ansible,
+ * one-liner installers). When `skipAssets: true`, does not touch `~/.agora/`
+ * for skills / brain pack install — useful in sandbox / read-only layers.
+ */
+export async function runNonInteractiveInit(options: RunInitCommandOptions): Promise<void> {
+  const adminUsername = (options.adminUsername ?? '').trim();
+  const adminPassword = options.adminPassword ?? '';
+
+  if (adminUsername.length === 0) {
+    throw new Error('--admin-username is required in non-interactive mode');
+  }
+  if (adminPassword.length < 8) {
+    throw new Error('--admin-password must be at least 8 characters in non-interactive mode');
+  }
+
+  const provider: 'none' | 'discord' = options.imProvider ?? 'none';
+  if (provider === 'discord') {
+    const discord = options.discord ?? {};
+    if (!discord.botToken || discord.botToken.trim().length === 0) {
+      throw new Error('--discord-bot-token is required when --im=discord');
+    }
+    if (!discord.defaultChannelId || discord.defaultChannelId.trim().length === 0) {
+      throw new Error('--discord-default-channel-id is required when --im=discord');
+    }
+  }
+
+  const existing = loadGlobalConfig();
+  const runtimeEnvironment = options.runtimeEnvironment ?? resolveAgoraRuntimeEnvironmentFromConfigPackage();
+  const existingIm = (existing.im as Record<string, unknown> | undefined) ?? {};
+  const existingDashboardAuth = (existing.dashboard_auth as Record<string, unknown> | undefined) ?? {};
+  const existingPermissions = (existing.permissions as Record<string, unknown> | undefined) ?? {};
+  const existingArchonUsers = Array.isArray(existingPermissions.archonUsers)
+    ? existingPermissions.archonUsers.filter((value): value is string => typeof value === 'string')
+    : [];
+
+  const discord = options.discord ?? {};
+  const config = {
+    ...existing,
+    db_path: typeof existing.db_path === 'string' ? existing.db_path : defaultAgoraDbPath(),
+    im: provider === 'discord'
+      ? {
+          provider: 'discord',
+          discord: {
+            bot_token: (discord.botToken ?? '').trim(),
+            default_channel_id: (discord.defaultChannelId ?? '').trim(),
+            notify_on_task_create: discord.notifyOnTaskCreate ?? true,
+          },
+        }
+      : { provider: 'none' },
+    dashboard_auth: {
+      enabled: true,
+      method: 'session',
+      allowed_users: [],
+      session_ttl_hours: Number(existingDashboardAuth.session_ttl_hours ?? 24),
+    },
+    permissions: {
+      ...existingPermissions,
+      archonUsers: Array.from(new Set([...existingArchonUsers, adminUsername])),
+    },
+  };
+
+  saveGlobalConfig(config);
+
+  const assets = options.skipAssets
+    ? null
+    : ensureInstalledAssets(options);
+  if (options.humanAccountService) {
+    options.humanAccountService.bootstrapAdmin({
+      username: adminUsername,
+      password: adminPassword,
+    });
+    if (provider === 'discord' && discord.humanUserId && discord.humanUserId.trim().length > 0) {
+      options.humanAccountService.bindIdentity({
+        username: adminUsername,
+        provider: 'discord',
+        externalUserId: discord.humanUserId.trim(),
+      });
+    }
+  }
+
+  console.log('\nAgora 已完成非交互式初始化');
+  console.log(`  配置文件: ~/.agora/agora.json`);
+  console.log(`  IM 提供商: ${provider}`);
+  if (provider === 'discord') {
+    console.log(`  默认频道: ${discord.defaultChannelId}`);
+    console.log(`  创建任务时建 thread: ${(discord.notifyOnTaskCreate ?? true) ? '是' : '否'}`);
+  }
+  console.log(`  Dashboard Session: 已启用`);
+  console.log(`  管理员: ${adminUsername}`);
+  if (options.skipAssets) {
+    console.log(`  Agora Skills / Brain Pack: 跳过安装 (--skip-assets)`);
+  } else if (assets) {
+    logInstalledAssets(assets);
   }
 }

@@ -4911,11 +4911,54 @@ export function createCliProgram(deps: CliDependencies = {}) {
 
   program
     .command('init')
-    .description('交互式配置向导（配置 Discord 等 IM 集成）')
-    .action(async () => {
+    .description('Agora 初始化向导（交互式默认；传 --non-interactive 进入 CI 模式）')
+    .option('--non-interactive', '跳过 inquirer，使用显式传入的 flags 一次性完成初始化（CI / 首次安装）')
+    .option('--admin-username <name>', '管理员用户名（--non-interactive 必填）')
+    .option('--admin-password <password>', '管理员密码（--non-interactive 必填，至少 8 位）')
+    .option('--admin-password-stdin', '从 stdin 读取密码（推荐用于生产，避免 shell history 暴露）')
+    .option('--im <provider>', 'IM 提供商：none | discord（默认 none）', 'none')
+    .option('--discord-bot-token <token>', 'Discord bot token（--im=discord 必填）')
+    .option('--discord-default-channel-id <id>', 'Discord 默认频道 ID（--im=discord 必填）')
+    .option('--discord-notify-on-task-create <bool>', '创建任务时自动建 Discord thread（默认 true）', 'true')
+    .option('--discord-human-user-id <id>', '管理员 Discord 用户 ID（可选）')
+    .option('--skip-assets', '跳过 ensureBundledAgoraAssetsInstalled（沙箱 / Docker layer / 只读 ~/.agora/ 时使用）')
+    .action(async (cmdOptions: {
+      nonInteractive?: boolean;
+      adminUsername?: string;
+      adminPassword?: string;
+      adminPasswordStdin?: boolean;
+      im?: string;
+      discordBotToken?: string;
+      discordDefaultChannelId?: string;
+      discordNotifyOnTaskCreate?: string;
+      discordHumanUserId?: string;
+      skipAssets?: boolean;
+    }) => {
+      let adminPassword = cmdOptions.adminPassword;
+      if (cmdOptions.adminPasswordStdin) {
+        const chunks: Buffer[] = [];
+        for await (const chunk of process.stdin) {
+          chunks.push(chunk as Buffer);
+        }
+        adminPassword = Buffer.concat(chunks).toString('utf8').trim();
+      }
+      const imProvider = cmdOptions.im === 'discord' ? 'discord' : 'none';
       await runInitCommand({
         humanAccountService,
-        });
+        nonInteractive: cmdOptions.nonInteractive,
+        skipAssets: cmdOptions.skipAssets,
+        adminUsername: cmdOptions.adminUsername,
+        adminPassword,
+        imProvider,
+        discord: cmdOptions.im === 'discord'
+          ? {
+              botToken: cmdOptions.discordBotToken,
+              defaultChannelId: cmdOptions.discordDefaultChannelId,
+              notifyOnTaskCreate: cmdOptions.discordNotifyOnTaskCreate !== 'false',
+              humanUserId: cmdOptions.discordHumanUserId,
+            }
+          : undefined,
+      });
     });
 
   const externalBridge = program
