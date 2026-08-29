@@ -17,11 +17,14 @@
 - 终验: live db outbox → `POST /api/notifications/scan` → **{delivered:1, failed:0}** → Synapse 房间回读 "Task OC-1787983990771 — craftsman_completed" ✅
 - Win/Mac 接入见第 3 节（你手动执行）
 
-## 3. 3 台机拓扑（U5 已默认方案 C）
+## 3. 3 台机拓扑（U5 方案 C）— Linux 侧已全部就绪，你只剩安装
 
-- Linux home server（本机）：agora server :18008 + mem0 :8888 + Synapse :8008 —— 已就绪
-- Win / Mac：装 DSH + dsh-matrix-connector，接入 Synapse；runbook = matrix 仓 `deploy/01-deploy-core.sh` → `02-provision-bots.sh` → `03-install-dsh-plugin.sh` → `04-verify.sh`
-- 每台机 bridge 凭据：参照 `deploy/node-a.env` 生成 node-b/c.env（02 脚本自动）
+- ✅ 预置完成（2026-08-30）：三台 bot 账号已建好并验证 —— `deploy/node-a.env`（Linux, 在用）、`node-b.env`（预分配 Windows）、`node-c.env`（预分配 Mac, whoami 200）；预填参数在 `.secrets/win-mac-onboarding.env`
+- **你要跑的只剩**（每台机, 在各自 DSH 环境）：
+  1. Windows: 装 DSH + `dsh-matrix-connector` 插件, 用 node-b.env 凭据
+  2. Mac: 同上, 用 node-c.env 凭据
+  3. 参考: matrix 仓 `deploy/03-install-dsh-plugin.sh --profile web --homeserver http://8.136.15.147:8008 --agora-url http://8.136.15.147:18008 --agora-token <api_token>`；验证 `deploy/04-verify.sh`
+  4. 完成后告诉我 → 04-verify 三机回归 + checklist 收口
 
 ## 4. Discord R-G ✅ 已完成（2026-08-30）
 
