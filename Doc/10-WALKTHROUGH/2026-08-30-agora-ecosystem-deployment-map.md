@@ -46,6 +46,8 @@
 
 ## 4. 节点安装速览（详细步骤见 connector 仓 `deploy/README.md` 第 5 节）
 
+**自动化（推荐）**：在节点上跑 connector 仓 `deploy/03-install-dsh-plugin.sh`（装两插件 + 写 agora row + connector row + dump 校验一步到位）。手动路径：
+
 ```bash
 # ① 治理接入插件（npm）
 dsh plugin --profile web add dsh-agora-plugin
