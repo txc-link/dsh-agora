@@ -17,3 +17,10 @@
 - GPU/Mac 依赖已更新为 0.4.0，speech 配置已写入；**等待用户重启 dsh-web 生效**。
 - 阻塞项：securityBoundary/rootSpace 未定（语音投影未激活）；Mac 无直连 TTS 通道；
   GPT-SoVITS 模型缺失（备选，待补）。
+
+## 2026-08-31 收尾
+
+- 推送完成：connector `main=fcecbd8`（分支 `codex/p0-task-voice=081b5ab`），
+  dsh-agora `master=30d61e6`（HTTPS 被墙时走 SSH + git bundle 经 GPU 中转）。
+- npm `dsh-matrix-connector@0.4.0` 为 latest。
+- 待用户：重启 GPU/Mac 的 dsh-web（服务禁止 agent 自行 restart）。
