@@ -3,7 +3,8 @@
 > 日期：2026-08-30<br>
 > 目标：给 `@root:agent-hub.local` 一套可以照着创建的 Element 结构，以及
 > Obsidian、Mem0、公司 Agent 和私人 Companion 的落位方法。<br>
-> 本文只落盘样板，没有改动线上 Matrix 房间或成员。
+> 线上结构已经按本文落地；2026-08-30 完成中文命名、全房间关闭 E2EE 和 connector
+> 0.3.8 文本 Artifact 群内预览验证。
 
 ## 1. 先定清楚四个概念
 
@@ -26,7 +27,7 @@ Element 官方将 Space 定义为组织人员和房间的容器，真正的交�
 
 ```text
 @root:agent-hub.local
-├─ Austin Agent Company                         [work / internal]
+├─ 公司团队                                  [work / internal]
 │  ├─ #company-ea-inbox:agent-hub.local        CEO 唯一公司入口
 │  ├─ #company-briefing:agent-hub.local         晨报、晚检、跨团队汇总
 │  ├─ #company-research:agent-hub.local         研究团队工作房间
@@ -37,16 +38,16 @@ Element 官方将 Space 定义为组织人员和房间的容器，真正的交�
 │  ├─ #company-node-ops:agent-hub.local         节点维护；不用作业务入口
 │  └─ #company-audit:agent-hub.local            审计报告与告警
 │
-├─ Austin Personal Office                      [life / personal]
+├─ 个人生活                                  [life / personal]
 │  ├─ #life-inbox:agent-hub.local               生活请求入口
 │  ├─ #life-schedule:agent-hub.local            日程、冲突、提醒
 │  └─ #life-travel:agent-hub.local              行程研究与待确认清单
 │
-├─ Austin Health Vault                         [health / sensitive_personal]
+├─ 健康管理                                  [health / sensitive_personal]
 │  ├─ #health-private:agent-hub.local           健康记录与健康管家
 │  └─ #health-reminders:agent-hub.local         低内容提醒与摘要
 │
-└─ Austin Companion                            [companion / sensitive_personal]
+└─ 陪伴助手                                  [companion / sensitive_personal]
    └─ #companion-private:agent-hub.local        小栀的文字、语音和关系记忆回执
 ```
 
@@ -54,11 +55,11 @@ Element 官方将 Space 定义为组织人员和房间的容器，真正的交�
 
 先只建六个房间就够：
 
-1. `Austin Agent Company`：`#company-ea-inbox`、`#company-briefing`、
+1. `公司团队`：`#company-ea-inbox`、`#company-briefing`、
    `#company-research`、`#company-decisions`。
-2. `Austin Personal Office`：`#life-inbox`。
-3. `Austin Companion`：`#companion-private`，但在 E2EE Gate 完成前只放测试数据。
-4. `Austin Health Vault` 可以先建空 Space，暂不存真实健康数据。
+2. `个人生活`：`#life-inbox`。
+3. `陪伴助手`：`#companion-private`。
+4. `健康管理`：`#health-private`、`#health-reminders`。
 
 ## 3. 在 Element Web/Desktop 里怎么点
 
@@ -127,14 +128,22 @@ dispatch 接任务，不要求它们的 Matrix bot 全部加入 EA Inbox；各�
 单独 DM 或 `#company-node-ops`。节点显示名改成 `node-mac` 等，并不会自动改掉
 历史 Matrix mxid，邀请时以每台 connector 当前 `userId` 为准。
 
-### 3.4 当前加密 Gate
+### 3.4 当前无 E2EE 口径
 
-- Company 房间如要让当前 connector 正常收发，暂时不要在 Element 中启用 E2EE。
-- Health 与 Companion 的真实敏感内容必须等待：独立 bot 身份、独立 device/crypto
-  store、持久 E2EE、密钥备份与恢复演练全部通过。
-- 现在可以先建对应 Space/Room，但只用虚构或脱敏数据验收。
-- 一旦 Element 房间启用 E2EE便不能关闭；官方创建房间文档也明确说明了这一点，
-  见 [Creating a Room](https://docs.element.io/latest/element-support/matrix-rooms/getting-started-creating-a-room/)。
+- 本部署所有现存 Room 均无 `m.room.encryption`；Synapse 当前计数为 0。
+- `/.well-known/matrix/client` 已设置 `io.element.e2ee.default=false` 和
+  `force_disable=true`，Element 不再允许新房间启用加密。
+- Matrix 加密对房间是不可逆状态。迁移时已先备份旧房间状态与时间线，再用同名、
+  同 Topic、同 Space 关系的非加密房间替换，最后清理旧房间。
+- “生活、健康、陪伴与公司分域”仍由独立顶层 Space、成员 ACL、独立 bot、Core
+  DelegationPolicy、Vault 和 Mem0 namespace 保证；它们绝不能重新挂进 Company Space。
+- 无 E2EE 意味着 homeserver 管理员和服务器侧组件在技术上可以读取消息。真实病历、
+  密码、支付凭据等高敏原文仍不应发到 Matrix，只发送最小摘要或安全存储的引用。
+
+Element 的 E2EE 默认与强制禁用选项见
+[Element Web E2EE 配置](https://github.com/element-hq/element-web/blob/develop/docs/e2ee.md)；
+Synapse 的默认加密设置只影响新房间，见
+[Synapse 配置文档](https://matrix-org.github.io/synapse/latest/usage/configuration/config_documentation.html)。
 
 ## 4. 群里能保存文件、发帖子吗
 
@@ -145,6 +154,9 @@ dispatch 接任务，不要求它们的 Matrix bot 全部加入 EA Inbox；各�
 - 文件和消息随房间历史保存在 Matrix homeserver；这适合交付和讨论。
 - 正式研究、方案、决策和复盘仍应生成 Markdown Artifact 并进入 Obsidian；
   Matrix 只回投摘要、哈希、任务 id 和 Obsidian 路径。
+- Element 本身不把 `.md` 附件渲染成文档页面；附件仍可下载。connector 0.3.8 会在
+  `/agora artifact <id>` 时先发送经过 HTML 转义、最多 12,000 字符的群内源码预览，
+  再发送原始文件，因此常见 Markdown 交付可以直接在群里阅读。
 
 官方文件操作见 [Element Help](https://element.io/en/help) 和
 [Element 右侧面板](https://docs.element.io/latest/element-support/quick-start-guide/the-right-panel/)。
@@ -415,20 +427,55 @@ agora relationship revise \
 6. 如果 root 明确授权，Companion 只收到 `CareSignal: 明早有重要安排，可温和提醒`，
    而不是牙科记录；小栀在 quiet hours 外发送一条文字或语音。
 
+## 9.3 群聊中人类与 Agent 如何协同
+
+当前 connector 采用 `command_only`：它读取 `/agora ...` 命令和已绑定任务 Thread
+中的回复，但会忽略普通群聊消息。这能防止多个 bot 互相触发、重复建任务或无限对话。
+
+推荐的协同链是：
+
+1. 人类在共同房间讨论，用 `/agora assistant ask ...` 明确创建任务。
+2. EA 在 Core 内拆解、授权、分派给个人或团队；Agent 间状态以 Core Event 为准。
+3. 里程碑、问题、产物预览和完成回执投影回原房间或 Thread。
+4. 人类在 Thread 补充约束；connector 把回复追加到绑定任务，而不是新建重复任务。
+5. 后续若接普通消息，优先新增 `mention_and_assignment`：只有 `@Agent`、明确指派或
+   已绑定 Thread 才触发。全量环境监听 `ambient_observer` 只能在房间级显式授权，且
+   默认只摘要不主动回复。
+
+不要让 Agent 直接在 Matrix 里无限互聊。需要圆桌讨论时由 Core 创建有参与者上限、
+轮次上限、预算和冷却时间的 coordination run，再把结论投影到群里。
+
+## 9.4 Element 可扩展能力
+
+Element 使用 Widget、Bot 和 Bridge，不是浏览器式扩展商店。当前优先级：
+
+1. Element Call/Jitsi：群内会议。
+2. Agora Dashboard custom widget：在房间侧栏看任务、Gate 和节点状态。
+3. Matrix Hookshot：连接 GitHub、GitLab、Jira、通用 Webhook 和 Feed。
+4. 按需部署 Telegram、Teams、Slack、Discord、IRC、XMPP 或 Signal Bridge。
+
+房间右侧 `Room info` → `Add apps, bridges & bots` 是已配置集成的入口。自托管实例要先
+部署对应 Integration Manager/Bridge，app.element.io 不会自动给私有 homeserver
+安装后端。参考 [Element 集成入口](https://docs.element.io/latest/element-cloud-documentation/integrations/create-a-conference-call-in-a-room/)
+和 [Element 文档索引](https://docs.element.io/latest/)。
+
 ## 10. 当前可用与仍需补齐
 
 | 能力 | 状态 |
 |---|---|
 | Element 创建私密 Space/Room、附件、Files、Threads | 已可用 |
+| 全部房间无 E2EE + 新房间强制禁用 E2EE | 已上线并验证 |
 | Company Organization/Position/Employment/EA/Commitment | 已可用 |
 | Matrix `/agora company`、`/agora assistant` 薄入口 | 已可用 |
+| Markdown/text Artifact 群内安全预览 + 原文件下载 | connector 0.3.8 已上线 |
 | Mem0 `experience add/search/list` | 已可用，显式调用 |
 | Agora Forum → Obsidian Markdown | 已可用，显式导出 |
 | Companion profile 版本、initiative、语音投递模型 | 已实现 |
 | 普通 Matrix 消息自动分类并写 Mem0 | 未接通 |
 | Matrix 附件自动归档 Obsidian + 回投 URI | 未接通 |
 | Agora Forum 帖子完整投影成 Element 帖子 UI | 未接通；先用 Thread/feed |
-| Life/Health/Companion 专用 bot + durable E2EE | 上线 Gate，未完成前不得放真实敏感数据 |
+| 普通群聊按 @mention/指派触发 Agent | 未接通；当前为 command_only |
+| Life/Health/Companion 独立 bot + 数据域 ACL | 部分接通；需继续收紧成员和存储权限 |
 
 ## 11. 推荐下一步
 
@@ -439,4 +486,5 @@ agora relationship revise \
 2. Artifact/Forum 自动写对应 Vault，并向原 Thread 回投收据。
 3. 经治理的 memory distillation：任务结束时生成候选记忆，确认后写入对应 Mem0 scope。
 
-Health/Companion 的 dedicated bot 和 durable E2EE 必须先于真实敏感内容上线。
+Health/Companion 的 dedicated bot、数据最小化、独立存储和访问审计必须先于真实
+敏感内容上线；本部署明确不依赖 E2EE 作为边界。
