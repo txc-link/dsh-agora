@@ -12,7 +12,7 @@
 - Connector `0.3.3` makes ordinary room conversation inert and reserves execution for an explicit `/agora` prefix.
 - Connector `0.3.4` resolves task artifacts through the durable Artifact collection; `0.3.5` sends downloads as standard Matrix `m.file` events.
 - The original `AI学习` room had E2EE enabled and no Company Space parent. The Node connector deliberately has no durable crypto store, so it could neither decrypt commands nor send replies there.
-- Production exposed two Space discovery defects: plugin composition read the SDK room cache before initial sync, and the child-state listener was attached to `Room` instead of `Room.currentState`. Connector `0.3.6` fixes both and passes 236 tests.
+- Production exposed three Space-boundary defects: plugin composition read the SDK room cache before initial sync, the child-state listener was attached to `Room` instead of `Room.currentState`, and empty replacement state with `prevEvent` was misread as an update instead of revocation. Connectors `0.3.6`–`0.3.7` fix them and pass 237 tests.
 - Request `57f9b246-4ac1-4659-bedc-b4fc04f46cc6` completed through task `OC-1788087729753` on `node-mac` in about 29 seconds and produced artifact `441f2302-18f3-40d2-a2e5-5a227a5990a5` (Markdown, 6,434 bytes).
 - Final live matrix: three Core runtime nodes online; one expected bot reply in each tested operational room; zero company bots in all Personal Life, Health, and Companion rooms.
 
@@ -23,7 +23,7 @@
 3. Timeline command failures are logged but not sent back to Matrix, so REST validation errors look like a dead bot.
 4. Runtime result envelopes and generated artifacts were persisted verbatim, allowing secrets present in an agent's retrieved context to escape into task evidence.
 5. Matrix E2EE is immutable per room and the connector intentionally disables ephemeral Node crypto; an encrypted operations room therefore cannot be repaired in place.
-6. Space discovery ran before the first Matrix sync and subscribed to the wrong event emitter, so newly linked child rooms required a static allow-list entry or restart.
+6. Space discovery ran before the first Matrix sync and subscribed to the wrong event emitter; removal also evaluated `prevEvent` before empty content. Newly linked rooms required a static allow-list/restart, while removed rooms could remain authorized.
 
 ## Architecture boundary
 

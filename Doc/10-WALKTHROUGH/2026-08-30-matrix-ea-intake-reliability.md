@@ -69,7 +69,8 @@ normal downloadable attachment instead of an `mxc://` string.
 - `dsh-agora` `993f8be`: recursively redact secrets from runtime results before persistence.
 - `dsh-matrix-connector` `0.3.2`–`0.3.5`: reliable intake, command isolation, durable artifacts, and native files.
 - `dsh-matrix-connector` `0.3.6` (`0a45ce2`): wait for initial sync and track Space child state on `Room.currentState`.
-- Connector suite: 236/236 passing on Windows and macOS; the same package is deployed on Linux.
+- `dsh-matrix-connector` `0.3.7` (`c767fb5`): revoke a room immediately when its `m.space.child` state is cleared.
+- Connector suite: 237/237 passing; connector `0.3.7` is deployed on Windows, macOS, and Linux.
 
 The package source and version are pushed to GitHub. Publishing `0.3.6` to the
 public npm registry still requires an authenticated npm maintainer session;
