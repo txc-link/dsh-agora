@@ -44,6 +44,8 @@ export * from './workspace-bootstrap.js';
 export * from './citizen.js';
 export * from './relationship.js';
 export * from './governance.js';
+export * from './organization.js';
+export * from './executive-assistant.js';
 export * from './repository-interfaces.js';
 export * from './domain-types.js';
 

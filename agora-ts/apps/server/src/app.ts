@@ -232,6 +232,10 @@ import {
   InformationGovernanceService,
   RelationshipProfileService,
   RelationshipInitiativeService,
+  OrganizationService,
+  ExecutiveAssistantService,
+  TaskClaimService,
+  type ExecutiveTaskPort,
 } from '@agora-ts/core';
 import type { A2aGatewayService } from '@agora-ts/adapters-runtime';
 import {
@@ -246,6 +250,10 @@ import {
   InformationPolicyRepository,
   RelationshipProfileRepository,
   RelationshipInitiativeRepository,
+  OrganizationRepository,
+  ExecutiveAssistantRepository,
+  TaskClaimRepository,
+  TemplateRepository,
   type AgoraDatabase,
 } from '@agora-ts/db';
 
@@ -318,6 +326,8 @@ export interface BuildAppOptions {
   informationGovernanceService?: InformationGovernanceService;
   consentService?: ConsentService;
   actionRiskService?: ActionRiskService;
+  organizationService?: OrganizationService;
+  executiveAssistantService?: ExecutiveAssistantService;
   apiAuth?: {
     enabled: boolean;
     token: string;
@@ -1168,6 +1178,58 @@ export function buildApp(options: BuildAppOptions = {}) {
   const actionRiskService = options.actionRiskService ?? (options.db
     ? new ActionRiskService({ repository: new ActionRiskAssessmentRepository(options.db) })
     : undefined);
+  const organizationRepository = options.db ? new OrganizationRepository(options.db) : undefined;
+  const organizationService = options.organizationService ?? (organizationRepository
+    ? new OrganizationService({ repository: organizationRepository })
+    : undefined);
+  const executiveTaskPort: ExecutiveTaskPort | undefined = options.db && taskService
+    ? {
+        createAssignedTask: (input) => {
+          const template = new TemplateRepository(options.db!).getTemplate(input.taskType);
+          if (!template) throw new Error(`task template '${input.taskType}' not found`);
+          const templateMembers = Object.entries(template.template.defaultTeam ?? {});
+          if (templateMembers.length === 0) throw new Error(`task template '${input.taskType}' has no team roles`);
+          const task = taskService.createTask({
+            title: input.title,
+            type: input.taskType,
+            creator: input.requestedBy,
+            description: input.description,
+            priority: input.priority,
+            locale: 'zh-CN',
+            team_override: {
+              members: templateMembers.map(([role, member], index) => ({
+                role,
+                agentId: input.assigneeRef,
+                member_kind: member.member_kind ?? (index === 0 ? 'controller' : 'citizen'),
+                model_preference: member.model_preference ?? '',
+                agent_origin: 'user_managed',
+                briefing_mode: 'overlay_full',
+              })),
+            },
+            ...(input.projectId ? { project_id: input.projectId } : {}),
+          });
+          new TaskClaimService({
+            claimRepo: new TaskClaimRepository(options.db!),
+            taskExists: (taskId) => taskService.getTask(taskId) !== null,
+          }).claim({
+            taskId: task.id,
+            agentRef: input.assigneeRef,
+            reason: `executive request assigned to ${input.assigneePositionId}`,
+          });
+          return { taskId: task.id };
+        },
+        getTaskState: (taskId) => taskService.getTask(taskId)?.state ?? null,
+      }
+    : undefined;
+  const executiveAssistantService = options.executiveAssistantService ?? (
+    options.db && organizationRepository && executiveTaskPort
+      ? new ExecutiveAssistantService({
+          repository: new ExecutiveAssistantRepository(options.db),
+          organizationRepository,
+          taskPort: executiveTaskPort,
+        })
+      : undefined
+  );
   const orchestratorDirectCreateService = taskService
     ? new OrchestratorDirectCreateService({ taskService })
     : undefined;
@@ -1359,6 +1421,223 @@ export function buildApp(options: BuildAppOptions = {}) {
 
   app.get('/api/health', async (): Promise<HealthResponse> => {
     return { status: 'ok' };
+  });
+
+  app.post('/api/organizations', async (request, reply) => {
+    if (!organizationService) return reply.status(503).send({ message: 'organization service not configured' });
+    const payload = z.object({
+      slug: z.string().min(1),
+      name: z.string().min(1),
+      owner_ref: z.string().min(1),
+      information_domain: z.string().min(1),
+      purpose: z.string().nullable().optional(),
+    }).strict().safeParse(request.body);
+    if (!payload.success) return reply.status(400).send({ message: payload.error.message });
+    const result = organizationService.createOrganization({
+      slug: payload.data.slug,
+      name: payload.data.name,
+      ownerRef: payload.data.owner_ref,
+      informationDomain: payload.data.information_domain,
+      purpose: payload.data.purpose ?? null,
+    });
+    return result.ok ? reply.status(201).send(result.data) : reply.status(400).send({ message: result.error });
+  });
+
+  app.get('/api/organizations', async (_request, reply) => {
+    if (!organizationService) return reply.status(503).send({ message: 'organization service not configured' });
+    return reply.send({ organizations: organizationService.listOrganizations() });
+  });
+
+  app.get('/api/organizations/:organizationId', async (request, reply) => {
+    if (!organizationService) return reply.status(503).send({ message: 'organization service not configured' });
+    const { organizationId } = request.params as { organizationId: string };
+    const organization = organizationService.getOrganization(organizationId);
+    if (!organization) return reply.status(404).send({ message: `organization '${organizationId}' not found` });
+    const result = organizationService.snapshot(organization.id);
+    return result.ok ? reply.send(result.data) : reply.status(404).send({ message: result.error });
+  });
+
+  app.post('/api/organizations/:organizationId/units', async (request, reply) => {
+    if (!organizationService) return reply.status(503).send({ message: 'organization service not configured' });
+    const { organizationId } = request.params as { organizationId: string };
+    const payload = z.object({
+      name: z.string().min(1),
+      kind: z.enum(['executive_office', 'department', 'team']),
+      parent_unit_id: z.string().min(1).nullable().optional(),
+      responsibilities: z.array(z.string().min(1)).max(64).optional(),
+    }).strict().safeParse(request.body);
+    if (!payload.success) return reply.status(400).send({ message: payload.error.message });
+    const result = organizationService.createUnit({
+      organizationId,
+      name: payload.data.name,
+      kind: payload.data.kind,
+      parentUnitId: payload.data.parent_unit_id ?? null,
+      responsibilities: payload.data.responsibilities ?? [],
+    });
+    return result.ok ? reply.status(201).send(result.data) : reply.status(400).send({ message: result.error });
+  });
+
+  app.patch('/api/organizations/:organizationId/units/:unitId/parent', async (request, reply) => {
+    if (!organizationService) return reply.status(503).send({ message: 'organization service not configured' });
+    const params = request.params as { organizationId: string; unitId: string };
+    const payload = z.object({ parent_unit_id: z.string().min(1).nullable() }).strict().safeParse(request.body);
+    if (!payload.success) return reply.status(400).send({ message: payload.error.message });
+    const unit = organizationService.snapshot(params.organizationId);
+    if (!unit.ok || !unit.data.units.some((item) => item.id === params.unitId)) {
+      return reply.status(404).send({ message: `unit '${params.unitId}' not found in organization '${params.organizationId}'` });
+    }
+    const result = organizationService.setUnitParent(params.unitId, payload.data.parent_unit_id);
+    return result.ok ? reply.send(result.data) : reply.status(400).send({ message: result.error });
+  });
+
+  app.post('/api/organizations/:organizationId/positions', async (request, reply) => {
+    if (!organizationService) return reply.status(503).send({ message: 'organization service not configured' });
+    const { organizationId } = request.params as { organizationId: string };
+    const payload = z.object({
+      unit_id: z.string().min(1),
+      title: z.string().min(1),
+      kind: z.enum(['executive_assistant', 'lead', 'specialist', 'worker', 'auditor']),
+      reports_to_position_id: z.string().min(1).nullable().optional(),
+      responsibilities: z.array(z.string().min(1)).max(64).optional(),
+      skills: z.array(z.string().min(1)).max(64).optional(),
+    }).strict().safeParse(request.body);
+    if (!payload.success) return reply.status(400).send({ message: payload.error.message });
+    const result = organizationService.createPosition({
+      organizationId,
+      unitId: payload.data.unit_id,
+      title: payload.data.title,
+      kind: payload.data.kind,
+      reportsToPositionId: payload.data.reports_to_position_id ?? null,
+      responsibilities: payload.data.responsibilities ?? [],
+      skills: payload.data.skills ?? [],
+    });
+    return result.ok ? reply.status(201).send(result.data) : reply.status(400).send({ message: result.error });
+  });
+
+  app.patch('/api/organizations/:organizationId/positions/:positionId/manager', async (request, reply) => {
+    if (!organizationService) return reply.status(503).send({ message: 'organization service not configured' });
+    const params = request.params as { organizationId: string; positionId: string };
+    const payload = z.object({ reports_to_position_id: z.string().min(1).nullable() }).strict().safeParse(request.body);
+    if (!payload.success) return reply.status(400).send({ message: payload.error.message });
+    const snapshot = organizationService.snapshot(params.organizationId);
+    if (!snapshot.ok || !snapshot.data.positions.some((item) => item.id === params.positionId)) {
+      return reply.status(404).send({ message: `position '${params.positionId}' not found in organization '${params.organizationId}'` });
+    }
+    const result = organizationService.setPositionManager(params.positionId, payload.data.reports_to_position_id);
+    return result.ok ? reply.send(result.data) : reply.status(400).send({ message: result.error });
+  });
+
+  app.post('/api/organizations/:organizationId/employments', async (request, reply) => {
+    if (!organizationService) return reply.status(503).send({ message: 'organization service not configured' });
+    const { organizationId } = request.params as { organizationId: string };
+    const payload = z.object({
+      position_id: z.string().min(1),
+      subject_kind: z.enum(['human', 'agent']),
+      subject_ref: z.string().min(1),
+      employment_kind: z.enum(['resident', 'on_demand', 'advisor']),
+      started_at: z.string().datetime().optional(),
+    }).strict().safeParse(request.body);
+    if (!payload.success) return reply.status(400).send({ message: payload.error.message });
+    const result = organizationService.employ({
+      organizationId,
+      positionId: payload.data.position_id,
+      subjectKind: payload.data.subject_kind,
+      subjectRef: payload.data.subject_ref,
+      employmentKind: payload.data.employment_kind,
+      ...(payload.data.started_at ? { startedAt: payload.data.started_at } : {}),
+    });
+    return result.ok ? reply.status(201).send(result.data) : reply.status(400).send({ message: result.error });
+  });
+
+  app.post('/api/organizations/:organizationId/employments/:employmentId/end', async (request, reply) => {
+    if (!organizationService) return reply.status(503).send({ message: 'organization service not configured' });
+    const params = request.params as { organizationId: string; employmentId: string };
+    const payload = z.object({ reason: z.string().min(1) }).strict().safeParse(request.body);
+    if (!payload.success) return reply.status(400).send({ message: payload.error.message });
+    const snapshot = organizationService.snapshot(params.organizationId);
+    if (!snapshot.ok || !snapshot.data.employments.some((item) => item.id === params.employmentId)) {
+      return reply.status(404).send({ message: `employment '${params.employmentId}' not found in organization '${params.organizationId}'` });
+    }
+    const result = organizationService.endEmployment(params.employmentId, payload.data.reason);
+    return result.ok ? reply.send(result.data) : reply.status(400).send({ message: result.error });
+  });
+
+  app.post('/api/organizations/:organizationId/employments/:employmentId/transfer', async (request, reply) => {
+    if (!organizationService) return reply.status(503).send({ message: 'organization service not configured' });
+    const params = request.params as { organizationId: string; employmentId: string };
+    const payload = z.object({ target_position_id: z.string().min(1), reason: z.string().min(1) }).strict().safeParse(request.body);
+    if (!payload.success) return reply.status(400).send({ message: payload.error.message });
+    const snapshot = organizationService.snapshot(params.organizationId);
+    if (!snapshot.ok || !snapshot.data.employments.some((item) => item.id === params.employmentId)) {
+      return reply.status(404).send({ message: `employment '${params.employmentId}' not found in organization '${params.organizationId}'` });
+    }
+    const result = organizationService.transferEmployment(params.employmentId, payload.data.target_position_id, payload.data.reason);
+    return result.ok ? reply.send(result.data) : reply.status(400).send({ message: result.error });
+  });
+
+  app.post('/api/organizations/:organizationId/assistant/requests', async (request, reply) => {
+    if (!executiveAssistantService) return reply.status(503).send({ message: 'executive assistant service not configured' });
+    const { organizationId } = request.params as { organizationId: string };
+    const payload = z.object({
+      requested_by: z.string().min(1),
+      title: z.string().min(1),
+      body: z.string().min(1),
+      priority: z.enum(['low', 'normal', 'high']).default('normal'),
+      requested_capabilities: z.array(z.string().min(1)).max(32).default([]),
+      task_type: z.string().min(1).default('quick'),
+      project_id: z.string().min(1).nullable().optional(),
+      due_at: z.string().datetime().nullable().optional(),
+      target_position_id: z.string().min(1).nullable().optional(),
+    }).strict().safeParse(request.body);
+    if (!payload.success) return reply.status(400).send({ message: payload.error.message });
+    const result = executiveAssistantService.intake({
+      organizationId,
+      requestedBy: payload.data.requested_by,
+      title: payload.data.title,
+      body: payload.data.body,
+      priority: payload.data.priority,
+      requestedCapabilities: payload.data.requested_capabilities,
+      taskType: payload.data.task_type,
+      projectId: payload.data.project_id ?? null,
+      dueAt: payload.data.due_at ?? null,
+      targetPositionId: payload.data.target_position_id ?? null,
+    });
+    return result.ok ? reply.status(201).send(result) : reply.status(400).send({ message: result.error });
+  });
+
+  app.get('/api/organizations/:organizationId/assistant/inbox', async (request, reply) => {
+    if (!executiveAssistantService) return reply.status(503).send({ message: 'executive assistant service not configured' });
+    const { organizationId } = request.params as { organizationId: string };
+    const query = z.object({
+      status: z.enum(['received', 'triage', 'delegated', 'blocked', 'completed', 'cancelled']).optional(),
+    }).safeParse(request.query);
+    if (!query.success) return reply.status(400).send({ message: query.error.message });
+    return reply.send({ requests: executiveAssistantService.listInbox(organizationId, query.data.status) });
+  });
+
+  app.get('/api/organizations/:organizationId/assistant/commitments', async (request, reply) => {
+    if (!executiveAssistantService) return reply.status(503).send({ message: 'executive assistant service not configured' });
+    const { organizationId } = request.params as { organizationId: string };
+    return reply.send({ commitments: executiveAssistantService.listCommitments(organizationId) });
+  });
+
+  app.get('/api/organizations/:organizationId/assistant/requests/:requestId', async (request, reply) => {
+    if (!executiveAssistantService) return reply.status(503).send({ message: 'executive assistant service not configured' });
+    const params = request.params as { organizationId: string; requestId: string };
+    const item = executiveAssistantService.getRequest(params.requestId);
+    if (!item || item.organizationId !== params.organizationId) return reply.status(404).send({ message: 'executive request not found' });
+    return reply.send(item);
+  });
+
+  app.post('/api/organizations/:organizationId/assistant/requests/:requestId/reconcile', async (request, reply) => {
+    if (!executiveAssistantService) return reply.status(503).send({ message: 'executive assistant service not configured' });
+    const params = request.params as { organizationId: string; requestId: string };
+    const item = executiveAssistantService.getRequest(params.requestId);
+    if (!item || item.organizationId !== params.organizationId) return reply.status(404).send({ message: 'executive request not found' });
+    const payload = z.object({ evidence_refs: z.array(z.string().min(1)).max(128).default([]) }).strict().safeParse(request.body ?? {});
+    if (!payload.success) return reply.status(400).send({ message: payload.error.message });
+    const result = executiveAssistantService.reconcile(params.requestId, payload.data.evidence_refs);
+    return result.ok ? reply.send(result) : reply.status(400).send({ message: result.error });
   });
 
   app.post('/api/relationships', async (request, reply) => {

@@ -73,7 +73,7 @@ import {
   type MemoryService,
   type RuntimeNodeCredentialService,
   type MergeCoordinatorService,
-  BorrowService,
+  type BorrowService,
   runBorrowCommand,
   TaskClaimService,
   runTaskClaimCommand,
@@ -92,6 +92,9 @@ import {
   InformationGovernanceService,
   ConsentService,
   ActionRiskService,
+  OrganizationService,
+  ExecutiveAssistantService,
+  type ExecutiveTaskPort,
   runTaskAskCommand,
   ThreadTaskBindingService,
   runThreadBindCommand,
@@ -112,6 +115,8 @@ import type {
   IThreadTaskBindingRepository,
   ITeamRepository,
   IForumRepository,
+  IOrganizationRepository,
+  IExecutiveAssistantRepository,
 } from '@agora-ts/contracts';
 import { NotificationOutboxRepository, TaskRepository } from '@agora-ts/db';
 import { ThreadTaskBindingRepository } from '@agora-ts/db';
@@ -131,6 +136,8 @@ import {
   TaskClaimRepository,
   TeamRepository,
   ForumRepository,
+  OrganizationRepository,
+  ExecutiveAssistantRepository,
   CoordinationRepository,
   type AgoraDatabase,
 } from '@agora-ts/db';
@@ -292,6 +299,10 @@ export interface CliDependencies {
   consentGrantRepository?: IConsentGrantRepository;
   actionRiskService?: ActionRiskService;
   actionRiskAssessmentRepository?: IActionRiskAssessmentRepository;
+  organizationService?: OrganizationService;
+  organizationRepository?: IOrganizationRepository;
+  executiveAssistantService?: ExecutiveAssistantService;
+  executiveAssistantRepository?: IExecutiveAssistantRepository;
   teamRepository?: ITeamRepository;
   forumRepository?: IForumRepository;
   threadTaskBindingRepository?: IThreadTaskBindingRepository;
@@ -1315,6 +1326,190 @@ export function createCliProgram(deps: CliDependencies = {}) {
     .action(async (options: { limit?: number; scope?: string; agent?: string }) => {
       const scopeRef = options.scope ?? process.env.AGORA_GROUP_SCOPE ?? 'group:default';
       const result = await getGroupMemoryService().list({ scopeRef, ...(options.limit !== undefined ? { limit: options.limit } : {}) });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  const getOrganizationRepository = (): IOrganizationRepository =>
+    deps.organizationRepository ?? new OrganizationRepository(resolveComposition().db);
+  const getOrganizationService = () => deps.organizationService ?? new OrganizationService({
+    repository: getOrganizationRepository(),
+  });
+  const getExecutiveAssistantRepository = (): IExecutiveAssistantRepository =>
+    deps.executiveAssistantRepository ?? new ExecutiveAssistantRepository(resolveComposition().db);
+  const executiveTaskPort: ExecutiveTaskPort = {
+    createAssignedTask: (input) => {
+      const task = taskService.createTask({
+        title: input.title,
+        type: input.taskType,
+        creator: input.requestedBy,
+        description: input.description,
+        priority: input.priority,
+        locale: 'zh-CN',
+        ...(input.projectId ? { project_id: input.projectId } : {}),
+      });
+      getTaskClaimService().claim({
+        taskId: task.id,
+        agentRef: input.assigneeRef,
+        reason: `executive request assigned to ${input.assigneePositionId}`,
+      });
+      return { taskId: task.id };
+    },
+    getTaskState: (taskId) => taskService.getTask(taskId)?.state ?? null,
+  };
+  const getExecutiveAssistantService = () => deps.executiveAssistantService ?? new ExecutiveAssistantService({
+    repository: getExecutiveAssistantRepository(),
+    organizationRepository: getOrganizationRepository(),
+    taskPort: executiveTaskPort,
+  });
+
+  const company = program.command('company').description('long-lived organization, positions and employment');
+  company.command('create')
+    .requiredOption('--slug <slug>')
+    .requiredOption('--name <name>')
+    .requiredOption('--owner <actorRef>')
+    .option('--domain <informationDomain>', 'information governance domain', 'work')
+    .option('--purpose <purpose>')
+    .action((options: { slug: string; name: string; owner: string; domain: string; purpose?: string }) => {
+      const result = getOrganizationService().createOrganization({
+        slug: options.slug, name: options.name, ownerRef: options.owner, informationDomain: options.domain,
+        ...(options.purpose ? { purpose: options.purpose } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  company.command('list').action(() => {
+    writeLine(stdout, JSON.stringify({ ok: true, data: getOrganizationService().listOrganizations() }, null, 2));
+  });
+  company.command('show').argument('<idOrSlug>').action((idOrSlug: string) => {
+    const service = getOrganizationService();
+    const organization = service.getOrganization(idOrSlug);
+    const result = organization ? service.snapshot(organization.id) : { ok: false as const, error: `organization '${idOrSlug}' not found` };
+    writeLine(stdout, JSON.stringify(result, null, 2));
+    if (!result.ok) process.exitCode = 1;
+  });
+
+  const companyUnit = company.command('unit').description('organization units');
+  companyUnit.command('add')
+    .requiredOption('--org <organizationId>')
+    .requiredOption('--name <name>')
+    .requiredOption('--kind <kind>', 'executive_office|department|team')
+    .option('--parent <unitId>')
+    .option('--responsibility <value>', 'repeatable responsibility', collectOption, [])
+    .action((options: { org: string; name: string; kind: 'executive_office' | 'department' | 'team'; parent?: string; responsibility: string[] }) => {
+      const result = getOrganizationService().createUnit({
+        organizationId: options.org, name: options.name, kind: options.kind,
+        responsibilities: options.responsibility,
+        ...(options.parent ? { parentUnitId: options.parent } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  companyUnit.command('parent')
+    .argument('<unitId>')
+    .option('--parent <unitId>', 'omit to clear')
+    .action((unitId: string, options: { parent?: string }) => {
+      const result = getOrganizationService().setUnitParent(unitId, options.parent ?? null);
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  const companyPosition = company.command('position').description('durable organization positions');
+  companyPosition.command('add')
+    .requiredOption('--org <organizationId>')
+    .requiredOption('--unit <unitId>')
+    .requiredOption('--title <title>')
+    .requiredOption('--kind <kind>', 'executive_assistant|lead|specialist|worker|auditor')
+    .option('--reports-to <positionId>')
+    .option('--responsibility <value>', 'repeatable responsibility', collectOption, [])
+    .option('--skill <value>', 'repeatable skill', collectOption, [])
+    .action((options: { org: string; unit: string; title: string; kind: 'executive_assistant' | 'lead' | 'specialist' | 'worker' | 'auditor'; reportsTo?: string; responsibility: string[]; skill: string[] }) => {
+      const result = getOrganizationService().createPosition({
+        organizationId: options.org, unitId: options.unit, title: options.title, kind: options.kind,
+        responsibilities: options.responsibility, skills: options.skill,
+        ...(options.reportsTo ? { reportsToPositionId: options.reportsTo } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  companyPosition.command('manager')
+    .argument('<positionId>')
+    .option('--reports-to <positionId>', 'omit to clear')
+    .action((positionId: string, options: { reportsTo?: string }) => {
+      const result = getOrganizationService().setPositionManager(positionId, options.reportsTo ?? null);
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  const companyEmployment = company.command('employment').description('employment lifecycle and history');
+  companyEmployment.command('add')
+    .requiredOption('--org <organizationId>')
+    .requiredOption('--position <positionId>')
+    .requiredOption('--subject <actorRef>')
+    .option('--subject-kind <kind>', 'human|agent', 'agent')
+    .option('--kind <kind>', 'resident|on_demand|advisor', 'resident')
+    .option('--started-at <iso>')
+    .action((options: { org: string; position: string; subject: string; subjectKind: 'human' | 'agent'; kind: 'resident' | 'on_demand' | 'advisor'; startedAt?: string }) => {
+      const result = getOrganizationService().employ({
+        organizationId: options.org, positionId: options.position, subjectKind: options.subjectKind,
+        subjectRef: options.subject, employmentKind: options.kind,
+        ...(options.startedAt ? { startedAt: options.startedAt } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  companyEmployment.command('end').argument('<employmentId>').requiredOption('--reason <reason>')
+    .action((employmentId: string, options: { reason: string }) => {
+      const result = getOrganizationService().endEmployment(employmentId, options.reason);
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  companyEmployment.command('transfer').argument('<employmentId>').requiredOption('--position <positionId>').requiredOption('--reason <reason>')
+    .action((employmentId: string, options: { position: string; reason: string }) => {
+      const result = getOrganizationService().transferEmployment(employmentId, options.position, options.reason);
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+
+  const assistant = program.command('assistant').description('Executive Assistant inbox and commitment ledger');
+  assistant.command('ask').argument('<title>')
+    .requiredOption('--org <organizationId>')
+    .requiredOption('--body <request>')
+    .option('--requested-by <actorRef>', 'requester actor ref', 'human:ceo')
+    .option('--priority <priority>', 'low|normal|high', 'normal')
+    .option('--capability <value>', 'repeatable routing capability', collectOption, [])
+    .option('--task-type <type>', 'Agora task template', 'quick')
+    .option('--project-id <projectId>')
+    .option('--due-at <iso>')
+    .option('--target-position <positionId>')
+    .action((title: string, options: { org: string; body: string; requestedBy: string; priority: 'low' | 'normal' | 'high'; capability: string[]; taskType: string; projectId?: string; dueAt?: string; targetPosition?: string }) => {
+      const result = getExecutiveAssistantService().intake({
+        organizationId: options.org, requestedBy: options.requestedBy, title, body: options.body,
+        priority: options.priority, requestedCapabilities: options.capability, taskType: options.taskType,
+        ...(options.projectId ? { projectId: options.projectId } : {}),
+        ...(options.dueAt ? { dueAt: options.dueAt } : {}),
+        ...(options.targetPosition ? { targetPositionId: options.targetPosition } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  assistant.command('inbox').requiredOption('--org <organizationId>').option('--status <status>')
+    .action((options: { org: string; status?: 'received' | 'triage' | 'delegated' | 'blocked' | 'completed' | 'cancelled' }) => {
+      writeLine(stdout, JSON.stringify({ ok: true, data: getExecutiveAssistantService().listInbox(options.org, options.status) }, null, 2));
+    });
+  assistant.command('commitments').requiredOption('--org <organizationId>')
+    .action((options: { org: string }) => {
+      writeLine(stdout, JSON.stringify({ ok: true, data: getExecutiveAssistantService().listCommitments(options.org) }, null, 2));
+    });
+  assistant.command('show').argument('<requestId>').action((requestId: string) => {
+    const item = getExecutiveAssistantService().getRequest(requestId);
+    const result = item ? { ok: true, data: item } : { ok: false, error: `executive request '${requestId}' not found` };
+    writeLine(stdout, JSON.stringify(result, null, 2));
+    if (!result.ok) process.exitCode = 1;
+  });
+  assistant.command('reconcile').argument('<requestId>').option('--evidence <ref>', 'repeatable artifact/decision ref', collectOption, [])
+    .action((requestId: string, options: { evidence: string[] }) => {
+      const result = getExecutiveAssistantService().reconcile(requestId, options.evidence);
       writeLine(stdout, JSON.stringify(result, null, 2));
       if (!result.ok) process.exitCode = 1;
     });

@@ -426,6 +426,22 @@ export type {
 } from './group-memory-ports.js';
 export { GroupMemoryService } from './group-memory-service.js';
 export { TeamService } from './team-service.js';
+export {
+  OrganizationService,
+  type CreateOrganizationInput,
+  type CreateOrganizationUnitInput,
+  type CreatePositionInput,
+  type EmployInput,
+  type OrganizationResult,
+  type OrganizationServiceOptions,
+} from './organization-service.js';
+export {
+  ExecutiveAssistantService,
+  type ExecutiveAssistantResult,
+  type ExecutiveAssistantServiceOptions,
+  type ExecutiveIntakeInput,
+  type ExecutiveTaskPort,
+} from './executive-assistant-service.js';
 export { OrgHierarchyResolver } from './org-hierarchy-resolver.js';
 export { DelegateRouter } from './delegate-router.js';
 export { ForumService, FORUM_CATEGORIES } from './forum-service.js';
