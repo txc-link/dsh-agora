@@ -521,3 +521,4 @@ export {
   type ConsentServiceOptions,
   type InformationGovernanceServiceOptions,
 } from './governance-service.js';
+export { redactSecrets, redactSecretText } from './secret-redaction.js';

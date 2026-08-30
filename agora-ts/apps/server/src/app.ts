@@ -233,6 +233,8 @@ import {
   InformationGovernanceService,
   RelationshipProfileService,
   RelationshipInitiativeService,
+  redactSecretText,
+  redactSecrets,
   OrganizationService,
   ExecutiveAssistantService,
   TaskClaimService,
@@ -5560,7 +5562,14 @@ export function buildApp(options: BuildAppOptions = {}) {
     }
     try {
       const { nodeId, dispatchId } = request.params as { nodeId: string; dispatchId: string };
-      const input = completeRuntimeNodeDispatchRequestSchema.parse(request.body);
+      const parsedInput = completeRuntimeNodeDispatchRequestSchema.parse(request.body);
+      const input = {
+        ...parsedInput,
+        ...(parsedInput.result ? { result: redactSecrets(parsedInput.result) } : {}),
+        ...(parsedInput.result_envelope ? { result_envelope: redactSecrets(parsedInput.result_envelope) } : {}),
+        ...(parsedInput.delivery_payload ? { delivery_payload: redactSecrets(parsedInput.delivery_payload) } : {}),
+        ...(parsedInput.error ? { error: redactSecretText(parsedInput.error) } : {}),
+      };
       const dispatch = runtimeNodeDispatchSchema.parse(
         runtimeNodeRegistryService.completeDispatch(nodeId, dispatchId, input),
       );

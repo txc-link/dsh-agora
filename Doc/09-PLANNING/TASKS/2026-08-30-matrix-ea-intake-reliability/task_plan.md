@@ -9,6 +9,7 @@ Make the human Matrix slash-command path reliably create an Executive Assistant 
 - Agora REST accepts ISO-8601 due times with an explicit UTC offset.
 - `dsh-matrix-connector` does not reuse a DSH node id as a Core project id for organization requests.
 - Matrix command failures are returned to the room instead of becoming silent log-only failures.
+- Runtime results are passed through a general secret-redaction boundary before persistence or artifact creation.
 - Real Matrix → connector → Core → organization/runtime dispatch smoke coverage.
 
 ## Plan
@@ -17,7 +18,7 @@ Make the human Matrix slash-command path reliably create an Executive Assistant 
 2. Implement the smallest adapter/Core corrections.
 3. Run strict/unit gates in both repositories.
 4. Deploy the connector and Core changes.
-5. Re-run read-only commands, valid intake, invalid intake, deduplication, and task-status checks.
+5. Re-run read-only commands, valid intake, invalid intake, deduplication, ordinary-chat isolation, task-status checks, and output-DLP checks.
 
 ## Workspace
 
@@ -29,4 +30,3 @@ Make the human Matrix slash-command path reliably create an Executive Assistant 
 
 - `Doc/Agora-实施排期-Agora-TS.md` change log.
 - Walkthrough: `Doc/10-WALKTHROUGH/2026-08-30-matrix-ea-intake-reliability.md`.
-

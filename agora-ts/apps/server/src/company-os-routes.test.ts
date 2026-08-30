@@ -199,13 +199,20 @@ describe('Company OS REST', () => {
         claim_token: claimed!.claim_token,
         status: 'completed',
         session_id: 'session-ea-1',
-        result: { answer: 'Morning brief delivered' },
+        result: { answer: 'Morning brief delivered; token m0sk_exampleCredential123456789' },
         result_envelope: {
           schema: 'agora.runtime-result/v1',
-          answer: 'Morning brief delivered',
-          claims: [],
+          answer: 'Morning brief delivered; token m0sk_exampleCredential123456789',
+          claims: [{
+            id: 'claim-1',
+            statement: 'api key: exampleCredential123456789',
+            evidence_ids: ['brief'],
+          }],
           evidence: [{ id: 'brief', kind: 'file', uri: 'brain://company/brief.md' }],
-          environment: { runtime_provider: 'dsh', agent_ref: 'ea' },
+          environment: {
+            runtime_provider: 'dsh', agent_ref: 'ea',
+            metadata: { access_token: 'opaque-value', revision: 'safe-revision' },
+          },
         },
       },
     });
@@ -223,7 +230,12 @@ describe('Company OS REST', () => {
       }),
     }));
     expect(Buffer.from(createArtifact.mock.calls[0]![0].content_base64, 'base64').toString('utf8'))
-      .toBe('Morning brief delivered');
+      .toBe('Morning brief delivered; token [REDACTED]');
+    expect(runtimeNodeRegistryService.listDispatches('node-b')[0]?.result_envelope).toMatchObject({
+      answer: 'Morning brief delivered; token [REDACTED]',
+      claims: [{ statement: 'api key: [REDACTED]' }],
+      environment: { metadata: { access_token: '[REDACTED]', revision: 'safe-revision' } },
+    });
     const executiveRepository = new ExecutiveAssistantRepository(db);
     expect(executiveRepository.getRequest(request.json().request.id)).toMatchObject({ status: 'completed' });
     expect(executiveRepository.getCommitmentByRequest(request.json().request.id)).toMatchObject({
@@ -237,7 +249,7 @@ describe('Company OS REST', () => {
     expect(new ProgressLogRepository(db).listByTask('task-ea-1')).toEqual(expect.arrayContaining([
       expect.objectContaining({
         kind: 'runtime_result',
-        content: 'Morning brief delivered',
+        content: 'Morning brief delivered; token [REDACTED]',
         actor: 'dsh:node-b:ea',
       }),
     ]));
