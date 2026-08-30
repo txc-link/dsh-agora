@@ -28,12 +28,16 @@ explicit Core authority.
 - New Core/DB/CLI/REST tests pass (24 assertions in the focused run).
 - Connector full regression passes 212/212.
 - Local Windows SAPI Chinese WAV smoke passes.
-- Remote Agora health and Synapse v1.12 probes pass.
+- Remote Core was updated to `e5b6e16`, built on the server, and
+  `agora.service` restarted active. Health, relationship, initiative, and
+  consent routes all return authenticated 200.
+- `dsh-matrix-connector@0.2.1` is published as npm `latest`; node-b installs the
+  registry version and passes DSH HTTP plus Matrix identity/sync verification.
 
 ## Deployment gate
 
-The live Core at `8.136.15.147:18008` does not yet contain these routes, and
-Synapse public registration is disabled. Deployment needs server rollout plus
-admin provisioning of dedicated Life/Health/Companion identities. Reusing the
-existing Company bot is explicitly rejected because it would only simulate
-isolation.
+The Core rollout is complete. Synapse public registration is disabled, so the
+remaining deployment gate is admin provisioning of dedicated
+Life/Health/Companion identities plus a recovery-tested durable E2EE store.
+Reusing the existing Company bot remains explicitly rejected because it would
+only simulate isolation.
