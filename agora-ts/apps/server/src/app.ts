@@ -143,6 +143,7 @@ import {
   updateProjectRuntimePolicyRequestSchema,
   upsertRuntimeTargetOverlayRequestSchema,
   type HealthResponse,
+  type RuntimeNodeDispatchDto,
   unifiedHealthSnapshotSchema,
   liveSessionSchema,
   liveSessionCleanupResponseSchema,
@@ -160,8 +161,8 @@ import {
   subtaskLifecycleRequestSchema,
   subtaskDoneRequestSchema,
   listCitizensResponseSchema,
-  IFlowLogRepository,
-  IProgressLogRepository,
+  type IFlowLogRepository,
+  type IProgressLogRepository,
   taskNoteRequestSchema,
   unblockTaskRequestSchema,
   templateValidationRequestSchema,
@@ -252,6 +253,8 @@ import {
   RelationshipInitiativeRepository,
   OrganizationRepository,
   ExecutiveAssistantRepository,
+  ParticipantBindingRepository,
+  ProgressLogRepository,
   TaskClaimRepository,
   TemplateRepository,
   type AgoraDatabase,
@@ -1152,6 +1155,46 @@ function renderMetrics(options: {
   return `${lines.join('\n')}\n`;
 }
 
+function parseDshRuntimeTarget(value: string): { nodeId: string; agentRef: string } | null {
+  const match = /^dsh:([^:]+):(.+)$/u.exec(value);
+  return match ? { nodeId: match[1]!, agentRef: match[2]! } : null;
+}
+
+function buildExecutiveDispatchPrompt(
+  input: Parameters<ExecutiveTaskPort['createAssignedTask']>[0],
+): string {
+  const capabilities = input.requestedCapabilities.length > 0
+    ? input.requestedCapabilities.join(', ')
+    : 'general';
+  return [
+    `You are the ${input.assigneePositionTitle} in organization ${input.organizationId}.`,
+    `Executive request: ${input.title}`,
+    input.description,
+    `Requested capabilities: ${capabilities}.`,
+    'Complete the work now. Return a concise deliverable, cite evidence when factual claims are made, and identify any unresolved risks.',
+    `This dispatch is restricted to the ${input.informationDomain} information domain. Do not access or disclose data outside that domain.`,
+  ].join('\n\n');
+}
+
+function runtimeDispatchEvidenceRefs(dispatch: RuntimeNodeDispatchDto): string[] {
+  const refs = [`runtime-dispatch:${dispatch.id}`];
+  for (const evidence of dispatch.result_envelope?.evidence ?? []) {
+    refs.push(
+      evidence.uri
+      ?? evidence.revision
+      ?? evidence.content_hash
+      ?? `runtime-evidence:${dispatch.id}:${evidence.id}`,
+    );
+  }
+  return [...new Set(refs)];
+}
+
+function runtimeDispatchAnswer(dispatch: RuntimeNodeDispatchDto): string {
+  if (dispatch.result_envelope?.answer.trim()) return dispatch.result_envelope.answer.trim();
+  const answer = dispatch.result?.answer;
+  return typeof answer === 'string' && answer.trim() ? answer.trim() : 'Runtime dispatch completed.';
+}
+
 export function buildApp(options: BuildAppOptions = {}) {
   const app = Fastify({
     logger: false,
@@ -1189,6 +1232,15 @@ export function buildApp(options: BuildAppOptions = {}) {
           if (!template) throw new Error(`task template '${input.taskType}' not found`);
           const templateMembers = Object.entries(template.template.defaultTeam ?? {});
           if (templateMembers.length === 0) throw new Error(`task template '${input.taskType}' has no team roles`);
+          const runtimeTarget = parseDshRuntimeTarget(input.assigneeRef);
+          const runtimeNodes = runtimeTarget ? options.runtimeNodeRegistryService : undefined;
+          if (runtimeTarget && !runtimeNodes) throw new Error('runtime node registry is not configured');
+          if (runtimeTarget) {
+            const node = runtimeNodes!.getNode(runtimeTarget.nodeId);
+            if (node.presence !== 'online') {
+              throw new Error(`runtime node '${runtimeTarget.nodeId}' is not online`);
+            }
+          }
           const task = taskService.createTask({
             title: input.title,
             type: input.taskType,
@@ -1216,6 +1268,29 @@ export function buildApp(options: BuildAppOptions = {}) {
             agentRef: input.assigneeRef,
             reason: `executive request assigned to ${input.assigneePositionId}`,
           });
+          if (runtimeTarget && runtimeNodes) {
+            const participant = new ParticipantBindingRepository(options.db!)
+              .getByTaskAndAgent(task.id, input.assigneeRef);
+            if (!participant) {
+              throw new Error(`task '${task.id}' has no participant binding for '${input.assigneeRef}'`);
+            }
+            runtimeNodes.createDispatch(runtimeTarget.nodeId, {
+              task_id: task.id,
+              participant_binding_id: participant.id,
+              runtime_target_ref: input.assigneeRef,
+              prompt: buildExecutiveDispatchPrompt(input),
+              idempotency_key: `executive-request:${input.requestId}`,
+              metadata: {
+                source: 'executive_assistant',
+                auto_advance_task: true,
+                executive_request_id: input.requestId,
+                organization_id: input.organizationId,
+                information_domain: input.informationDomain,
+                assignee_position_id: input.assigneePositionId,
+                assignee_employment_id: input.assigneeEmploymentId,
+              },
+            });
+          }
           return { taskId: task.id };
         },
         getTaskState: (taskId) => taskService.getTask(taskId)?.state ?? null,
@@ -1230,6 +1305,51 @@ export function buildApp(options: BuildAppOptions = {}) {
         })
       : undefined
   );
+  const runtimeResultProgressRepository = options.db
+    ? new ProgressLogRepository(options.db)
+    : undefined;
+  const synchronizeExecutiveDispatchCompletion = (dispatch: RuntimeNodeDispatchDto): void => {
+    if (
+      dispatch.status !== 'completed'
+      || !dispatch.task_id
+      || dispatch.metadata?.auto_advance_task !== true
+      || dispatch.metadata?.source !== 'executive_assistant'
+      || !taskService
+    ) return;
+    const task = taskService.getTask(dispatch.task_id);
+    if (task?.state === 'active') {
+      runtimeResultProgressRepository?.insertProgressLog({
+        task_id: dispatch.task_id,
+        kind: 'runtime_result',
+        stage_id: task.current_stage,
+        content: runtimeDispatchAnswer(dispatch),
+        artifacts: {
+          runtime_dispatch_id: dispatch.id,
+          session_id: dispatch.session_id,
+          result_envelope: dispatch.result_envelope,
+        },
+        actor: dispatch.runtime_target_ref,
+      });
+      try {
+        taskService.advanceTask(dispatch.task_id, { callerId: dispatch.runtime_target_ref });
+      } catch (error) {
+        runtimeResultProgressRepository?.insertProgressLog({
+          task_id: dispatch.task_id,
+          kind: 'runtime_sync_error',
+          stage_id: task.current_stage,
+          content: error instanceof Error ? error.message : String(error),
+          artifacts: { runtime_dispatch_id: dispatch.id },
+          actor: 'system',
+        });
+      }
+    }
+    if (taskService.getTask(dispatch.task_id)?.state === 'done') {
+      executiveAssistantService?.reconcileByTask(
+        dispatch.task_id,
+        runtimeDispatchEvidenceRefs(dispatch),
+      );
+    }
+  };
   const orchestratorDirectCreateService = taskService
     ? new OrchestratorDirectCreateService({ taskService })
     : undefined;
@@ -5407,9 +5527,11 @@ export function buildApp(options: BuildAppOptions = {}) {
     try {
       const { nodeId, dispatchId } = request.params as { nodeId: string; dispatchId: string };
       const input = completeRuntimeNodeDispatchRequestSchema.parse(request.body);
-      return reply.send(runtimeNodeDispatchSchema.parse(
+      const dispatch = runtimeNodeDispatchSchema.parse(
         runtimeNodeRegistryService.completeDispatch(nodeId, dispatchId, input),
-      ));
+      );
+      synchronizeExecutiveDispatchCompletion(dispatch);
+      return reply.send(dispatch);
     } catch (error) {
       const translated = translateError(error);
       return reply.status(translated.statusCode).send(translated.body);

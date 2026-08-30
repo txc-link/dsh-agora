@@ -11,7 +11,9 @@ import type {
 
 export interface ExecutiveTaskPort {
   createAssignedTask(input: {
+    requestId: string;
     organizationId: string;
+    informationDomain: string;
     title: string;
     description: string;
     requestedBy: string;
@@ -20,6 +22,7 @@ export interface ExecutiveTaskPort {
     taskType: string;
     projectId: string | null;
     assigneePositionId: string;
+    assigneePositionTitle: string;
     assigneeEmploymentId: string;
     assigneeRef: string;
   }): { taskId: string };
@@ -146,7 +149,9 @@ export class ExecutiveAssistantService {
     }
     try {
       const task = this.taskPort.createAssignedTask({
+        requestId: request.id,
         organizationId: input.organizationId,
+        informationDomain: organization.informationDomain,
         title: input.title.trim(),
         description: input.body.trim(),
         requestedBy: input.requestedBy.trim(),
@@ -155,6 +160,7 @@ export class ExecutiveAssistantService {
         taskType: input.taskType?.trim() || 'quick',
         projectId: input.projectId ?? null,
         assigneePositionId: owner.id,
+        assigneePositionTitle: owner.title,
         assigneeEmploymentId: employment.id,
         assigneeRef: employment.subjectRef,
       });
@@ -208,6 +214,11 @@ export class ExecutiveAssistantService {
       return { ok: true, request: cancelledRequest, commitment: cancelledCommitment };
     }
     return { ok: true, request, commitment };
+  }
+
+  reconcileByTask(taskId: string, evidenceRefs: string[] = []): ExecutiveAssistantResult | null {
+    const request = this.repository.getRequestByTask(taskId);
+    return request ? this.reconcile(request.id, evidenceRefs) : null;
   }
 
   getRequest(requestId: string): ExecutiveRequestRecord | null {

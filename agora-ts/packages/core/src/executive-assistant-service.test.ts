@@ -59,6 +59,7 @@ function assistantRepository(): IExecutiveAssistantRepository & { requests: Exec
       requests.push(record); return record;
     },
     getRequest: (id) => requests.find((item) => item.id === id) ?? null,
+    getRequestByTask: (taskId) => requests.find((item) => item.taskId === taskId) ?? null,
     listRequests: (organizationId, status) => requests.filter((item) => item.organizationId === organizationId && (!status || item.status === status)),
     updateRequestRouting(id, input, expectedVersion) {
       const index = requests.findIndex((item) => item.id === id && item.version === expectedVersion); if (index < 0) return null;
@@ -138,7 +139,9 @@ describe('ExecutiveAssistantService', () => {
       priority: 'normal', requestedCapabilities: ['research'], taskType: 'research',
     });
     if (!created.ok) throw new Error(created.error);
-    const reconciled = service.reconcile(created.request.id, ['artifact:report']);
+    const reconciled = service.reconcileByTask('task-1', ['artifact:report']);
+    expect(reconciled).not.toBeNull();
+    if (!reconciled) return;
     expect(reconciled.ok).toBe(true);
     if (!reconciled.ok) return;
     expect(reconciled.request.status).toBe('completed');

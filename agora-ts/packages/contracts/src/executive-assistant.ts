@@ -72,6 +72,7 @@ export interface InsertCommitmentInput {
 export interface IExecutiveAssistantRepository {
   insertRequest(input: InsertExecutiveRequestInput): ExecutiveRequestRecord;
   getRequest(requestId: string): ExecutiveRequestRecord | null;
+  getRequestByTask(taskId: string): ExecutiveRequestRecord | null;
   listRequests(organizationId: string, status?: ExecutiveRequestStatus): ExecutiveRequestRecord[];
   updateRequestRouting(
     requestId: string,

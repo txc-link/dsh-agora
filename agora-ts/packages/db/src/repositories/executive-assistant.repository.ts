@@ -44,6 +44,13 @@ export class ExecutiveAssistantRepository implements IExecutiveAssistantReposito
     return row ? this.parseRequest(row) : null;
   }
 
+  getRequestByTask(taskId: string): ExecutiveRequestRecord | null {
+    const row = this.db.prepare(
+      'SELECT * FROM executive_requests WHERE task_id = ? ORDER BY created_at DESC LIMIT 1',
+    ).get(taskId) as Record<string, unknown> | undefined;
+    return row ? this.parseRequest(row) : null;
+  }
+
   listRequests(organizationId: string, status?: ExecutiveRequestStatus): ExecutiveRequestRecord[] {
     const rows = (status
       ? this.db.prepare('SELECT * FROM executive_requests WHERE organization_id = ? AND status = ? ORDER BY created_at DESC, id DESC').all(organizationId, status)
