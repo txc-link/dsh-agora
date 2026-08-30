@@ -1,6 +1,6 @@
 # 实施排期 SSoT — agora-ts (主仓后端)
 
-**Last updated**: 2026-08-29 (Asia/Shanghai)
+**Last updated**: 2026-08-30 (Asia/Shanghai)
 **Owner**: 总工
 **Repo**: txc-link/dsh-agora (主仓, branch master / develop)
 **Phase**: 3 (matrix-connector v0.1.x + 准备 R-E Space / R-F Web Detail)
@@ -18,6 +18,7 @@
 | 4. R-F thread web 详情面板 | ⏳ scoped to dashboard (主仓前端), agora-ts 不动 | 见 Dashboard SSoT |
 | 5. agora-ts 自身大改 | ⏳ not started | 需新建独立 phase 计划 |
 | **6. Onboarding cross-platform (债 4 闭环)** | ✅ **done (turn 157)** | `agora init --non-interactive` (CI 友好 + `--admin-password-stdin` + `--skip-assets`) + `agora serve` 跨5 平台 (systemd/launchd/windows/docker/bare) + `Doc/scripts/install-agora.sh` 一键 wrapper; 现有 `agora start` dev helper 保持不变; walkthrough `Doc/10-WALKTHROUGH/2026-08-30-agora-onboarding-cross-platform.md` |
+| **7. Company OS v0.1** | ✅ **deployed** | Organization/Unit/Position/Employment + EA request/task/commitment；REST/CLI/Matrix；restart recovery；commit `469a23b` |
 
 **Phase 3 默认原则**：R-E / R-F 严格限定在 connector + dashboard 侧，**agora-ts 这一阶段不主动大改**。仅当 connector / dashboard 侧需要 agora-ts 暴露新能力时，按 §6 流程加 slice。
 
@@ -32,6 +33,9 @@
 | **A3** | DSH plugin 不复制核心编排, plugin = slash bridge / live status / 轻量 action | AGENTS.md §2 |
 | **A4** | Human 入口唯一 = Dashboard 登录态 | AGENTS.md §2 |
 | **A5** | Slack/Discord/Matrix 同等 IM adapter — 不可在 Core 写死任一平台 | AGENTS.md §1 |
+| **A6** | Organization 独立于 Project；现有 Team 保留为项目执行团队，不充当公司 SSoT | Company OS v0.1 |
+| **A7** | Employment 绑定 provider-neutral `subject_kind + subject_ref`；运行时只是投影 | Company OS v0.1 |
+| **A8** | Company/Life/Health/Companion 是独立根信息域；个人域不得成为 Company 普通 Unit | Personal Office + Company OS |
 
 **Implementation implications for agora-ts**:
 - `packages/core` 只能表达抽象端口与状态机
@@ -110,6 +114,7 @@ agora-ts 这一阶段不主动开 slice。R-E / R-F 按矩阵仓 SSoT phase 3 + 
 
 ## 7. Change Log
 
+- 2026-08-30: **Company OS v0.1 deployed** (`469a23b`) — migrations 043/044；Organization/Unit/Position/Employment 正式组织模型；Executive Request + Commitment ledger；EA 按能力路由到在岗 Position，并将模板全部 role 绑定到任职 runtime target、写 task claim；REST + CLI + Matrix v0.3 接线。远端建立 `austin-agent-company`（4 units / 6 positions / 5 active employments），首次 research 请求形成 active task，Core 重启后组织、inbox、commitment 全恢复。Planning: `Doc/09-PLANNING/TASKS/2026-08-30-company-os-v01/`；Walkthrough: `Doc/10-WALKTHROUGH/2026-08-30-company-os-v01.md`。
 - 2026-08-29: agora-ts SSoT 建立 (本文件); 回写 60b01a6 R-D hotfix; R-E / R-F 显式 scope 到 connector + dashboard, agora-ts 不动
 - 2026-08-30: **org-aware-work-os S2 任务认领** (develop `505ce4d`) — TaskClaimService 状态机 + matchTaskToAgent 职责匹配 + ResidentAgentPoller + CLI `agora claim {create,release,list,claimable}` + migration 036; TDD 33 新测试, core+db 回归 592/592, 真实冒烟 8/8; planning: `Doc/09-PLANNING/TASKS/2026-08-30-org-aware-task-claiming/`; architecture: `Doc/03-ARCHITECTURE/org-aware-work-os/`; 顺手修复 database.test.ts 迁移断言陈旧 (033-036)
 - 2026-08-30: **最后一公里闭环（用户授权后）** — ① mem0: 正门建 agent API key + adapter X-API-Key 修复（m0sk_ 前缀）→ `experience add→search` 真机全链 ✅；② live server: /root/.agora/agora.json im 段（node-a 凭据）+ agora.service daemon-reload/restart → outbox scan {delivered:1} → Synapse 房间回读 ✅；③ Discord R-G: austin_l bot REST + adapter 真机冒烟 ✅。secrets 存 .secrets/（gitignored, 不入 git）。剩余: Win/Mac 实机接入（用户手动 deploy/01-04）+ federation P2/P3（留待多节点场景真实需求, 用户拍板延后）
@@ -134,3 +139,15 @@ agora-ts 这一阶段不主动开 slice。R-E / R-F 按矩阵仓 SSoT phase 3 + 
   registration disabled，等待部署/admin provision。Planning:
   `Doc/09-PLANNING/TASKS/2026-08-30-personal-companion-v01/`；Walkthrough:
   `Doc/10-WALKTHROUGH/2026-08-30-personal-companion-governance-v01.md`。
+
+## 8. Company OS v0.1 — 长期组织与 EA 入口
+
+已交付的最小可运行链：
+
+1. Organization 是公司根，固定 `information_domain`；Unit/Position 表达长期组织和汇报关系，Employment 保留入离调历史并限制每岗一个当前任职。
+2. EA intake 先持久化 request，再按 capability 在当前在岗 Position 中路由；无匹配时由 EA triage；成功时生成 Task + TaskClaim + Commitment。
+3. Task template 的全部角色绑定到被委派 Employment 的 runtime target，避免“账面委派但执行团队仍是模板默认 Agent”。
+4. CLI/REST 是完整管理面；Matrix 只做 `/agora company` 与 `/agora assistant` 薄投影，不复制组织和路由状态。
+5. Company 仅使用 `domain:company`。Life/Health/Companion 继续使用独立顶层 Space、身份和安全域，跨域读取仍需 InformationPolicy/Consent/Gate。
+
+尚未宣称完成的长期能力：自动例行总结、偏好/记忆质量治理、文档模板分层、自主学习预算和 protected-domain E2EE 上线 Gate；这些在现有 Brain/Mem0/Forum/Routine 能力之上继续迭代，不阻碍本次组织与委派主链运行。
