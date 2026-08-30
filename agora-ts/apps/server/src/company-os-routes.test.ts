@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createAgoraDatabase,
   ExecutiveAssistantRepository,
@@ -119,7 +119,13 @@ describe('Company OS REST', () => {
       capacity: { max_concurrent: 1, active: 0 },
       lease_seconds: 90,
     });
-    const app = buildApp({ db, taskService, runtimeNodeRegistryService });
+    const createArtifact = vi.fn(() => ({ id: 'artifact-ea-1' }));
+    const app = buildApp({
+      db,
+      taskService,
+      runtimeNodeRegistryService,
+      artifactService: { create: createArtifact } as never,
+    });
 
     const organization = await app.inject({
       method: 'POST', url: '/api/organizations',
@@ -201,12 +207,26 @@ describe('Company OS REST', () => {
     });
     expect(completed.statusCode).toBe(200);
     expect(taskRepository.getTask('task-ea-1')?.state).toBe('done');
+    expect(createArtifact).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'task-ea-1-executive-deliverable.md',
+      kind: 'executive_deliverable',
+      media_type: 'text/markdown',
+      owner_kind: 'task',
+      owner_ref: 'task-ea-1',
+      metadata: expect.objectContaining({
+        runtime_dispatch_id: claimed!.id,
+        information_domain: 'domain:company',
+      }),
+    }));
+    expect(Buffer.from(createArtifact.mock.calls[0]![0].content_base64, 'base64').toString('utf8'))
+      .toBe('Morning brief delivered');
     const executiveRepository = new ExecutiveAssistantRepository(db);
     expect(executiveRepository.getRequest(request.json().request.id)).toMatchObject({ status: 'completed' });
     expect(executiveRepository.getCommitmentByRequest(request.json().request.id)).toMatchObject({
       status: 'fulfilled',
       evidenceRefs: expect.arrayContaining([
         `runtime-dispatch:${claimed!.id}`,
+        'artifact:artifact-ea-1',
         'brain://company/brief.md',
       ]),
     });

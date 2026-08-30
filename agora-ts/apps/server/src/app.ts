@@ -1317,15 +1317,49 @@ export function buildApp(options: BuildAppOptions = {}) {
       || !taskService
     ) return;
     const task = taskService.getTask(dispatch.task_id);
+    const evidenceRefs = runtimeDispatchEvidenceRefs(dispatch);
     if (task?.state === 'active') {
+      const answer = runtimeDispatchAnswer(dispatch);
+      let deliverableArtifactId: string | null = null;
+      if (options.artifactService) {
+        try {
+          const artifact = options.artifactService.create({
+            name: `${task.id}-executive-deliverable.md`,
+            kind: 'executive_deliverable',
+            media_type: 'text/markdown',
+            content_base64: Buffer.from(answer, 'utf8').toString('base64'),
+            owner_kind: 'task',
+            owner_ref: task.id,
+            metadata: {
+              runtime_dispatch_id: dispatch.id,
+              executive_request_id: dispatch.metadata?.executive_request_id ?? null,
+              organization_id: dispatch.metadata?.organization_id ?? null,
+              information_domain: dispatch.metadata?.information_domain ?? null,
+            },
+          });
+          deliverableArtifactId = artifact.id;
+          evidenceRefs.push(`artifact:${artifact.id}`);
+        } catch (error) {
+          runtimeResultProgressRepository?.insertProgressLog({
+            task_id: dispatch.task_id,
+            kind: 'runtime_sync_error',
+            stage_id: task.current_stage,
+            content: `deliverable artifact persistence failed: ${error instanceof Error ? error.message : String(error)}`,
+            artifacts: { runtime_dispatch_id: dispatch.id },
+            actor: 'system',
+          });
+          return;
+        }
+      }
       runtimeResultProgressRepository?.insertProgressLog({
         task_id: dispatch.task_id,
         kind: 'runtime_result',
         stage_id: task.current_stage,
-        content: runtimeDispatchAnswer(dispatch),
+        content: answer,
         artifacts: {
           runtime_dispatch_id: dispatch.id,
           session_id: dispatch.session_id,
+          deliverable_artifact_id: deliverableArtifactId,
           result_envelope: dispatch.result_envelope,
         },
         actor: dispatch.runtime_target_ref,
@@ -1346,7 +1380,7 @@ export function buildApp(options: BuildAppOptions = {}) {
     if (taskService.getTask(dispatch.task_id)?.state === 'done') {
       executiveAssistantService?.reconcileByTask(
         dispatch.task_id,
-        runtimeDispatchEvidenceRefs(dispatch),
+        evidenceRefs,
       );
     }
   };
