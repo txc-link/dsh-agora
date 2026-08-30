@@ -144,14 +144,32 @@ test('Harness runtime creates a Session and tracks the exact dispatched turn', a
   })
   assert.equal(result.sessionId, 'session-1')
   assert.equal(result.answer, 'remote result')
+  assert.deepEqual(result.metadata, {
+    agent_ref: 'developer',
+    node_id: 'node-b',
+    runtime_target_ref: 'dsh:node-b:developer',
+    dispatch_id: 'dispatch-1',
+  })
   assert.deepEqual(progress.map(event => event.phase), ['session_ready', 'prompt_accepted', 'response_started', 'response_completed'])
   assert.equal(result.resultEnvelope.schema, 'agora.runtime-result/v1')
   assert.equal(result.resultEnvelope.claims[0].statement, 'Tests passed')
   assert.equal(result.resultEnvelope.evidence[0].metadata.passed, 42)
   assert.equal(result.resultEnvelope.environment.revision, 'abc123')
   assert.equal(result.resultEnvelope.environment.agent_ref, 'developer')
+  assert.deepEqual(result.resultEnvelope.environment.metadata, {
+    node_id: 'node-b',
+    runtime_target_ref: 'dsh:node-b:developer',
+    dispatch_id: 'dispatch-1',
+  })
   assert.equal(typeof result.resultEnvelope.usage.duration_ms, 'number')
-  assert.equal(calls.find(call => call.method === 'session.prompt').rpcId, 'agora-dispatch-dispatch-1')
+  const promptCall = calls.find(call => call.method === 'session.prompt')
+  assert.equal(promptCall.rpcId, 'agora-dispatch-dispatch-1')
+  const prompt = promptCall.payload.content[0].text
+  assert.match(prompt, /Authoritative runtime context/)
+  assert.match(prompt, /Runtime node: node-b/)
+  assert.match(prompt, /Runtime target: dsh:node-b:developer/)
+  assert.match(prompt, /Dispatch: dispatch-1/)
+  assert.match(prompt, /Do not infer or replace these values/)
 })
 
 function stableJson(value) {

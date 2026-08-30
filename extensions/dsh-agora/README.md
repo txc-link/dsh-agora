@@ -11,7 +11,7 @@
 
 本文档从空白环境开始，给出一套可复制的中央服务器、多节点、Web 界面和 Discord 配置流程。
 
-> **节点装机速览（2026-08-30）**: 本插件已发布 npm 包 `dsh-agora-plugin@0.6.0`（与仓库最新代码一致）。新节点安装 = `dsh plugin --profile web add dsh-agora-plugin` + agora row patch（nodeApiToken 用 CORE `agora node-credentials issue` 签发的 scoped token）。完整两插件（本插件 + dsh-matrix-connector）装机指引见 `dsh-matrix-connector` 仓 `deploy/README.md` 第 5 节；两仓/两插件关系见 `dsh-agora` 主仓 `Doc/10-WALKTHROUGH/2026-08-30-agora-ecosystem-deployment-map.md`。
+> **节点装机速览（2026-08-30）**: 当前节点插件版本为 `dsh-agora-plugin@0.6.3`。新节点安装 = `dsh plugin --profile web add dsh-agora-plugin` + agora row patch（nodeApiToken 用 CORE `agora node-credentials issue` 签发的 scoped token）。完整两插件（本插件 + dsh-matrix-connector）装机指引见 `dsh-matrix-connector` 仓 `deploy/README.md` 第 5 节；两仓/两插件关系见 `dsh-agora` 主仓 `Doc/10-WALKTHROUGH/2026-08-30-agora-ecosystem-deployment-map.md`。
 
 
 ## 部署拓扑
@@ -110,6 +110,8 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://agora.example.com/api/runtime-
 - `result_envelope` 将自然语言答案、可核验主张、证据、置信度和执行环境分开保存。
 
 内置 DSH runtime 会报告 `claimed`、`session_ready`、`prompt_accepted`、`response_started`、`response_completed`、`finalizing`。被重新领取的 dispatch 会开始新的 attempt，旧 attempt 的进度仍可审计，但不会冒充新 worker 的当前进度。证据块格式错误或 Agent 没有提供证据时，答案仍会正常完成，信封中的 claims/evidence 为空。
+
+从 0.6.3 起，worker 会把权威 `node_id`、`runtime_target_ref` 和 `dispatch_id` 注入每个 dispatch prompt，并把相同字段写入 `result_envelope.environment.metadata`。Agent 需要报告自身运行位置时必须使用这些值，不能通过工作目录、历史对话或模型猜测节点身份。
 
 升级顺序是：先升级中央 Agora Server 并执行数据库迁移，再升级各 DSH 节点到 0.6.0。0.4 节点仍可连接升级后的 Server，只是不会产生新进度、证据和协同字段；不要先把 0.6 节点连接到尚未升级的严格旧 Server。
 

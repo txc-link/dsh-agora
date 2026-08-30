@@ -105,7 +105,12 @@ export class HarnessRuntimeAdapter implements DshAgoraRuntimeAdapterV1 {
         sessionId,
         answer: parsed.answer,
         reason: result.reason,
-        metadata: { agent_ref: agent.id, runtime_target_ref: dispatch.runtime_target_ref },
+        metadata: {
+          agent_ref: agent.id,
+          node_id: dispatch.node_id,
+          runtime_target_ref: dispatch.runtime_target_ref,
+          dispatch_id: dispatch.id,
+        },
         resultEnvelope: {
           ...parsed.envelope,
           usage: {
@@ -342,10 +347,14 @@ function normalizeAgents(agents: readonly ConfiguredDshAgent[]): readonly Normal
 function formatDispatchPrompt(dispatch: RuntimeDispatch): string {
   return [
     '[Agora cross-agent dispatch]',
+    '[Authoritative runtime context]',
+    `Runtime node: ${dispatch.node_id}`,
+    `Runtime target: ${dispatch.runtime_target_ref}`,
+    `Dispatch: ${dispatch.id}`,
+    'These values are supplied by the DSH worker. Do not infer or replace these values; use them when reporting your runtime identity.',
+    '',
     ...(dispatch.task_id ? [`Task: ${dispatch.task_id}`] : []),
     ...(dispatch.participant_binding_id ? [`Participant binding: ${dispatch.participant_binding_id}`] : []),
-    `Dispatch: ${dispatch.id}`,
-    '',
     dispatch.prompt,
     '',
     'Return a concise final result suitable for the requesting agent. Do not approve or reject human governance gates.',
@@ -382,6 +391,11 @@ function parseRuntimeResult(
         model: agent.model,
         workspace_alias: dispatch.workspace_alias ?? agent.workspaceAlias,
         ...(revision === null ? {} : { revision }),
+        metadata: {
+          node_id: dispatch.node_id,
+          runtime_target_ref: dispatch.runtime_target_ref,
+          dispatch_id: dispatch.id,
+        },
       },
     },
   }
