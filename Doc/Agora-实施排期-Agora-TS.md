@@ -114,6 +114,16 @@ agora-ts 这一阶段不主动开 slice。R-E / R-F 按矩阵仓 SSoT phase 3 + 
 
 ## 7. Change Log
 
+- 2026-08-31: **P0 任务中心 + Agent 语音**（connector `0.4.0`，发布 npm）— ① 语音：
+  新增 `FishSpeechSpeechAdapter`（HTTP JSON POST /v1/tts，串行队列+超时），
+  config `speech.provider='fish-speech'`，GPU 真机端到端合成验证（3.67s WAV）；
+  GPT-SoVITS 因模型缺失（HF 不可达）列为备选。② 任务中心：agora-rest 新增
+  `pauseTask/resumeTask/cancelTask/unblockTask`（对应 central 已部署路由），
+  slash 新增 `/agora task show|pause|resume|cancel|unblock`；approve/reject 因需
+  人工身份字段按 A4 留给 Dashboard。258/258 测试通过。③ 部署：GPU/Mac profile
+  依赖更新为 0.4.0，speech 配置写入；重启待用户执行。Planning:
+  `Doc/09-PLANNING/TASKS/2026-08-30-p0-task-voice/`；Walkthrough:
+  `Doc/10-WALKTHROUGH/2026-08-31-p0-task-voice.md`。
 - 2026-08-30: **Matrix EA intake reliability closeout** (`9393984`,
   `993f8be`, connector `0.3.2`–`0.3.7`) — 修复带时区截止时间、Node/Project
   身份混用、静默失败、普通消息误触发、Artifact 查询/下载、运行结果凭据泄漏和
