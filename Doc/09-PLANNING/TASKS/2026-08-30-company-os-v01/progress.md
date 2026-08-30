@@ -6,9 +6,9 @@
 |---|---|---|
 | R1 审计与设计 | done | 主仓/线上只读审计完成；worktree 与 planning 已建立；失败测试先红 |
 | R2 组织 Core/DB | done | migration 043；OrganizationService/Repository；定向 6/6；workspace build pass |
-| R3 EA/任务联动 | done | ExecutiveRequest + Commitment；模板角色绑定任职 runtime；task claim |
+| R3 EA/任务联动 | done | ExecutiveRequest + Commitment；task team/claim/runtime dispatch 同一任职 target；完成后自动核销 |
 | R4 CLI/REST/Matrix | done | 完整 REST/CLI；connector 0.3.0 company/assistant 薄入口 |
-| R5 文档与 E2E | done | 定向 12/12；connector 225/225；重启恢复实测 |
+| R5 文档与 E2E | done | runtime result 自动生成 SHA-256 Markdown Artifact；定向回归、真机执行、重启恢复实测 |
 | R6 部署 | done* | Core 与 node-b 已部署；npm registry 因凭据失效待发布 |
 
 ## 环境
@@ -43,6 +43,12 @@
 - 正式组织 `austin-agent-company`：4 units、6 positions、5 active employments；三个不同且在线的 DSH runtime targets。
 - live 请求 `b800a212-0021-43b2-ad3c-0791b07f7759` 路由到 Research Lead，生成 active task `OC-1788060290161` 与 open commitment；task team / claim 均为 `dsh:node-c:default`。
 - Core 带数据重启后组织、任职、inbox、commitment 全恢复。
+- follow-up commits `a633447` / `dc7363a` 补齐 runtime dispatch 消费链与
+  Markdown Artifact：node-b 真正领取 `OC-1788062063992`，dispatch completed、
+  task done、request completed、commitment fulfilled。
+- Artifact `c542396e-00e8-4a7a-91d0-6bfc6d23087f` 属于该 task，记录
+  `domain:company`，API 回读内容 SHA-256 与 `0d801d9f...f0832c` 一致；Core
+  重启后再次验证通过。
 
 Windows 全量 Vitest 的旧 DB 测试会在 afterEach 删除仍被 SQLite 占用的临时目录时报 `EPERM`；单独旧用例复现为清理阶段失败，并非断言/迁移失败。本轮使用生产 build、双架构 gate、定向 restart tests 与 Linux live smoke 作为发布门禁。
 

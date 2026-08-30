@@ -54,3 +54,15 @@ Life/Health/Companion 复用同一套治理与编排基础设施，但使用独�
 - live registry 有三个不同且当前在线的初始 resident targets：`dsh:node-b:default`、`dsh:node-c:default`、`dsh:ailink-web:default`。
 - Auditor 保持 vacancy，避免用兼任 Agent 伪造职责分离。
 - npm registry 凭据在 Windows 与 Core host 都不存在/失效。相同 dry-run-verified 0.3.0 tarball 已从 `~/.dsh/packages/` 安装到 node-b，实际运行不被 registry 阻塞。
+- 首轮 live 请求暴露最后一公里缺口：EA 已写 Task + TaskClaim，但 DSH Worker
+  只轮询 `runtime_node_dispatches`，所以任务会停在 `joined=pending`。修复后
+  EA 在目标 node 在线时创建 fenced runtime dispatch；离线节点在建 Task 前
+  fail closed。
+- runtime dispatch 完成后，Core 把 result envelope 写入 task progress，使用
+  受派 runtime target 推进单阶段任务，并按 task 自动核销 request/commitment。
+- 聊天结果不足以满足“文档沉淀”。每次 EA 交付现自动固化为
+  `executive_deliverable` Markdown Artifact，内容寻址为 SHA-256，owner 为
+  task，metadata 保留 request、organization、dispatch 与 information domain。
+- 真机验收 `OC-1788062063992` 由 node-b 完成；制品
+  `c542396e-00e8-4a7a-91d0-6bfc6d23087f` 的 API 内容 hash 与记录的
+  `0d801d9f...f0832c` 一致，Core 重启后 task、制品和内容均恢复。

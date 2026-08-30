@@ -18,7 +18,7 @@
 | 4. R-F thread web 详情面板 | ⏳ scoped to dashboard (主仓前端), agora-ts 不动 | 见 Dashboard SSoT |
 | 5. agora-ts 自身大改 | ⏳ not started | 需新建独立 phase 计划 |
 | **6. Onboarding cross-platform (债 4 闭环)** | ✅ **done (turn 157)** | `agora init --non-interactive` (CI 友好 + `--admin-password-stdin` + `--skip-assets`) + `agora serve` 跨5 平台 (systemd/launchd/windows/docker/bare) + `Doc/scripts/install-agora.sh` 一键 wrapper; 现有 `agora start` dev helper 保持不变; walkthrough `Doc/10-WALKTHROUGH/2026-08-30-agora-onboarding-cross-platform.md` |
-| **7. Company OS v0.1** | ✅ **deployed** | Organization/Unit/Position/Employment + EA request/task/commitment；REST/CLI/Matrix；restart recovery；commit `469a23b` |
+| **7. Company OS v0.1** | ✅ **deployed** | Organization/Unit/Position/Employment + EA request/runtime dispatch/task/commitment + SHA-256 Markdown deliverable；REST/CLI/Matrix；restart recovery；`469a23b` / `a633447` / `dc7363a` |
 
 **Phase 3 默认原则**：R-E / R-F 严格限定在 connector + dashboard 侧，**agora-ts 这一阶段不主动大改**。仅当 connector / dashboard 侧需要 agora-ts 暴露新能力时，按 §6 流程加 slice。
 
@@ -114,6 +114,11 @@ agora-ts 这一阶段不主动开 slice。R-E / R-F 按矩阵仓 SSoT phase 3 + 
 
 ## 7. Change Log
 
+- 2026-08-30: **Company OS execution closeout** (`a633447`, `dc7363a`) — EA
+  委派写入 DSH runtime dispatch；worker 完成后 result envelope 回写 task、
+  单阶段 workflow 自动 done、request/commitment 自动核销，并生成按 SHA-256
+  内容寻址的 Markdown Artifact。node-b 真机完成任务 `OC-1788062063992`，
+  Core 重启后 task/artifact/content hash 全恢复。
 - 2026-08-30: **Company OS v0.1 deployed** (`469a23b`) — migrations 043/044；Organization/Unit/Position/Employment 正式组织模型；Executive Request + Commitment ledger；EA 按能力路由到在岗 Position，并将模板全部 role 绑定到任职 runtime target、写 task claim；REST + CLI + Matrix v0.3 接线。远端建立 `austin-agent-company`（4 units / 6 positions / 5 active employments），首次 research 请求形成 active task，Core 重启后组织、inbox、commitment 全恢复。Planning: `Doc/09-PLANNING/TASKS/2026-08-30-company-os-v01/`；Walkthrough: `Doc/10-WALKTHROUGH/2026-08-30-company-os-v01.md`。
 - 2026-08-29: agora-ts SSoT 建立 (本文件); 回写 60b01a6 R-D hotfix; R-E / R-F 显式 scope 到 connector + dashboard, agora-ts 不动
 - 2026-08-30: **org-aware-work-os S2 任务认领** (develop `505ce4d`) — TaskClaimService 状态机 + matchTaskToAgent 职责匹配 + ResidentAgentPoller + CLI `agora claim {create,release,list,claimable}` + migration 036; TDD 33 新测试, core+db 回归 592/592, 真实冒烟 8/8; planning: `Doc/09-PLANNING/TASKS/2026-08-30-org-aware-task-claiming/`; architecture: `Doc/03-ARCHITECTURE/org-aware-work-os/`; 顺手修复 database.test.ts 迁移断言陈旧 (033-036)
@@ -145,9 +150,12 @@ agora-ts 这一阶段不主动开 slice。R-E / R-F 按矩阵仓 SSoT phase 3 + 
 已交付的最小可运行链：
 
 1. Organization 是公司根，固定 `information_domain`；Unit/Position 表达长期组织和汇报关系，Employment 保留入离调历史并限制每岗一个当前任职。
-2. EA intake 先持久化 request，再按 capability 在当前在岗 Position 中路由；无匹配时由 EA triage；成功时生成 Task + TaskClaim + Commitment。
+2. EA intake 先持久化 request，再按 capability 在当前在岗 Position 中路由；无匹配时由 EA triage；成功时生成 Task + TaskClaim + fenced RuntimeDispatch + Commitment。
 3. Task template 的全部角色绑定到被委派 Employment 的 runtime target，避免“账面委派但执行团队仍是模板默认 Agent”。
-4. CLI/REST 是完整管理面；Matrix 只做 `/agora company` 与 `/agora assistant` 薄投影，不复制组织和路由状态。
-5. Company 仅使用 `domain:company`。Life/Health/Companion 继续使用独立顶层 Space、身份和安全域，跨域读取仍需 InformationPolicy/Consent/Gate。
+4. Runtime worker 完成后，Core 保存 result envelope、生成 SHA-256 Markdown
+   Artifact、推进单阶段 Task，并以 runtime dispatch + artifact evidence 自动
+   核销 request/commitment。
+5. CLI/REST 是完整管理面；Matrix 只做 `/agora company` 与 `/agora assistant` 薄投影，不复制组织和路由状态。
+6. Company 仅使用 `domain:company`。Life/Health/Companion 继续使用独立顶层 Space、身份和安全域，跨域读取仍需 InformationPolicy/Consent/Gate。
 
 尚未宣称完成的长期能力：自动例行总结、偏好/记忆质量治理、文档模板分层、自主学习预算和 protected-domain E2EE 上线 Gate；这些在现有 Brain/Mem0/Forum/Routine 能力之上继续迭代，不阻碍本次组织与委派主链运行。

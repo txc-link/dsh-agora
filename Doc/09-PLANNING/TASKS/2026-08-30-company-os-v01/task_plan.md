@@ -37,10 +37,13 @@
 |---|---|---|
 | R1 | 现状审计、模型定稿、planning 与失败测试 | done |
 | R2 | Organization / Unit / Position / Employment Core + SQLite | done |
-| R3 | Executive Assistant Inbox / Commitment / routing + Task 联动 | in progress |
-| R4 | CLI + REST + Matrix 轻量入口 | pending |
-| R5 | 文档策略、端到端 scenario、重启恢复 | pending |
-| R6 | 合并、推送、服务器部署、最小组织初始化与真机验收 | pending |
+| R3 | Executive Assistant Inbox / Commitment / routing + Task 联动 | done |
+| R4 | CLI + REST + Matrix 轻量入口 | done |
+| R5 | 文档制品、端到端 scenario、重启恢复 | done |
+| R6 | 合并、推送、服务器部署、最小组织初始化与真机验收 | done* |
+
+`*` Core 与 node-b 已部署；connector npm registry 发布仍因外部 npm
+认证缺失待补，node-b 不依赖 registry，当前实际运行 0.3.0。
 
 ## 验收
 
