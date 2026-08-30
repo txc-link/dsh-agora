@@ -10,4 +10,9 @@
 - [x] Completed a real Matrix → Core → `node-mac` research task with a fulfilled commitment and a durable artifact.
 - [x] Added a generic runtime-result secret-redaction boundary after the live artifact test exposed credential material.
 - [x] Passed targeted tests, workspace build, server typecheck, and targeted lint (one pre-existing warning only).
-- [ ] Deploy output redaction, repair the affected live record, and complete remaining Matrix multi-scenario smoke tests.
+- [x] Deployed output redaction, repaired the affected runtime records, created an integrity-checked sanitized backup, and removed the compromised pre-repair backup.
+- [x] Released connector `0.3.3`–`0.3.6`: explicit-command isolation, durable artifact lookup, native `m.file` delivery, and reliable Space child discovery.
+- [x] Upgraded and restarted DSH on `node-home-linux`, `node-mac`, and `node-work-windows`; all three report online and answer in their intended rooms.
+- [x] Replaced the encrypted orphan `AI学习` room with an unencrypted Company Space child, removed company bots from the old room, and verified exactly one bot response.
+- [x] Completed a second real Matrix → EA → Research Lead → `node-mac` task and downloaded its Markdown artifact in Element.
+- [x] Verified Personal Life, Health, and Companion projections contain zero company bots across all child rooms.

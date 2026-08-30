@@ -114,6 +114,19 @@ agora-ts 这一阶段不主动开 slice。R-E / R-F 按矩阵仓 SSoT phase 3 + 
 
 ## 7. Change Log
 
+- 2026-08-30: **Matrix EA intake reliability closeout** (`9393984`,
+  `993f8be`, connector `0.3.2`–`0.3.6`) — 修复带时区截止时间、Node/Project
+  身份混用、静默失败、普通消息误触发、Artifact 查询/下载、运行结果凭据泄漏和
+  Space 子房间动态发现；三节点在线，完成两条真实 EA→团队→Artifact 链路，
+  Life/Health/Companion 独立投影保持零公司机器人。Planning:
+  `Doc/09-PLANNING/TASKS/2026-08-30-matrix-ea-intake-reliability/`；
+  Walkthrough: `Doc/10-WALKTHROUGH/2026-08-30-matrix-ea-intake-reliability.md`。
+- 2026-08-30: **Element agent workspace operator sample** — 固化 Company、
+  Personal Office、Health Vault、Companion 四个独立顶层 Space 的房间样板；
+  明确 Matrix/Obsidian/Mem0 的 SSoT 分工、当前显式接线与 E2EE Gate；提供
+  Citizen/Position/Employment/RelationshipProfile 命令和可复制 Agent cards。
+  Planning: `Doc/09-PLANNING/TASKS/2026-08-30-element-agent-workspace-sample/`；
+  Walkthrough: `Doc/10-WALKTHROUGH/2026-08-30-element-agent-workspace-sample.md`。
 - 2026-08-30: **Company OS execution closeout** (`a633447`, `dc7363a`) — EA
   委派写入 DSH runtime dispatch；worker 完成后 result envelope 回写 task、
   单阶段 workflow 自动 done、request/commitment 自动核销，并生成按 SHA-256
