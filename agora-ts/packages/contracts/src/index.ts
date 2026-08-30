@@ -42,6 +42,8 @@ export * from './sandbox.js';
 export * from './a2a.js';
 export * from './workspace-bootstrap.js';
 export * from './citizen.js';
+export * from './relationship.js';
+export * from './governance.js';
 export * from './repository-interfaces.js';
 export * from './domain-types.js';
 

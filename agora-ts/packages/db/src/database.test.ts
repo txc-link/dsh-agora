@@ -97,6 +97,9 @@ describe('agora-ts sqlite bootstrap', () => {
       '037_agent_questions.sql',
       '038_teams.sql',
       '039_forum.sql',
+      '040_governance.sql',
+      '041_relationship_profiles.sql',
+      '042_relationship_initiatives.sql',
     ]);
     const taskTable = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tasks'")

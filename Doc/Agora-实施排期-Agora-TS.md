@@ -125,3 +125,12 @@ agora-ts 这一阶段不主动开 slice。R-E / R-F 按矩阵仓 SSoT phase 3 + 
 - 2026-08-30: **org-aware-work-os S4 共享记忆 R1** (develop `993e7b6`) — GroupMemoryPort/Service (core) + @agora-ts/adapters-mem0 (Mem0RestAdapter) + `agora experience add/search/list`; 本机 mem0 REST server :8888 探测确认; 回归 629/629; 冒烟: 真实 401 路径 3/3 + stub 全链路 3/3; 待 MEM0 token 后全链上线
 - 2026-08-30: **org-aware-work-os S2 收尾** (develop `8b0d3e6`) — TaskClaimService.expireStale 批量过期扫描 + Poller 每轮先 expire + `agora claim poll [--interval-ms]` (单轮/常驻模式, 认领成功即退出); TDD 8 新测试, 回归 618/618, 冒烟 4/4; 设计修正: poller 属 agent 侧 (认领=agent 真在场), server 不代劳
 - 2026-08-30: **org-aware-work-os S5 主动提问 push** (develop `d002792`) — routeQuestion (assistant 优先→ceo) + AgentQuestionService 状态机 (pending→answered|escalated→answered; *→closed) + QuestionMessagingPort 推送缝 + CLI `agora ask {create,list,show,answer,escalate,close}` + migration 037; TDD 18 新测试, core+db 回归 610/610, 真实冒烟 7/7; 设计偏差: ResearchRequestService 并入 kind=research (D1), escalation 是状态 (D2); planning: `Doc/09-PLANNING/TASKS/2026-08-30-agent-question-push/`
+- 2026-08-30: **Personal Office / Companion v0.1** — 通用
+  RelationshipProfile immutable versions；InformationPolicy、ConsentGrant、
+  ActionRisk 三套治理；RelationshipInitiative durable outbox（quiet hours、每日上限、
+  lease/reclaim/ack）；CLI + Bearer REST；migration 040-042。Matrix provider 数据不进
+  Core。跨仓 connector v0.2 完成单实例单域、独立顶层 Space、标准 m.audio 与本地
+  SAPI。远端 probe：CORE/Synapse reachable，但 CORE 新 routes 未部署且 Synapse
+  registration disabled，等待部署/admin provision。Planning:
+  `Doc/09-PLANNING/TASKS/2026-08-30-personal-companion-v01/`；Walkthrough:
+  `Doc/10-WALKTHROUGH/2026-08-30-personal-companion-governance-v01.md`。

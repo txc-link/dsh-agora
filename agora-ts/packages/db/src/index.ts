@@ -37,5 +37,10 @@ export * from './repositories/task-claim.repository.js';
 export * from './repositories/agent-question.repository.js';
 export * from './repositories/team.repository.js';
 export * from './repositories/forum.repository.js';
+export * from './repositories/information-policy.repository.js';
+export * from './repositories/consent-grant.repository.js';
+export * from './repositories/action-risk-assessment.repository.js';
+export * from './repositories/relationship-profile.repository.js';
+export * from './repositories/relationship-initiative.repository.js';
 
 export * from './repositories/thread-task-binding.repository.js';

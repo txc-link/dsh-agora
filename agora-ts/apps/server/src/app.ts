@@ -172,6 +172,15 @@ import {
   validateTemplateGraphRequestSchema,
   validateWorkflowRequestSchema,
   workspaceBootstrapStatusSchema,
+  actionIntentSchema,
+  authorizeInformationProjectionRequestSchema,
+  classifyInformationRequestSchema,
+  createConsentGrantRequestSchema,
+  createRelationshipProfileRequestSchema,
+  reclassifyInformationRequestSchema,
+  reviseRelationshipProfileRequestSchema,
+  setRelationshipProfileStatusRequestSchema,
+  scheduleRelationshipInitiativeRequestSchema,
 } from '@agora-ts/contracts';
 import { RuntimeRepoShimWritebackService } from '@agora-ts/adapters-materialization';
 import {
@@ -218,6 +227,11 @@ import {
   type RuntimeNodeCredentialService,
   type MergeCoordinatorService,
   WorkspaceBootstrapService as WorkspaceBootstrapServiceImpl,
+  ActionRiskService,
+  ConsentService,
+  InformationGovernanceService,
+  RelationshipProfileService,
+  RelationshipInitiativeService,
 } from '@agora-ts/core';
 import type { A2aGatewayService } from '@agora-ts/adapters-runtime';
 import {
@@ -227,6 +241,11 @@ import {
   ProjectAgentRosterRepository,
   ProjectRepository,
   TaskRepository,
+  ActionRiskAssessmentRepository,
+  ConsentGrantRepository,
+  InformationPolicyRepository,
+  RelationshipProfileRepository,
+  RelationshipInitiativeRepository,
   type AgoraDatabase,
 } from '@agora-ts/db';
 
@@ -294,6 +313,11 @@ export interface BuildAppOptions {
   taskCreatedNotify?: { enabled: boolean };
   imProvisioningPort?: IMProvisioningPort;
   humanAccountService?: HumanAccountService;
+  relationshipProfileService?: RelationshipProfileService;
+  relationshipInitiativeService?: RelationshipInitiativeService;
+  informationGovernanceService?: InformationGovernanceService;
+  consentService?: ConsentService;
+  actionRiskService?: ActionRiskService;
   apiAuth?: {
     enabled: boolean;
     token: string;
@@ -1123,6 +1147,27 @@ export function buildApp(options: BuildAppOptions = {}) {
     logger: false,
   });
   const taskService = options.taskService;
+  const consentService = options.consentService ?? (options.db
+    ? new ConsentService({ repository: new ConsentGrantRepository(options.db) })
+    : undefined);
+  const relationshipProfileService = options.relationshipProfileService ?? (options.db
+    ? new RelationshipProfileService({ repository: new RelationshipProfileRepository(options.db) })
+    : undefined);
+  const relationshipInitiativeService = options.relationshipInitiativeService ?? (options.db
+    ? new RelationshipInitiativeService({
+        initiativeRepository: new RelationshipInitiativeRepository(options.db),
+        relationshipRepository: new RelationshipProfileRepository(options.db),
+      })
+    : undefined);
+  const informationGovernanceService = options.informationGovernanceService ?? (options.db && consentService
+    ? new InformationGovernanceService({
+        repository: new InformationPolicyRepository(options.db),
+        consent: consentService,
+      })
+    : undefined);
+  const actionRiskService = options.actionRiskService ?? (options.db
+    ? new ActionRiskService({ repository: new ActionRiskAssessmentRepository(options.db) })
+    : undefined);
   const orchestratorDirectCreateService = taskService
     ? new OrchestratorDirectCreateService({ taskService })
     : undefined;
@@ -1314,6 +1359,237 @@ export function buildApp(options: BuildAppOptions = {}) {
 
   app.get('/api/health', async (): Promise<HealthResponse> => {
     return { status: 'ok' };
+  });
+
+  app.post('/api/relationships', async (request, reply) => {
+    if (!relationshipProfileService) return reply.status(503).send({ message: 'relationship profile service not configured' });
+    try {
+      const result = relationshipProfileService.create(createRelationshipProfileRequestSchema.parse(request.body));
+      return reply.status(201).send(result);
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/relationships', async (request, reply) => {
+    if (!relationshipProfileService) return reply.status(503).send({ message: 'relationship profile service not configured' });
+    try {
+      const query = z.object({
+        owner_ref: z.string().min(1).optional(),
+        agent_ref: z.string().min(1).optional(),
+        status: z.enum(['active', 'paused', 'archived']).optional(),
+      }).parse(request.query);
+      return reply.send({ profiles: relationshipProfileService.list({
+        ...(query.owner_ref !== undefined ? { owner_ref: query.owner_ref } : {}),
+        ...(query.agent_ref !== undefined ? { agent_ref: query.agent_ref } : {}),
+        ...(query.status !== undefined ? { status: query.status } : {}),
+      }) });
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/relationships/:profileId', async (request, reply) => {
+    if (!relationshipProfileService) return reply.status(503).send({ message: 'relationship profile service not configured' });
+    try {
+      const params = z.object({ profileId: z.string().min(1) }).parse(request.params);
+      const query = z.object({ version: z.coerce.number().int().positive().optional() }).parse(request.query);
+      return reply.send(relationshipProfileService.require(params.profileId, query.version));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/relationships/:profileId/revisions', async (request, reply) => {
+    if (!relationshipProfileService) return reply.status(503).send({ message: 'relationship profile service not configured' });
+    try {
+      const params = z.object({ profileId: z.string().min(1) }).parse(request.params);
+      const body = reviseRelationshipProfileRequestSchema.parse({
+        ...(request.body as Record<string, unknown>),
+        profile_id: params.profileId,
+      });
+      return reply.send(relationshipProfileService.revise(body));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.patch('/api/relationships/:profileId/status', async (request, reply) => {
+    if (!relationshipProfileService) return reply.status(503).send({ message: 'relationship profile service not configured' });
+    try {
+      const params = z.object({ profileId: z.string().min(1) }).parse(request.params);
+      const body = setRelationshipProfileStatusRequestSchema.parse({
+        ...(request.body as Record<string, unknown>),
+        profile_id: params.profileId,
+      });
+      return reply.send(relationshipProfileService.setStatus(body));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/relationship-initiatives', async (request, reply) => {
+    if (!relationshipInitiativeService) return reply.status(503).send({ message: 'relationship initiative service not configured' });
+    try {
+      return reply.status(201).send(relationshipInitiativeService.schedule(
+        scheduleRelationshipInitiativeRequestSchema.parse(request.body),
+      ));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/relationship-initiatives', async (request, reply) => {
+    if (!relationshipInitiativeService) return reply.status(503).send({ message: 'relationship initiative service not configured' });
+    try {
+      const query = z.object({
+        profile_id: z.string().min(1).optional(),
+        target_domain: z.string().min(1).optional(),
+        status: z.enum(['scheduled', 'claimed', 'delivered', 'failed', 'cancelled']).optional(),
+      }).parse(request.query);
+      return reply.send({ initiatives: relationshipInitiativeService.list({
+        ...(query.profile_id !== undefined ? { profile_id: query.profile_id } : {}),
+        ...(query.target_domain !== undefined ? { target_domain: query.target_domain } : {}),
+        ...(query.status !== undefined ? { status: query.status } : {}),
+      }) });
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/relationship-initiatives/claim', async (request, reply) => {
+    if (!relationshipInitiativeService) return reply.status(503).send({ message: 'relationship initiative service not configured' });
+    try {
+      const body = z.object({
+        consumer_ref: z.string().min(1), target_domain: z.string().min(1),
+        limit: z.number().int().min(1).max(20).optional(),
+        lease_ms: z.number().int().min(5000).max(300000).optional(),
+      }).strict().parse(request.body);
+      return reply.send({ initiatives: relationshipInitiativeService.claimDue({
+        consumer_ref: body.consumer_ref,
+        target_domain: body.target_domain,
+        ...(body.limit !== undefined ? { limit: body.limit } : {}),
+        ...(body.lease_ms !== undefined ? { lease_ms: body.lease_ms } : {}),
+      }) });
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/relationship-initiatives/:id/delivered', async (request, reply) => {
+    if (!relationshipInitiativeService) return reply.status(503).send({ message: 'relationship initiative service not configured' });
+    try {
+      const params = z.object({ id: z.string().min(1) }).parse(request.params);
+      const body = z.object({ lease_token: z.string().min(1) }).strict().parse(request.body);
+      return reply.send(relationshipInitiativeService.markDelivered(params.id, body.lease_token));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/relationship-initiatives/:id/failed', async (request, reply) => {
+    if (!relationshipInitiativeService) return reply.status(503).send({ message: 'relationship initiative service not configured' });
+    try {
+      const params = z.object({ id: z.string().min(1) }).parse(request.params);
+      const body = z.object({ lease_token: z.string().min(1), error: z.string().min(1).max(2000) }).strict().parse(request.body);
+      return reply.send(relationshipInitiativeService.markFailed(params.id, body.lease_token, body.error));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/governance/information/classify', async (request, reply) => {
+    if (!informationGovernanceService) return reply.status(503).send({ message: 'information governance service not configured' });
+    try {
+      const result = informationGovernanceService.classify(classifyInformationRequestSchema.parse(request.body));
+      return reply.status(201).send(result);
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/governance/information/reclassify', async (request, reply) => {
+    if (!informationGovernanceService) return reply.status(503).send({ message: 'information governance service not configured' });
+    try {
+      return reply.send(informationGovernanceService.reclassify(reclassifyInformationRequestSchema.parse(request.body)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/governance/information/authorize', async (request, reply) => {
+    if (!informationGovernanceService) return reply.status(503).send({ message: 'information governance service not configured' });
+    try {
+      return reply.send(informationGovernanceService.authorizeProjection(
+        authorizeInformationProjectionRequestSchema.parse(request.body),
+      ));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/governance/consents', async (request, reply) => {
+    if (!consentService) return reply.status(503).send({ message: 'consent service not configured' });
+    try {
+      return reply.status(201).send(consentService.grant(createConsentGrantRequestSchema.parse(request.body)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/governance/consents', async (request, reply) => {
+    if (!consentService) return reply.status(503).send({ message: 'consent service not configured' });
+    try {
+      const query = z.object({
+        grantor_ref: z.string().min(1).optional(),
+        grantee_ref: z.string().min(1).optional(),
+        status: z.enum(['active', 'revoked']).optional(),
+      }).parse(request.query);
+      return reply.send({ grants: consentService.list({
+        ...(query.grantor_ref !== undefined ? { grantor_ref: query.grantor_ref } : {}),
+        ...(query.grantee_ref !== undefined ? { grantee_ref: query.grantee_ref } : {}),
+        ...(query.status !== undefined ? { status: query.status } : {}),
+      }) });
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/governance/consents/:grantId/revoke', async (request, reply) => {
+    if (!consentService) return reply.status(503).send({ message: 'consent service not configured' });
+    try {
+      const params = z.object({ grantId: z.string().min(1) }).parse(request.params);
+      const body = z.object({ revoked_by: z.string().min(1) }).strict().parse(request.body);
+      return reply.send(consentService.revoke({ grant_id: params.grantId, revoked_by: body.revoked_by }));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/governance/action-risk/assess', async (request, reply) => {
+    if (!actionRiskService) return reply.status(503).send({ message: 'action risk service not configured' });
+    try {
+      return reply.status(201).send(actionRiskService.assess(actionIntentSchema.parse(request.body)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
   });
 
   app.get('/api/health/snapshot', async (_request, reply) => {

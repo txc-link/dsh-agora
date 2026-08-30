@@ -491,3 +491,17 @@ export type {
   RunTaskAskCommandOptions,
 } from './task-ask-command.js';
 export { runTaskAskCommand } from './task-ask-command.js';
+export {
+  RelationshipProfileService,
+  type ListRelationshipProfilesInput,
+  type RelationshipProfileServiceOptions,
+} from './relationship-profile-service.js';
+export { RelationshipInitiativeService, type RelationshipInitiativeServiceOptions } from './relationship-initiative-service.js';
+export {
+  ActionRiskService,
+  ConsentService,
+  InformationGovernanceService,
+  type ActionRiskServiceOptions,
+  type ConsentServiceOptions,
+  type InformationGovernanceServiceOptions,
+} from './governance-service.js';

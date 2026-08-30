@@ -79,6 +79,25 @@ import type {
   WorkflowDto,
 } from './task-api.js';
 
+import type {
+  AppendRelationshipProfileVersionInput,
+  CreateRelationshipProfileInput,
+  RelationshipProfileRecord,
+  RelationshipProfileSnapshotDto,
+  RelationshipProfileStatusDto,
+  RelationshipProfileVersionRecord,
+  ClaimRelationshipInitiativesInput,
+  RelationshipInitiativeRecord,
+  RelationshipInitiativeStatusDto,
+} from './relationship.js';
+
+import type {
+  ActionRiskAssessmentRecord,
+  ConsentGrantRecord,
+  ConsentGrantStatusDto,
+  InformationPolicyRecord,
+} from './governance.js';
+
 // ---------------------------------------------------------------------------
 // Database port — raw SQL access for Tier 3 services (task-service, dashboard-query)
 // ---------------------------------------------------------------------------
@@ -921,4 +940,67 @@ export interface IForumRepository {
   deletePost(id: string): boolean;
   insertComment(postId: string, author: string, content: string): ForumCommentRecord;
   listComments(postId: string): ForumCommentRecord[];
+}
+
+// ─── 34. Relationship profiles (Personal Office / generic relationships) ───
+
+export interface IRelationshipProfileRepository {
+  create(input: CreateRelationshipProfileInput): RelationshipProfileSnapshotDto;
+  getById(profileId: string): RelationshipProfileSnapshotDto | null;
+  getVersion(profileId: string, version: number): RelationshipProfileVersionRecord | null;
+  listVersions(profileId: string): RelationshipProfileVersionRecord[];
+  list(filters?: {
+    owner_ref?: string;
+    agent_ref?: string;
+    status?: RelationshipProfileStatusDto;
+  }): RelationshipProfileRecord[];
+  appendVersion(input: AppendRelationshipProfileVersionInput): RelationshipProfileSnapshotDto | null;
+  updateStatus(
+    profileId: string,
+    expectedCurrentVersion: number,
+    status: RelationshipProfileStatusDto,
+    updatedAt: string,
+  ): RelationshipProfileRecord | null;
+}
+
+export interface IRelationshipInitiativeRepository {
+  insert(record: RelationshipInitiativeRecord): RelationshipInitiativeRecord;
+  getById(id: string): RelationshipInitiativeRecord | null;
+  list(filters?: {
+    profile_id?: string;
+    target_domain?: string;
+    status?: RelationshipInitiativeStatusDto;
+  }): RelationshipInitiativeRecord[];
+  countForLocalDate(profileId: string, localDate: string): number;
+  claimDue(input: ClaimRelationshipInitiativesInput): RelationshipInitiativeRecord[];
+  markDelivered(id: string, leaseToken: string, deliveredAt: string): RelationshipInitiativeRecord | null;
+  markFailed(id: string, leaseToken: string, error: string, failedAt: string): RelationshipInitiativeRecord | null;
+  cancel(id: string, cancelledAt: string): RelationshipInitiativeRecord | null;
+}
+
+// ─── 35. Information governance / consent / action-risk audit ──────────────
+
+export interface IInformationPolicyRepository {
+  insert(record: InformationPolicyRecord): InformationPolicyRecord;
+  getCurrent(resourceRef: string): InformationPolicyRecord | null;
+  getVersion(resourceRef: string, version: number): InformationPolicyRecord | null;
+  append(record: InformationPolicyRecord, expectedCurrentVersion: number): InformationPolicyRecord | null;
+  list(domain?: string): InformationPolicyRecord[];
+}
+
+export interface IConsentGrantRepository {
+  insert(record: ConsentGrantRecord): ConsentGrantRecord;
+  getById(id: string): ConsentGrantRecord | null;
+  list(filters?: {
+    grantor_ref?: string;
+    grantee_ref?: string;
+    status?: ConsentGrantStatusDto;
+  }): ConsentGrantRecord[];
+  revoke(id: string, revokedAt: string, revokedBy: string): ConsentGrantRecord | null;
+}
+
+export interface IActionRiskAssessmentRepository {
+  insert(record: ActionRiskAssessmentRecord): ActionRiskAssessmentRecord;
+  getById(id: string): ActionRiskAssessmentRecord | null;
+  listBySubject(subjectRef: string): ActionRiskAssessmentRecord[];
 }

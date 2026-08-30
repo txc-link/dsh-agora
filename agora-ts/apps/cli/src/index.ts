@@ -87,6 +87,11 @@ import {
   ReflectionService,
   EvolutionService,
   AgentQuestionService,
+  RelationshipProfileService,
+  RelationshipInitiativeService,
+  InformationGovernanceService,
+  ConsentService,
+  ActionRiskService,
   runTaskAskCommand,
   ThreadTaskBindingService,
   runThreadBindCommand,
@@ -95,13 +100,40 @@ import {
 } from '@agora-ts/core';
 import { Mem0RestAdapter } from '@agora-ts/adapters-mem0';
 import { ForumVaultWriter } from '@agora-ts/adapters-obsidian';
-import type { IAgentQuestionRepository, IBorrowRequestRepository, ITaskClaimRepository, IThreadTaskBindingRepository, ITeamRepository, IForumRepository } from '@agora-ts/contracts';
+import type {
+  IActionRiskAssessmentRepository,
+  IAgentQuestionRepository,
+  IBorrowRequestRepository,
+  IConsentGrantRepository,
+  IInformationPolicyRepository,
+  IRelationshipProfileRepository,
+  IRelationshipInitiativeRepository,
+  ITaskClaimRepository,
+  IThreadTaskBindingRepository,
+  ITeamRepository,
+  IForumRepository,
+} from '@agora-ts/contracts';
 import { NotificationOutboxRepository, TaskRepository } from '@agora-ts/db';
 import { ThreadTaskBindingRepository } from '@agora-ts/db';
 import { OpenAiCompatibleProjectBrainEmbeddingAdapter } from '@agora-ts/adapters-brain';
 import { buildCcConnectAgentId, CcConnectAgentRegistry, loadCcConnectProjectTargets } from '@agora-ts/adapters-cc-connect';
 import { ProjectContextBriefingMaterializer, RuntimeRepoShimMaterializer, RuntimeRepoShimWritebackService } from '@agora-ts/adapters-materialization';
-import { ProjectBrainIndexJobRepository, RuntimeTargetOverlayRepository, AgentQuestionRepository, BorrowRequestRepository, TaskClaimRepository, TeamRepository, ForumRepository, CoordinationRepository, type AgoraDatabase } from '@agora-ts/db';
+import {
+  ActionRiskAssessmentRepository,
+  ConsentGrantRepository,
+  InformationPolicyRepository,
+  ProjectBrainIndexJobRepository,
+  RelationshipProfileRepository,
+  RelationshipInitiativeRepository,
+  RuntimeTargetOverlayRepository,
+  AgentQuestionRepository,
+  BorrowRequestRepository,
+  TaskClaimRepository,
+  TeamRepository,
+  ForumRepository,
+  CoordinationRepository,
+  type AgoraDatabase,
+} from '@agora-ts/db';
 import { LiveRegressionActor } from '@agora-ts/testing';
 import type { DashboardSessionClient } from './dashboard-session-client.js';
 import type {
@@ -166,6 +198,7 @@ import { runServeCommand, type RunServeCommandOptions } from './serve-command.js
 import { classifyCliError, CliError, CLI_EXIT_CODES, renderCliError } from './errors.js';
 import { cliText, resolveCliLocale } from './locale.js';
 import type { HumanAccountService } from '@agora-ts/core';
+import { registerPersonalGovernanceCommands } from './personal-governance-commands.js';
 
 type CcConnectThreadSessionServiceLike = {
   ensureSessionBinding(input: {
@@ -249,6 +282,16 @@ export interface CliDependencies {
   taskClaimRepository?: ITaskClaimRepository;
   agentQuestionService?: AgentQuestionService;
   agentQuestionRepository?: IAgentQuestionRepository;
+  relationshipProfileService?: RelationshipProfileService;
+  relationshipProfileRepository?: IRelationshipProfileRepository;
+  relationshipInitiativeService?: RelationshipInitiativeService;
+  relationshipInitiativeRepository?: IRelationshipInitiativeRepository;
+  informationGovernanceService?: InformationGovernanceService;
+  informationPolicyRepository?: IInformationPolicyRepository;
+  consentService?: ConsentService;
+  consentGrantRepository?: IConsentGrantRepository;
+  actionRiskService?: ActionRiskService;
+  actionRiskAssessmentRepository?: IActionRiskAssessmentRepository;
   teamRepository?: ITeamRepository;
   forumRepository?: IForumRepository;
   threadTaskBindingRepository?: IThreadTaskBindingRepository;
@@ -685,6 +728,33 @@ export function createCliProgram(deps: CliDependencies = {}) {
     // S5: research 类问题 answer 时自动沉淀到共享记忆 (mem0; 不可用时静默)
     groupMemory: { add: (input) => getGroupMemoryService().record(input) },
   });
+  const getRelationshipProfileRepository = (): IRelationshipProfileRepository =>
+    deps.relationshipProfileRepository ?? new RelationshipProfileRepository(resolveComposition().db);
+  const getRelationshipProfileService = () => deps.relationshipProfileService ?? new RelationshipProfileService({
+    repository: getRelationshipProfileRepository(),
+  });
+  const getRelationshipInitiativeRepository = (): IRelationshipInitiativeRepository =>
+    deps.relationshipInitiativeRepository ?? new RelationshipInitiativeRepository(resolveComposition().db);
+  const getRelationshipInitiativeService = () => deps.relationshipInitiativeService ?? new RelationshipInitiativeService({
+    initiativeRepository: getRelationshipInitiativeRepository(),
+    relationshipRepository: getRelationshipProfileRepository(),
+  });
+  const getConsentGrantRepository = (): IConsentGrantRepository =>
+    deps.consentGrantRepository ?? new ConsentGrantRepository(resolveComposition().db);
+  const getConsentService = () => deps.consentService ?? new ConsentService({
+    repository: getConsentGrantRepository(),
+  });
+  const getInformationPolicyRepository = (): IInformationPolicyRepository =>
+    deps.informationPolicyRepository ?? new InformationPolicyRepository(resolveComposition().db);
+  const getInformationGovernanceService = () => deps.informationGovernanceService ?? new InformationGovernanceService({
+    repository: getInformationPolicyRepository(),
+    consent: getConsentService(),
+  });
+  const getActionRiskAssessmentRepository = (): IActionRiskAssessmentRepository =>
+    deps.actionRiskAssessmentRepository ?? new ActionRiskAssessmentRepository(resolveComposition().db);
+  const getActionRiskService = () => deps.actionRiskService ?? new ActionRiskService({
+    repository: getActionRiskAssessmentRepository(),
+  });
   const getThreadTaskBindingRepository = () => deps.threadTaskBindingRepository ?? new ThreadTaskBindingRepository(resolveComposition().db);
   const getThreadTaskBindingService = () => new ThreadTaskBindingService({
     repo: getThreadTaskBindingRepository(),
@@ -1099,6 +1169,16 @@ export function createCliProgram(deps: CliDependencies = {}) {
       writeLine(stdout, JSON.stringify(result, null, 2));
       if (!result.ok) process.exitCode = 1;
     });
+
+  registerPersonalGovernanceCommands({
+    program,
+    stdout,
+    relationshipService: getRelationshipProfileService,
+    initiativeService: getRelationshipInitiativeService,
+    informationService: getInformationGovernanceService,
+    consentService: getConsentService,
+    actionRiskService: getActionRiskService,
+  });
   ask
     .command('answer')
     .description('answer a question (assistant or CEO side)')
