@@ -119,7 +119,10 @@ describe('Company OS REST', () => {
       capacity: { max_concurrent: 1, active: 0 },
       lease_seconds: 90,
     });
-    const createArtifact = vi.fn(() => ({ id: 'artifact-ea-1' }));
+    const createArtifact = vi.fn((input: { content_base64: string }) => {
+      void input;
+      return { id: 'artifact-ea-1' };
+    });
     const app = buildApp({
       db,
       taskService,
@@ -154,13 +157,14 @@ describe('Company OS REST', () => {
       payload: {
         requested_by: 'human:ceo', title: 'Prepare brief', body: 'Prepare the morning brief',
         requested_capabilities: [], task_type: 'quick', project_id: null,
+        due_at: '2026-09-02T18:00:00+08:00',
       },
     });
 
     expect(request.statusCode).toBe(201);
     expect(request.json()).toMatchObject({
       ok: true,
-      request: { status: 'triage', taskId: 'task-ea-1' },
+      request: { status: 'triage', taskId: 'task-ea-1', dueAt: '2026-09-02T18:00:00+08:00' },
       commitment: { status: 'open', taskId: 'task-ea-1' },
     });
     expect(createdInput).toMatchObject({

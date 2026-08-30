@@ -1740,7 +1740,7 @@ export function buildApp(options: BuildAppOptions = {}) {
       requested_capabilities: z.array(z.string().min(1)).max(32).default([]),
       task_type: z.string().min(1).default('quick'),
       project_id: z.string().min(1).nullable().optional(),
-      due_at: z.string().datetime().nullable().optional(),
+      due_at: z.string().datetime({ offset: true }).nullable().optional(),
       target_position_id: z.string().min(1).nullable().optional(),
     }).strict().safeParse(request.body);
     if (!payload.success) return reply.status(400).send({ message: payload.error.message });
