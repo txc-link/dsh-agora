@@ -57,6 +57,8 @@ import {
   advanceTaskRequestSchema,
   archonApproveTaskRequestSchema,
   archonRejectTaskRequestSchema,
+  decideApprovalRequestSchema,
+  listPendingApprovalsQuerySchema,
   archiveJobScanRequestSchema,
   archiveJobStatusUpdateRequestSchema,
   cleanupTasksRequestSchema,
@@ -4471,6 +4473,61 @@ export function buildApp(options: BuildAppOptions = {}) {
     }
   });
 
+  // 2026-08-31 next-batch — task center: global approval queue + decide-by-id.
+  // decide forces a Dashboard session (A4: human confirm only via Dashboard).
+  app.get('/api/approvals/pending', async (request, reply) => {
+    if (!taskService) {
+      return reply.status(503).send({ message: 'Task service is not configured' });
+    }
+    try {
+      const query = listPendingApprovalsQuerySchema.parse(request.query ?? {});
+      const approvals = taskService.listPendingApprovals(
+        query.limit !== undefined ? { limit: query.limit } : {},
+      );
+      const items = approvals.map((row) => ({
+        id: row.id,
+        task_id: row.task_id,
+        stage_id: row.stage_id,
+        gate_type: row.gate_type,
+        requested_by: row.requested_by,
+        requested_at: row.requested_at,
+        request_comment: row.request_comment ?? null,
+        metadata: row.metadata ?? null,
+      }));
+      return reply.send({ approvals: items });
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/approvals/:approvalId/decide', async (request, reply) => {
+    if (!taskService) {
+      return reply.status(503).send({ message: 'Task service is not configured' });
+    }
+    let humanActor: HumanActor | null = null;
+    let reviewerId: string | null = null;
+    try {
+      const params = request.params as { approvalId: string };
+      const payload = decideApprovalRequestSchema.parse(request.body);
+      humanActor = resolveHumanActor(request, dashboardSessions, humanAccountService);
+      if (shouldRequireHumanActor({ apiAuth, dashboardAuth, humanAccountService }) && !humanActor) {
+        return reply.status(403).send({ message: 'missing authenticated human actor' });
+      }
+      reviewerId = humanActor?.username ?? 'dashboard-anonymous';
+      const task = taskService.decideApproval(params.approvalId, {
+        reviewerId,
+        reviewerAccountId: humanActor?.account_id ?? null,
+        decision: payload.decision,
+        comment: payload.comment,
+      });
+      return reply.send({ task, decision: payload.decision, reviewer: reviewerId });
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
   app.post('/api/im/contexts/resolve', async (request, reply) => {
     if (!taskService || !taskContextBindingService || !projectService) {
       return reply.status(503).send({ message: 'Task/project services are not configured' });
@@ -4739,6 +4796,21 @@ export function buildApp(options: BuildAppOptions = {}) {
     try {
       const params = request.params as { taskId: string };
       return reply.send({ subtasks: taskService.listSubtasks(params.taskId) });
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  // 2026-08-31 next-batch — task center: aggregate subtask progress.
+  // Read-only, no authz beyond the existing apiAuth/dashboardAuth gate.
+  app.get('/api/tasks/:taskId/progress', async (request, reply) => {
+    if (!taskService) {
+      return reply.status(503).send({ message: 'Task service is not configured' });
+    }
+    try {
+      const params = request.params as { taskId: string };
+      return reply.send(taskService.getTaskProgress(params.taskId));
     } catch (error) {
       const translated = translateError(error);
       return reply.status(translated.statusCode).send(translated.body);

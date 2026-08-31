@@ -1,4 +1,4 @@
-import type { TaskRecord, WorkflowDto } from '@agora-ts/contracts';
+import type { ApprovalRequestRecord, IApprovalRequestRepository, TaskRecord, WorkflowDto } from '@agora-ts/contracts';
 
 type WorkflowStageLike = NonNullable<WorkflowDto['stages']>[number];
 
@@ -83,6 +83,13 @@ export interface TaskApprovalServiceOptions {
       reason?: string;
     },
   ) => void;
+  /**
+   * Approval queue repository access. Optional: when absent, the global
+   * queue + decide-by-id surface throws "approval queue not configured".
+   * The runtime wires this from the same ApprovalRequestRepository that
+   * backs the per-task `resolvePendingApprovalRequest` callback.
+   */
+  approvalRequestRepository?: Pick<IApprovalRequestRepository, 'getById' | 'listPending'>;
 }
 
 export class TaskApprovalService {
@@ -325,5 +332,75 @@ export class TaskApprovalService {
       ...task,
       quorum,
     };
+  }
+
+  // ─── Approval queue (2026-08-31 next-batch) ─────────────────────────────
+  // The global queue + decide-by-id surface lives here so the Dashboard
+  // (and the connector slash bridge) can review and resolve approvals
+  // without knowing the (taskId, stageId) pair. Both surface a clear
+  // "not configured" error when the optional repository is absent, so
+  // test fixtures and minimal deployments keep working unchanged.
+
+  getApprovalRequest(id: string): ApprovalRequestRecord | null {
+    const repo = this.options.approvalRequestRepository;
+    if (!repo) throw new Error('approval queue not configured');
+    return repo.getById(id);
+  }
+
+  listPendingApprovals(options?: { limit?: number }): ApprovalRequestRecord[] {
+    const repo = this.options.approvalRequestRepository;
+    if (!repo) throw new Error('approval queue not configured');
+    return repo.listPending(options);
+  }
+
+  /**
+   * Resolve a pending approval by its queue id. Loads the row, asserts
+   * it is still pending, and delegates to the matching gate command
+   * (approve / reject / archon-approve / archon-reject) so the gate
+   * flow + resolvePendingApprovalRequest + broadcast stay consistent.
+   */
+  decideApproval(
+    approvalId: string,
+    options: {
+      reviewerId: string;
+      reviewerAccountId?: number | null;
+      decision: 'approve' | 'reject';
+      comment: string;
+    },
+  ): TaskRecord {
+    const repo = this.options.approvalRequestRepository;
+    if (!repo) throw new Error('approval queue not configured');
+    const row = repo.getById(approvalId);
+    if (!row) throw new Error(`approval request ${approvalId} not found`);
+    if (row.status !== 'pending') {
+      throw new Error(`approval request ${approvalId} is already ${row.status}`);
+    }
+    const taskId = row.task_id;
+    switch (row.gate_type) {
+      case 'approval':
+        return options.decision === 'approve'
+          ? this.approveTask(taskId, {
+              approverId: options.reviewerId,
+              approverAccountId: options.reviewerAccountId ?? null,
+              comment: options.comment,
+            })
+          : this.rejectTask(taskId, {
+              rejectorId: options.reviewerId,
+              rejectorAccountId: options.reviewerAccountId ?? null,
+              reason: options.comment,
+            });
+      case 'archon_review':
+        return options.decision === 'approve'
+          ? this.archonApproveTask(taskId, {
+              reviewerId: options.reviewerId,
+              comment: options.comment,
+            })
+          : this.archonRejectTask(taskId, {
+              reviewerId: options.reviewerId,
+              reason: options.comment,
+            });
+      default:
+        throw new Error(`approval request ${approvalId} has unsupported gate_type ${row.gate_type}`);
+    }
   }
 }

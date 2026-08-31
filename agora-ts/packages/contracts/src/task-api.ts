@@ -686,3 +686,40 @@ export const probeInactiveTasksRequestSchema = z.object({
   inbox_after_ms: z.number().int().positive(),
 });
 export type ProbeInactiveTasksRequestDto = z.infer<typeof probeInactiveTasksRequestSchema>;
+
+// ─── Task center: progress + approval queue (2026-08-31 next-batch) ──────
+
+export const taskProgressSchema = z.object({
+  task_id: z.string(),
+  parent_state: z.string(),
+  subtasks_total: z.number().int().nonnegative(),
+  subtasks_done: z.number().int().nonnegative(),
+  subtasks_in_flight: z.number().int().nonnegative(),
+  subtasks_failed: z.number().int().nonnegative(),
+  subtasks_cancelled: z.number().int().nonnegative(),
+  percent: z.number().min(0).max(100),
+});
+export type TaskProgressDto = z.infer<typeof taskProgressSchema>;
+
+export const pendingApprovalRequestSchema = z.object({
+  id: z.string(),
+  task_id: z.string(),
+  stage_id: z.string(),
+  gate_type: z.string(),
+  requested_by: z.string(),
+  requested_at: z.string(),
+  request_comment: z.string().nullable(),
+  metadata: z.record(z.string(), z.unknown()).nullable(),
+});
+export type PendingApprovalRequestDto = z.infer<typeof pendingApprovalRequestSchema>;
+
+export const listPendingApprovalsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+export type ListPendingApprovalsQueryDto = z.infer<typeof listPendingApprovalsQuerySchema>;
+
+export const decideApprovalRequestSchema = z.object({
+  decision: z.enum(['approve', 'reject']),
+  comment: z.string().default(''),
+});
+export type DecideApprovalRequestDto = z.infer<typeof decideApprovalRequestSchema>;

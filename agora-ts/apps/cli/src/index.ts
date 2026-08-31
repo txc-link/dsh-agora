@@ -5501,6 +5501,96 @@ export function createCliProgram(deps: CliDependencies = {}) {
       writeLine(stdout, `任务 ${taskId} conversation 已读，未读消息: ${summary.unread_count}`);
     });
 
+  // 2026-08-31 next-batch — task center CLI surface.
+  task
+    .command('subtasks')
+    .description('读取任务的子任务清单')
+    .argument('<taskId>', '任务 ID')
+    .option('--json', '输出 JSON', false)
+    .action((taskId: string, options: { json?: boolean }) => {
+      const subtasks = taskService.listSubtasks(taskId);
+      if (options.json) {
+        writeLine(stdout, JSON.stringify({ subtasks }, null, 2));
+        return;
+      }
+      if (subtasks.length === 0) {
+        writeLine(stdout, `任务 ${taskId} 暂无子任务`);
+        return;
+      }
+      for (const subtask of subtasks) {
+        writeLine(stdout, `[${subtask.status}] ${subtask.id} (${subtask.assignee}) ${subtask.title}`);
+      }
+    });
+
+  task
+    .command('progress')
+    .description('汇总任务的子任务进度（done / total / percent + parent state）')
+    .argument('<taskId>', '任务 ID')
+    .option('--json', '输出 JSON', false)
+    .action((taskId: string, options: { json?: boolean }) => {
+      const progress = taskService.getTaskProgress(taskId);
+      if (options.json) {
+        writeLine(stdout, JSON.stringify(progress, null, 2));
+        return;
+      }
+      writeLine(
+        stdout,
+        `任务 ${taskId} state=${progress.parent_state} subtasks=${progress.subtasks_done}/${progress.subtasks_total} (in_flight=${progress.subtasks_in_flight} failed=${progress.subtasks_failed} cancelled=${progress.subtasks_cancelled}) percent=${progress.percent}%`,
+      );
+    });
+
+  const approvals = program
+    .command('approvals')
+    .description('审批队列（Dashboard Human Gate 入口）；A4：决策须 Dashboard session');
+
+  approvals
+    .command('list')
+    .description('列出 pending 审批请求（按 requested_at 升序）')
+    .option('--limit <n>', '最多返回条数（1-500）', '100')
+    .option('--json', '输出 JSON', false)
+    .action((options: { limit?: string; json?: boolean }) => {
+      const limit = options.limit !== undefined ? Number.parseInt(options.limit, 10) : 100;
+      const rows = taskService.listPendingApprovals(Number.isFinite(limit) ? { limit } : {});
+      if (options.json) {
+        writeLine(stdout, JSON.stringify({ approvals: rows }, null, 2));
+        return;
+      }
+      if (rows.length === 0) {
+        writeLine(stdout, '审批队列为空');
+        return;
+      }
+      for (const row of rows) {
+        writeLine(
+          stdout,
+          `[${row.gate_type}] ${row.id} task=${row.task_id} stage=${row.stage_id} requested_by=${row.requested_by} @ ${row.requested_at}`,
+        );
+      }
+    });
+
+  approvals
+    .command('decide')
+    .description('按 approval id 决策（approve|reject）；决策后由 Core 落 gate 流并解析 pending 行')
+    .argument('<approvalId>', '审批请求 id（来自 agora approvals list）')
+    .requiredOption('--decision <decision>', 'approve | reject')
+    .option('--reviewer <reviewerId>', '决策人标识（Dashboard session username；未登录则用此值并留痕）')
+    .option('--comment <comment>', '决策说明', '')
+    .option('--json', '输出 JSON', false)
+    .action((approvalId: string, options: { decision: string; reviewer?: string; comment?: string; json?: boolean }) => {
+      const decision = options.decision === 'approve' || options.decision === 'reject'
+        ? options.decision
+        : (() => { throw new Error(`--decision must be approve or reject, got ${options.decision}`); })();
+      const task = taskService.decideApproval(approvalId, {
+        reviewerId: options.reviewer ?? 'cli-anonymous',
+        decision,
+        comment: options.comment ?? '',
+      });
+      if (options.json) {
+        writeLine(stdout, JSON.stringify({ task, decision, approval_id: approvalId }, null, 2));
+        return;
+      }
+      writeLine(stdout, `✅ ${decision} ${approvalId} → task=${task.id} state=${task.state} stage=${task.current_stage}`);
+    });
+
   const craftsman = program
     .command('craftsman')
     .description('craftsman execution commands');

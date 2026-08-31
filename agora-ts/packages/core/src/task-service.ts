@@ -1,4 +1,4 @@
-import type { CraftsmanCallbackRequestDto, CraftsmanDispatchRequestDto, CraftsmanExecutionTailResponseDto, CraftsmanInputKeyDto, CraftsmanStopExecutionRequestDto, CreateSubtasksRequestDto, CreateSubtasksResponseDto, DatabasePort, GateQueryPort, IApprovalRequestRepository, IArchiveJobRepository, ICraftsmanExecutionRepository, IFlowLogRepository, IInboxRepository, IProgressLogRepository, ISubtaskRepository, ITaskContextBindingRepository, ITaskConversationRepository, ITaskRepository, ITemplateRepository, ITodoRepository, PromoteTodoRequestDto, RuntimeDiagnosisResultDto, RuntimeRecoveryActionDto, RuntimeRecoveryRequestDto, TaskRecord, TaskStatusDto, UnifiedHealthSnapshotDto } from '@agora-ts/contracts';
+import type { CraftsmanCallbackRequestDto, CraftsmanDispatchRequestDto, CraftsmanExecutionTailResponseDto, CraftsmanInputKeyDto, CraftsmanStopExecutionRequestDto, CreateSubtasksRequestDto, CreateSubtasksResponseDto, DatabasePort, GateQueryPort, IApprovalRequestRepository, IArchiveJobRepository, ICraftsmanExecutionRepository, IFlowLogRepository, IInboxRepository, IProgressLogRepository, ISubtaskRepository, ITaskContextBindingRepository, ITaskConversationRepository, ITaskRepository, ITemplateRepository, ITodoRepository, PromoteTodoRequestDto, RuntimeDiagnosisResultDto, RuntimeRecoveryActionDto, RuntimeRecoveryRequestDto, TaskProgressDto, TaskRecord, TaskStatusDto, UnifiedHealthSnapshotDto } from '@agora-ts/contracts';
 import type { CraftsmanCallbackService } from './craftsman-callback-service.js';
 import type { CraftsmanDispatcher } from './craftsman-dispatcher.js';
 import { GateService } from './gate-service.js';
@@ -389,6 +389,22 @@ export class TaskService {
     return this.taskApprovalService.archonRejectTask(taskId, options);
   }
 
+  listPendingApprovals(options?: { limit?: number }) {
+    return this.taskApprovalService.listPendingApprovals(options);
+  }
+
+  decideApproval(
+    approvalId: string,
+    options: {
+      reviewerId: string;
+      reviewerAccountId?: number | null;
+      decision: 'approve' | 'reject';
+      comment: string;
+    },
+  ): TaskRecord {
+    return this.taskApprovalService.decideApproval(approvalId, options);
+  }
+
   completeSubtask(taskId: string, options: CompleteSubtaskOptions): TaskRecord {
     return this.taskCraftsmanService.completeSubtask(taskId, options);
   }
@@ -407,6 +423,56 @@ export class TaskService {
 
   listSubtasks(taskId: string) {
     return this.taskCraftsmanService.listSubtasks(taskId);
+  }
+
+  /**
+   * Aggregate subtask progress for a task. Reads the full subt list via
+   * TaskCraftsmanService and computes (total, done, in_flight, failed,
+   * cancelled, percent). The parent task's state is surfaced alongside so
+   * the UI can render the overall lifecycle (active / paused / blocked /
+   * done) without a second GET.
+   */
+  getTaskProgress(taskId: string): TaskProgressDto {
+    const task = this.getTask(taskId);
+    if (!task) throw new Error(`task ${taskId} not found`);
+    const subtasks = this.taskCraftsmanService.listSubtasks(taskId);
+    let done = 0;
+    let inFlight = 0;
+    let failed = 0;
+    let cancelled = 0;
+    for (const subtask of subtasks) {
+      switch (subtask.status) {
+        case 'done':
+          done += 1;
+          break;
+        case 'pending':
+        case 'in_progress':
+        case 'waiting_input':
+          inFlight += 1;
+          break;
+        case 'failed':
+          failed += 1;
+          break;
+        case 'cancelled':
+        case 'archived':
+          cancelled += 1;
+          break;
+        default:
+          break;
+      }
+    }
+    const total = subtasks.length;
+    const percent = total === 0 ? 0 : Math.round((done / total) * 100);
+    return {
+      task_id: task.id,
+      parent_state: task.state,
+      subtasks_total: total,
+      subtasks_done: done,
+      subtasks_in_flight: inFlight,
+      subtasks_failed: failed,
+      subtasks_cancelled: cancelled,
+      percent,
+    };
   }
 
   handleCraftsmanCallback(input: CraftsmanCallbackRequestDto): HandleCraftsmanCallbackResult {

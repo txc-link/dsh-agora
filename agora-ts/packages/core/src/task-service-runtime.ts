@@ -353,6 +353,9 @@ export function buildTaskServiceRuntime(deps: TaskServiceRuntimeDeps): TaskServi
     advanceSatisfiedStage: (task, actor) => taskStageServiceRef.current!.advanceSatisfiedStage(task, actor),
     rewindRejectedStage: (task, currentStageId, decisionEvent, actor, reason) => taskStageServiceRef.current!.rewindRejectedStage(task, currentStageId, decisionEvent, actor, reason),
     publishGateDecisionBroadcast: (task, input) => taskStageSupport.publishGateDecisionBroadcast(task, input),
+    ...(deps.approvalRequestRepository
+      ? { approvalRequestRepository: deps.approvalRequestRepository }
+      : {}),
   });
 
   const taskStageService = new TaskStageService({

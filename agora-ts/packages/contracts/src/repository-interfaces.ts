@@ -341,6 +341,7 @@ export interface IArchiveJobRepository {
 // ─── 8. ApprovalRequest ───────────────────────────────────────────────────
 
 export interface IApprovalRequestRepository {
+  getById(id: string): ApprovalRequestRecord | null;
   getLatestPending(
     taskId: string,
     stageId: string,
@@ -355,6 +356,7 @@ export interface IApprovalRequestRepository {
     request_comment?: string | null;
     metadata?: Record<string, unknown> | null;
   }): ApprovalRequestRecord;
+  listPending(options?: { limit?: number }): ApprovalRequestRecord[];
   resolve(
     id: string,
     input: {

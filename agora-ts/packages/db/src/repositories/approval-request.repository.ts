@@ -68,6 +68,18 @@ export class ApprovalRequestRepository implements IApprovalRequestRepository {
     return row ? this.parseRow(row) : null;
   }
 
+  listPending(options?: { limit?: number }): StoredApprovalRequest[] {
+    const limit = Math.max(1, Math.min(options?.limit ?? 100, 500));
+    const rows = this.db.prepare(`
+      SELECT *
+      FROM approval_requests
+      WHERE status = 'pending'
+      ORDER BY requested_at ASC, id ASC
+      LIMIT ?
+    `).all(limit) as Record<string, unknown>[];
+    return rows.map((row) => this.parseRow(row));
+  }
+
   listByTask(taskId: string): StoredApprovalRequest[] {
     const rows = this.db.prepare(`
       SELECT *

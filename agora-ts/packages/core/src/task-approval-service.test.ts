@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { TaskRecord } from '@agora-ts/contracts';
+import type { ApprovalRequestRecord, IApprovalRequestRepository, TaskRecord } from '@agora-ts/contracts';
 import { TaskApprovalService } from './task-approval-service.js';
 
 function makeTask(): TaskRecord {
@@ -60,41 +60,44 @@ function createService() {
   const advanceSatisfiedStage = vi.fn(() => ({ ...task, current_stage: 'done' }));
   const rewindRejectedStage = vi.fn(() => ({ ...task, current_stage: 'draft' }));
 
-  const service = new TaskApprovalService({
+  const options = {
     getTaskOrThrow: () => task,
     assertTaskActive: () => {},
     getCurrentStageOrThrow: () => stage,
     assertStageRosterAction: () => {},
     assertApprovalAuthority: () => {},
-    routeGateCommand: (currentTask, currentStage, command, callerId) => {
+    routeGateCommand: (currentTask: TaskRecord, currentStage: { id: string }, command: string, callerId: string) => {
       routeGateCommand(currentTask.id, currentStage.id, command, callerId);
     },
     getApproverRole: () => 'reviewer',
-    recordApproval: (taskId, stageId, approverRole, approverId, comment) => {
+    recordApproval: (taskId: string, stageId: string, approverRole: string, approverId: string, comment: string) => {
       recordApproval(taskId, stageId, approverRole, approverId, comment);
     },
-    recordArchonReview: (taskId, stageId, decision, reviewerId, note) => {
+    recordArchonReview: (taskId: string, stageId: string, decision: 'approved' | 'rejected', reviewerId: string, note: string) => {
       recordArchonReview(taskId, stageId, decision, reviewerId, note);
     },
-    recordQuorumVote: (taskId, stageId, voterId, vote, comment) => recordQuorumVote(taskId, stageId, voterId, vote, comment),
-    insertFlowLog: (input) => {
+    recordQuorumVote: (taskId: string, stageId: string, voterId: string, vote: 'approve' | 'reject', comment: string) => recordQuorumVote(taskId, stageId, voterId, vote, comment),
+    insertFlowLog: (input: Record<string, unknown>) => {
       logs.push(input);
     },
-    mirrorConversationEntry: (taskId, input) => {
+    mirrorConversationEntry: (taskId: string, input: Record<string, unknown>) => {
       mirrors.push({ taskId, ...input });
     },
-    resolvePendingApprovalRequest: (taskId, stageId, status, resolvedBy, resolutionComment) => {
+    resolvePendingApprovalRequest: (taskId: string, stageId: string, status: 'approved' | 'rejected', resolvedBy: string, resolutionComment: string) => {
       resolved.push({ taskId, stageId, status, resolvedBy, resolutionComment });
     },
     advanceSatisfiedStage,
     rewindRejectedStage,
-    publishGateDecisionBroadcast: (currentTask, input) => {
+    publishGateDecisionBroadcast: (currentTask: TaskRecord, input: Record<string, unknown>) => {
       gateDecisions.push({ taskId: currentTask.id, ...input });
     },
-  });
+  };
+
+  const service = new TaskApprovalService(options);
 
   return {
     service,
+    options,
     task,
     stage,
     logs,
@@ -216,5 +219,131 @@ describe('TaskApprovalService', () => {
       task_id: 'OC-APPROVAL-1',
       stage_id: 'review',
     }));
+  });
+});
+
+// ─── Approval queue + decide-by-id (2026-08-31 next-batch) ────────────────
+class InMemoryApprovalRequestRepository implements Pick<IApprovalRequestRepository, 'getById' | 'listPending'> {
+  private rows = new Map<string, ApprovalRequestRecord>();
+  insert(row: ApprovalRequestRecord): void {
+    this.rows.set(row.id, row);
+  }
+  getById(id: string): ApprovalRequestRecord | null {
+    return this.rows.get(id) ?? null;
+  }
+  listPending(options?: { limit?: number }): ApprovalRequestRecord[] {
+    const limit = options?.limit ?? 100;
+    return Array.from(this.rows.values())
+      .filter((r) => r.status === 'pending')
+      .sort((a, b) => a.requested_at.localeCompare(b.requested_at))
+      .slice(0, limit);
+  }
+}
+
+function makeApprovalRow(overrides: Partial<ApprovalRequestRecord> & { id: string; gate_type?: string; status?: ApprovalRequestRecord['status']; requested_at?: string }): ApprovalRequestRecord {
+  return {
+    id: overrides.id,
+    task_id: 'OC-APPROVAL-1',
+    stage_id: 'review',
+    gate_type: overrides.gate_type ?? 'approval',
+    requested_by: 'archon',
+    status: overrides.status ?? 'pending',
+    summary_path: null,
+    request_comment: 'needs review',
+    resolution_comment: null,
+    resolved_by: null,
+    requested_at: overrides.requested_at ?? '2026-08-31T00:00:00.000Z',
+    resolved_at: null,
+    metadata: null,
+  } as ApprovalRequestRecord;
+}
+
+describe('TaskApprovalService approval queue', () => {
+  it('listPendingApprovals throws a clear error when the repository is not configured', () => {
+    const fixture = createService();
+    expect(() => fixture.service.listPendingApprovals()).toThrow(/approval queue not configured/i);
+    expect(() => fixture.service.getApprovalRequest('any')).toThrow(/approval queue not configured/i);
+    expect(() => fixture.service.decideApproval('any', {
+      reviewerId: 'r', decision: 'approve', comment: '',
+    })).toThrow(/approval queue not configured/i);
+  });
+
+  it('listPendingApprovals returns rows ordered by requested_at asc with a clamped limit', () => {
+    const repo = new InMemoryApprovalRequestRepository();
+    const base = createService();
+    const service = new TaskApprovalService({ ...base.options, approvalRequestRepository: repo });
+    repo.insert(makeApprovalRow({ id: 'a', requested_at: '2026-08-31T00:00:00.000Z' }));
+    repo.insert(makeApprovalRow({ id: 'b', requested_at: '2026-08-31T00:00:01.000Z' }));
+    repo.insert(makeApprovalRow({ id: 'c', requested_at: '2026-08-31T00:00:02.000Z' }));
+
+    expect(service.listPendingApprovals().map((r) => r.id)).toEqual(['a', 'b', 'c']);
+    expect(service.listPendingApprovals({ limit: 2 }).map((r) => r.id)).toEqual(['a', 'b']);
+  });
+
+  it('decideApproval delegates to approveTask for approval gates and resolves the row', () => {
+    const repo = new InMemoryApprovalRequestRepository();
+    const base = createService();
+    const service = new TaskApprovalService({ ...base.options, approvalRequestRepository: repo });
+    repo.insert(makeApprovalRow({ id: 'apr-approval', gate_type: 'approval' }));
+
+    service.decideApproval('apr-approval', {
+      reviewerId: 'reviewer-1',
+      decision: 'approve',
+      comment: 'lgtm',
+    });
+
+    expect(base.routeGateCommand).toHaveBeenCalledWith('OC-APPROVAL-1', 'review', 'approve', 'reviewer-1');
+    expect(base.recordApproval).toHaveBeenCalledWith('OC-APPROVAL-1', 'review', 'reviewer', 'reviewer-1', 'lgtm');
+  });
+
+  it('decideApproval delegates to rejectTask when the decision is reject', () => {
+    const repo = new InMemoryApprovalRequestRepository();
+    const base = createService();
+    const service = new TaskApprovalService({ ...base.options, approvalRequestRepository: repo });
+    repo.insert(makeApprovalRow({ id: 'apr-reject', gate_type: 'approval' }));
+
+    service.decideApproval('apr-reject', {
+      reviewerId: 'reviewer-2',
+      decision: 'reject',
+      comment: 'not yet',
+    });
+
+    expect(base.routeGateCommand).toHaveBeenCalledWith('OC-APPROVAL-1', 'review', 'reject', 'reviewer-2');
+  });
+
+  it('decideApproval routes archon_review rows to archonApproveTask / archonRejectTask', () => {
+    const repo = new InMemoryApprovalRequestRepository();
+    const base = createService();
+    const service = new TaskApprovalService({ ...base.options, approvalRequestRepository: repo });
+    repo.insert(makeApprovalRow({ id: 'apr-archon-ok', gate_type: 'archon_review' }));
+    repo.insert(makeApprovalRow({ id: 'apr-archon-no', gate_type: 'archon_review' }));
+
+    service.decideApproval('apr-archon-ok', { reviewerId: 'a', decision: 'approve', comment: 'fine' });
+    service.decideApproval('apr-archon-no', { reviewerId: 'a', decision: 'reject', comment: 'no' });
+
+    expect(base.routeGateCommand).toHaveBeenCalledWith('OC-APPROVAL-1', 'review', 'archon-approve', 'a');
+    expect(base.routeGateCommand).toHaveBeenCalledWith('OC-APPROVAL-1', 'review', 'archon-reject', 'a');
+  });
+
+  it('decideApproval rejects unknown ids and already-resolved rows defensively', () => {
+    const repo = new InMemoryApprovalRequestRepository();
+    const base = createService();
+    const service = new TaskApprovalService({ ...base.options, approvalRequestRepository: repo });
+    repo.insert(makeApprovalRow({ id: 'apr-done', status: 'approved' }));
+
+    expect(() => service.decideApproval('missing', { reviewerId: 'r', decision: 'approve', comment: '' }))
+      .toThrow(/approval request missing not found/i);
+    expect(() => service.decideApproval('apr-done', { reviewerId: 'r', decision: 'approve', comment: '' }))
+      .toThrow(/approval request apr-done is already approved/i);
+  });
+
+  it('decideApproval refuses unsupported gate types rather than guessing', () => {
+    const repo = new InMemoryApprovalRequestRepository();
+    const base = createService();
+    const service = new TaskApprovalService({ ...base.options, approvalRequestRepository: repo });
+    repo.insert(makeApprovalRow({ id: 'apr-weird', gate_type: 'unknown_gate' }));
+
+    expect(() => service.decideApproval('apr-weird', { reviewerId: 'r', decision: 'approve', comment: '' }))
+      .toThrow(/unsupported gate_type unknown_gate/i);
   });
 });
