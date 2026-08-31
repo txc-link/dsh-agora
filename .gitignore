@@ -31,3 +31,11 @@ agora-ts/apps/server/archive-outbox
 .repos/
 smoke-data
 .secrets/
+
+# Sandbox / local-only state (2026-08-31 next-batch hygiene)
+# .home/ holds the user's runtime state mirror (.agora, .npm, .skills)
+# .npm-cache* dirs are sandbox-redirected npm scratch dirs; they must
+# never enter git (per AGENTS.md §8 — no bulk state).
+/.home/
+/.npm-cache/
+/.npm-cache-install/
