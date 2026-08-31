@@ -1,9 +1,31 @@
 # T_transfer — assignee reassignment design (follow-up)
 
-> **Status**: design draft (NOT implemented). Walkthrough §3 deferred
-> T_transfer because it touches Core semantics (RuntimeBinding,
-> Employment). This doc captures the agreed shortest-path proposal and
-> the open questions the user needs to decide before code lands.
+> **Status**: design-only reference (NOT implemented in master).
+>
+> Walkthrough §3 deferred T_transfer because it touches Core semantics
+> (RuntimeBinding, Employment). This doc captures the agreed
+> shortest-path proposal and the open questions the user needs to
+> decide before code lands.
+>
+> **Slice attempt + unwind log**:
+> - 2026-08-31 step 17-37 (turn 7): implemented as slice 1 on
+>   `feat/2026-08-31-T-transfer` (commits ba32cdb + bcccbab): migration
+>   045_task_transfers + TaskTransferRepository + TaskTransferService
+>   (decideAuthority + transferTaskRequest + listHistory) + CLI verb
+>   `agora task transfer` (writes pending + opens task_transfer
+>   approval) + §9 decisions applied per turn108 autonomy + §1.5
+>   defaults. 7/7 unit tests green.
+> - 2026-09-01 step 1-5 (turn 8): user said "逆序" — `git push origin
+>   --delete feat/2026-08-31-T-transfer` + worktree removed + local
+>   branch deleted. master was never affected (no merge).
+> - 2026-09-01 step 16-17 (turn 9): publish-dsh-matrix-connector-0.6.0.md
+>   + monitoring-relay systemd/container docs landed; T_transfer remains
+>   un-implemented in master.
+>
+> **§9 decisions status**: the default recommendations captured in §9
+> were applied during the transient slice (see §2 below) but are no
+> longer authoritative — the user may change any of them before the
+> next implementation attempt.
 
 ## 1. 问题与边界
 
