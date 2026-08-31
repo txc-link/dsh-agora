@@ -60,6 +60,7 @@ import {
   decideApprovalRequestSchema,
   listPendingApprovalsQuerySchema,
   calendarQuerySchema,
+  submitMarkdownRequestSchema,
   archiveJobScanRequestSchema,
   archiveJobStatusUpdateRequestSchema,
   cleanupTasksRequestSchema,
@@ -5837,6 +5838,62 @@ export function buildApp(options: BuildAppOptions = {}) {
       const { artifactId } = request.params as { artifactId: string };
       const artifact = artifactService.get(artifactId);
       return reply.type(artifact.media_type).send(artifactService.content(artifactId));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  // 2026-08-31 next-batch — markdown collaborative document (v0.1).
+  // GET returns the markdown content; POST submits a new version (creates
+  // a new content-addressed artifact). The widget computes the history by
+  // listing artifacts with the same owner_ref.
+  app.get('/api/artifacts/:artifactId/markdown', async (request, reply) => {
+    if (!artifactService) return reply.status(503).send({ message: 'Artifact service is not configured' });
+    try {
+      const { artifactId } = request.params as { artifactId: string };
+      const artifact = artifactService.get(artifactId);
+      if (!artifact.media_type.startsWith('text/markdown')) {
+        return reply.status(415).send({ message: `artifact ${artifactId} is not markdown (media_type=${artifact.media_type})` });
+      }
+      const content = Buffer.from(artifactService.content(artifactId)).toString('utf8');
+      return reply.send({
+        artifact_id: artifactId,
+        content,
+        content_hash: artifact.sha256,
+        size_bytes: artifact.size_bytes,
+        created_at: artifact.created_at,
+        parent_artifact_id: null,
+      });
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/artifacts/:artifactId/markdown', async (request, reply) => {
+    if (!artifactService) return reply.status(503).send({ message: 'Artifact service is not configured' });
+    try {
+      const { artifactId } = request.params as { artifactId: string };
+      const payload = submitMarkdownRequestSchema.parse(request.body);
+      const previous = artifactService.get(artifactId);
+      const newArtifact = artifactService.create({
+        name: previous.name,
+        kind: previous.kind,
+        media_type: 'text/markdown',
+        content_base64: Buffer.from(payload.content, 'utf8').toString('base64'),
+        owner_kind: previous.owner_kind,
+        owner_ref: previous.owner_ref,
+        metadata: {
+          ...(previous.metadata ?? {}),
+          parent_artifact_id: payload.parent_artifact_id ?? artifactId,
+        },
+      });
+      return reply.send({
+        artifact: newArtifact,
+        content_hash: newArtifact.sha256,
+        is_new_version: true,
+      });
     } catch (error) {
       const translated = translateError(error);
       return reply.status(translated.statusCode).send(translated.body);

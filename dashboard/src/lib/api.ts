@@ -82,6 +82,9 @@ import {
   decideApprovalRequestSchema,
   pendingApprovalRequestSchema,
   taskProgressSchema,
+  markdownDocumentResponseSchema,
+  markdownSubmitResponseSchema,
+  artifactSchema,
 } from '@agora-ts/contracts';
 import { z, type ZodType } from 'zod';
 import { parseJsonWithContext } from '@/utils/json';
@@ -2183,6 +2186,33 @@ export function decideApproval(approvalId: string, input: { decision: 'approve' 
     {
       method: 'POST',
       body: JSON.stringify(decideApprovalRequestSchema.parse(input)),
+    },
+  );
+}
+
+// ─── Markdown collaborative document (2026-08-31 next-batch) ──────────────
+
+export type ApiMarkdownDocumentDto = z.infer<typeof markdownDocumentResponseSchema>;
+export type ApiMarkdownSubmitResponseDto = z.infer<typeof markdownSubmitResponseSchema>;
+export type ApiArtifactDto = z.infer<typeof artifactSchema>;
+
+export function getMarkdownArtifact(artifactId: string): Promise<ApiMarkdownDocumentDto> {
+  return request<ApiMarkdownDocumentDto>(
+    `/artifacts/${encodeURIComponent(artifactId)}/markdown`,
+    markdownDocumentResponseSchema,
+  );
+}
+
+export function submitMarkdownArtifact(
+  artifactId: string,
+  input: { content: string; parent_artifact_id?: string },
+): Promise<ApiMarkdownSubmitResponseDto> {
+  return request<ApiMarkdownSubmitResponseDto>(
+    `/artifacts/${encodeURIComponent(artifactId)}/markdown`,
+    markdownSubmitResponseSchema,
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
     },
   );
 }
