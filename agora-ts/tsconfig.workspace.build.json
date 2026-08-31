@@ -18,6 +18,7 @@
     { "path": "./packages/adapters-matrix/tsconfig.build.json" },
     { "path": "./packages/adapters-calendar/tsconfig.build.json" },
     { "path": "./packages/testing/tsconfig.build.json" },
+    { "path": "./apps/monitoring-relay/tsconfig.build.json" },
     { "path": "./apps/server/tsconfig.build.json" },
     { "path": "./apps/cli/tsconfig.build.json" }
   ]

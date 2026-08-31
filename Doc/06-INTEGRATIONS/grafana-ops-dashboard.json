@@ -1,0 +1,120 @@
+{
+  "title": "Agora System Ops",
+  "uid": "agora-system-ops",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["agora", "system"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "node",
+        "type": "query",
+        "datasource": { "type": "influxdb", "uid": "agora-influx" },
+        "query": "show tag values from \"agora_node\" with key = \"node_id\"",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "current": { "selected": false, "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Agora REST health (up=1)",
+      "datasource": { "type": "influxdb", "uid": "agora-influx" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "SELECT last(\"up\") FROM \"agora_rest_health\" WHERE $timeFilter GROUP BY time($__interval), \"node_id\" fill(null)",
+          "rawQuery": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Active tasks",
+      "datasource": { "type": "influxdb", "uid": "agora-influx" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        { "refId": "A", "query": "SELECT count(\"id\") FROM \"tasks\" WHERE \"state\" = 'active' AND $timeFilter GROUP BY time($__interval) fill(null)", "rawQuery": true }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Blocked tasks",
+      "datasource": { "type": "influxdb", "uid": "agora-influx" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 5 }] } } },
+      "targets": [
+        { "refId": "A", "query": "SELECT count(\"id\") FROM \"tasks\" WHERE \"state\" = 'blocked' AND $timeFilter GROUP BY time($__interval) fill(null)", "rawQuery": true }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Task state over time",
+      "datasource": { "type": "influxdb", "uid": "agora-influx" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+      "targets": [
+        { "refId": "A", "query": "SELECT count(\"id\") FROM \"tasks\" WHERE $timeFilter GROUP BY time($__interval), \"state\" fill(null)", "rawQuery": true }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Connector heartbeat (last seen)",
+      "datasource": { "type": "influxdb", "uid": "agora-influx" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        { "refId": "A", "query": "SELECT last(\"last_seen\") FROM \"connector_heartbeat\" WHERE $timeFilter GROUP BY time($__interval), \"node_id\" fill(null)", "rawQuery": true }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "GPU memory (MiB free) — node-a",
+      "datasource": { "type": "influxdb", "uid": "agora-influx" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        { "refId": "A", "query": "SELECT mean(\"gpu_mem_free\") FROM \"gpu\" WHERE \"node_id\" = 'node-a' AND $timeFilter GROUP BY time($__interval), \"gpu_index\" fill(null)", "rawQuery": true }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Synapse / Element / Hookshot port liveness",
+      "datasource": { "type": "influxdb", "uid": "agora-influx" },
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 20 },
+      "targets": [
+        { "refId": "A", "query": "SELECT last(\"up\") FROM \"port_probe\" WHERE \"port\" =~ /^(8008|18085|19000|19001|19002|18008)$/ AND $timeFilter GROUP BY \"port\"", "rawQuery": true }
+      ],
+      "options": { "reduceOptions": { "values": false, "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Media disk watermark (%)",
+      "datasource": { "type": "influxdb", "uid": "agora-influx" },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        { "refId": "A", "query": "SELECT mean(\"used_pct\") FROM \"media_disk\" WHERE $timeFilter GROUP BY time($__interval), \"mount\" fill(null)", "rawQuery": true }
+      ]
+    }
+  ]
+}
