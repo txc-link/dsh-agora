@@ -5539,6 +5539,25 @@ export function createCliProgram(deps: CliDependencies = {}) {
       );
     });
 
+  // T_transfer (deferred to follow-up). The CLI surface returns an
+  // explicit "not implemented" message so the gap is honest per §1.5;
+  // the design lives in
+  //   Doc/09-PLANNING/TASKS/2026-08-31-next-batch/follow-up-T-transfer-design.md
+  // and waits on the user decisions in §9 of that doc.
+  task
+    .command('transfer')
+    .description('assignee reassignment (T_transfer; design-only, awaiting user拍板)')
+    .argument('<taskId>', '任务 ID')
+    .option('--to <runtimeRef>', 'target runtime_target_ref (e.g. dsh:node-a:default)')
+    .option('--employment <employmentId>', 'optional target employment id')
+    .option('--reason <reason>', 'why transfer')
+    .action((taskId: string, options: { to?: string; employment?: string; reason?: string }) => {
+      writeLine(
+        stdout,
+        `❌ task transfer not implemented yet. design: Doc/09-PLANNING/TASKS/2026-08-31-next-batch/follow-up-T-transfer-design.md (task=${taskId} to=${options.to ?? '-'} reason=${options.reason ?? '-'})`,
+      );
+    });
+
   // 2026-08-31 next-batch — calendar / commitment center.
   // Reads events directly via Radicale; deployment sets RADICALE_URL +
   // RADICALE_USER + RADICALE_PASSWORD. Without them the command prints
