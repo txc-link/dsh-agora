@@ -96,3 +96,4 @@
 | `packages/db/database.test.ts` 缺 043/044 断言 | Company OS v0.1 (turn 140) 未同步测试 | 不修 (baseline drift) |
 | `apps/cli/composition.test.ts` ROFS `/root/.agora/skills/...` | 沙箱 ROFS, runtime-assets self-heal 写入失败 | 不修 (环境约束) |
 | `apps/cli/index.test.ts` `attempt to write a readonly database` | 沙箱 ROFS db | 不修 (环境约束) |
+| `dashboard/src/test/**.test.{ts,tsx}` 35 files × ~144 tests fail with `TypeError: React.act is not a function` (React 19 + RTL version skew) | dashboard React 19 + react-dom test-utils production build removed `.act`; not introduced by this batch — verified by `tsc --noEmit` clean | 不修 (baseline drift; fix is a dashboard-side dependency bump task) |
