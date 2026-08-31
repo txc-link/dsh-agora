@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Clock3, ShieldCheck, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import type { ApiPendingApprovalRequestDto } from '@/lib/api';
 import {
-  ApiPendingApprovalRequestDto,
   decideApproval,
   listPendingApprovals,
 } from '@/lib/api';

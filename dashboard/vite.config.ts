@@ -88,12 +88,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      // dashboard dev is served under /dashboard/ via frpc, so the browser
-      // hits /dashboard/api/* — must include the base path prefix to match.
-      '/dashboard/api': {
-        target: runtimeEnv.apiBaseUrl,
-        changeOrigin: true,
-      },
+      '/api': runtimeEnv.apiBaseUrl,
     },
   },
   build: {

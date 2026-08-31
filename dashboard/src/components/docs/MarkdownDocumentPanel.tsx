@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FileText, Save } from 'lucide-react';
+import type { ApiMarkdownDocumentDto } from '@/lib/api';
 import {
-  ApiMarkdownDocumentDto,
   getMarkdownArtifact,
   submitMarkdownArtifact,
 } from '@/lib/api';

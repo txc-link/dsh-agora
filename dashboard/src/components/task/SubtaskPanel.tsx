@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CheckCircle2, CircleDashed, Loader2, ShieldAlert, XCircle } from 'lucide-react';
-import { ApiTaskProgressDto, getTaskProgress } from '@/lib/api';
+import type { ApiTaskProgressDto } from '@/lib/api';
+import { getTaskProgress } from '@/lib/api';
 import { StateBadge } from '@/components/ui/StateBadge';
 
 type Status = 'idle' | 'loading' | 'ready' | 'error';
