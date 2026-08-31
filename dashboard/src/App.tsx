@@ -26,6 +26,7 @@ import { ArchivePage } from '@/pages/ArchivePage';
 import { TemplatesPage } from '@/pages/TemplatesPage';
 import { TemplateGraphEditorPage } from '@/pages/TemplateGraphEditorPage';
 import { ReviewsPage } from '@/pages/ReviewsPage';
+import { ApprovalsQueuePage } from '@/pages/ApprovalsQueuePage';
 import { SystemPage } from '@/pages/SystemPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { LoginPage } from '@/pages/LoginPage';
@@ -88,6 +89,7 @@ export default function App() {
         <Route path="/tasks/:taskId" element={<LegacyTasksRedirectPage />} />
         <Route path="/reviews" element={<ReviewsPage />} />
         <Route path="/reviews/:reviewId" element={<ReviewsPage />} />
+        <Route path="/approvals" element={<ApprovalsQueuePage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

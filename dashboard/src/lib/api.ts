@@ -79,6 +79,9 @@ import {
   upsertRuntimeTargetOverlayRequestSchema,
   validateWorkflowRequestSchema,
   workspaceBootstrapStatusSchema,
+  decideApprovalRequestSchema,
+  pendingApprovalRequestSchema,
+  taskProgressSchema,
 } from '@agora-ts/contracts';
 import { z, type ZodType } from 'zod';
 import { parseJsonWithContext } from '@/utils/json';
@@ -2143,6 +2146,43 @@ export function validateWorkflow(input: {
     {
       method: 'POST',
       body: JSON.stringify(validateWorkflowRequestSchema.parse(input)),
+    },
+  );
+}
+
+// ─── Task center (2026-08-31 next-batch) ───────────────────────────────────
+
+export type ApiTaskProgressDto = z.infer<typeof taskProgressSchema>;
+export type ApiPendingApprovalRequestDto = z.infer<typeof pendingApprovalRequestSchema>;
+
+export function getTaskProgress(taskId: string): Promise<ApiTaskProgressDto> {
+  return request<ApiTaskProgressDto>(
+    `/tasks/${encodeURIComponent(taskId)}/progress`,
+    taskProgressSchema,
+  );
+}
+
+export function listPendingApprovals(query?: { limit?: number }): Promise<{ approvals: ApiPendingApprovalRequestDto[] }> {
+  const search = new URLSearchParams();
+  if (query?.limit !== undefined) search.set('limit', String(query.limit));
+  const suffix = search.toString() ? `?${search.toString()}` : '';
+  return request<{ approvals: ApiPendingApprovalRequestDto[] }>(
+    `/approvals/pending${suffix}`,
+    z.object({ approvals: z.array(pendingApprovalRequestSchema) }),
+  );
+}
+
+export function decideApproval(approvalId: string, input: { decision: 'approve' | 'reject'; comment?: string }): Promise<{ task: ApiTaskDto; decision: 'approve' | 'reject'; reviewer: string }> {
+  return request<{ task: ApiTaskDto; decision: 'approve' | 'reject'; reviewer: string }>(
+    `/approvals/${encodeURIComponent(approvalId)}/decide`,
+    z.object({
+      task: taskSchema,
+      decision: z.enum(['approve', 'reject']),
+      reviewer: z.string(),
+    }),
+    {
+      method: 'POST',
+      body: JSON.stringify(decideApprovalRequestSchema.parse(input)),
     },
   );
 }
