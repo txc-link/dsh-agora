@@ -95,3 +95,96 @@ renders with the embedded Grafana token (anonymous or read-only).
   written to `agora_*` measurements; deployments wire host probes
   accordingly).
 - Element widget creator-user-id provisioning.
+
+## Run as systemd service (Linux host)
+
+```ini
+# /etc/systemd/system/agora-monitoring-relay.service
+[Unit]
+Description=Agora Grafana → Matrix relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agora
+Group=agora
+WorkingDirectory=/opt/agora/monitoring-relay
+EnvironmentFile=/etc/agora/monitoring-relay.env
+ExecStart=/usr/bin/node dist/server.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/agora/monitoring-relay/log
+StandardOutput=append:/var/log/agora/monitoring-relay.log
+StandardError=append:/var/log/agora/monitoring-relay.err
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Env file (`/etc/agora/monitoring-relay.env`, mode 0640, root:agora):
+
+```sh
+MATRIX_HOMES_URL=https://matrix.example.org
+MATRIX_ACCESS_TOKEN=syt_xxx
+MATRIX_OPS_ROOM_ID=!ops:matrix.example.org
+MATRIX_RELAY_TOKEN=<paste output of: openssl rand -hex 32>
+PORT=8089
+NODE_ENV=production
+```
+
+Setup:
+
+```sh
+# one-time
+sudo useradd --system --shell /usr/sbin/nologin --home /opt/agora agora
+sudo install -d -o agora -g agora -m 0750 /opt/agora/monitoring-relay
+cd /opt/agora/monitoring-relay
+sudo -u agora git clone --depth=1 https://github.com/txc-link/dsh-agora.git .
+# or: rsync from your build server
+cd /opt/agora/monitoring-relay/agora-ts && sudo -u agora npm ci --omit=dev
+cd /opt/agora/monitoring-relay/agora-ts && sudo -u agora npm run build --workspace=@agora-ts/monitoring-relay
+# (NODE_ENV=production) /etc/agora/monitoring-relay.env is the env file
+sudo install -d -o agora -g agora -m 0750 /opt/agora/monitoring-relay/log
+sudo systemctl daemon-reload
+sudo systemctl enable --now agora-monitoring-relay
+sudo systemctl status agora-monitoring-relay    # expect active (running)
+curl -fsS http://127.0.0.1:8089/healthz          # expect {"ok":true,...}
+```
+
+## Run as a container (alternative)
+
+Single-container alternative for hosts without systemd (e.g. a
+small K8s pod):
+
+```Dockerfile
+# apps/monitoring-relay/Dockerfile  (sample)
+FROM node:22-bookworm-slim
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+COPY dist ./dist
+EXPOSE 8089
+USER node
+CMD ["node", "dist/server.js"]
+```
+
+```sh
+# build
+cd agora-ts && npm run build --workspace=@agora-ts/monitoring-relay
+
+# run (mount env file, never bake secrets in image)
+docker build -t agora/monitoring-relay:0.1.0 apps/monitoring-relay
+docker run -d --name agora-monitoring-relay \
+  --restart=unless-stopped \
+  -p 127.0.0.1:8089:8089 \
+  --env-file /etc/agora/monitoring-relay.env \
+  agora/monitoring-relay:0.1.0
+```
+
+K8s Deployment equivalent is left to the operator (the env contract
+above is the entire interface; the service is stateless).
