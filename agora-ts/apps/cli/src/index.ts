@@ -5539,6 +5539,78 @@ export function createCliProgram(deps: CliDependencies = {}) {
       );
     });
 
+  // 2026-08-31 next-batch — calendar / commitment center.
+  // Reads events directly via Radicale; deployment sets RADICALE_URL +
+  // RADICALE_USER + RADICALE_PASSWORD. Without them the command prints
+  // a clear "not configured" message (no silent fallback per §1.5).
+  const calendar = program
+    .command('calendar')
+    .description('calendar / commitment center (Radicale adapter)');
+
+  const calendarResolveService = async () => {
+    const url = process.env.RADICALE_URL;
+    const user = process.env.RADICALE_USER;
+    const password = process.env.RADICALE_PASSWORD;
+    if (!url || !user || !password) {
+      throw new Error('calendar not configured: set RADICALE_URL + RADICALE_USER + RADICALE_PASSWORD');
+    }
+    const { CalendarService } = await import('@agora-ts/core');
+    const { RadicaleClient } = await import('@agora-ts/adapters-calendar');
+    const client = new RadicaleClient({ baseUrl: url, username: user, password });
+    return new CalendarService({
+      client,
+      collections: {
+        work: process.env.RADICALE_WORK_COLLECTION ?? `/${user}/work/`,
+        life: process.env.RADICALE_LIFE_COLLECTION ?? `/${user}/life/`,
+      },
+    });
+  };
+
+  calendar
+    .command('today')
+    .description('列出今天的日历事件（domain 默认 work）')
+    .option('--domain <domain>', 'work | life', 'work')
+    .option('--json', '输出 JSON', false)
+    .action(async (options: { domain?: string; json?: boolean }) => {
+      const service = await calendarResolveService();
+      const events = await service.listToday((options.domain as 'work' | 'life') ?? 'work');
+      if (options.json) { writeLine(stdout, JSON.stringify({ events }, null, 2)); return; }
+      for (const e of events) writeLine(stdout, `${e.start} → ${e.end}  ${e.summary}`);
+    });
+
+  calendar
+    .command('conflicts')
+    .description('检测今日事件的冲突（重叠区间）')
+    .option('--domain <domain>', 'work | life', 'work')
+    .option('--json', '输出 JSON', false)
+    .action(async (options: { domain?: string; json?: boolean }) => {
+      const service = await calendarResolveService();
+      const conflicts = await service.listConflicts((options.domain as 'work' | 'life') ?? 'work');
+      if (options.json) { writeLine(stdout, JSON.stringify({ conflicts }, null, 2)); return; }
+      if (conflicts.length === 0) { writeLine(stdout, 'no conflicts'); return; }
+      for (const c of conflicts) writeLine(stdout, `⚠ ${c.summary_a} ↔ ${c.summary_b}  (${c.start} → ${c.end})`);
+    });
+
+  calendar
+    .command('morning')
+    .description('生成早间简报（markdown）')
+    .option('--domain <domain>', 'work | life', 'work')
+    .action(async (options: { domain?: string }) => {
+      const service = await calendarResolveService();
+      const md = await service.morningReport((options.domain as 'work' | 'life') ?? 'work');
+      writeLine(stdout, md);
+    });
+
+  calendar
+    .command('evening')
+    .description('生成晚间 check-out（markdown）')
+    .option('--domain <domain>', 'work | life', 'work')
+    .action(async (options: { domain?: string }) => {
+      const service = await calendarResolveService();
+      const md = await service.eveningReport((options.domain as 'work' | 'life') ?? 'work');
+      writeLine(stdout, md);
+    });
+
   const approvals = program
     .command('approvals')
     .description('审批队列（Dashboard Human Gate 入口）；A4：决策须 Dashboard session');

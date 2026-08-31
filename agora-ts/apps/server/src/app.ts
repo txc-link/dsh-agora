@@ -59,6 +59,7 @@ import {
   archonRejectTaskRequestSchema,
   decideApprovalRequestSchema,
   listPendingApprovalsQuerySchema,
+  calendarQuerySchema,
   archiveJobScanRequestSchema,
   archiveJobStatusUpdateRequestSchema,
   cleanupTasksRequestSchema,
@@ -219,6 +220,7 @@ import {
   type InboxReplyService,
   type TaskParticipationService,
   type TaskContextBindingService,
+  CalendarService,
   type TaskService,
   type TemplateAuthoringService,
   type WorkspaceBootstrapService,
@@ -326,6 +328,8 @@ export interface BuildAppOptions {
   notificationDispatcher?: NotificationDispatcher;
   /** im.notify_on_task_create: 建任务后写 task_created 公告行, 由 scheduler 周期扫描推送 */
   taskCreatedNotify?: { enabled: boolean };
+  // 2026-08-31 next-batch — calendar/commitment projection (Radicale adapter).
+  calendarService?: CalendarService;
   imProvisioningPort?: IMProvisioningPort;
   humanAccountService?: HumanAccountService;
   relationshipProfileService?: RelationshipProfileService;
@@ -1204,6 +1208,7 @@ export function buildApp(options: BuildAppOptions = {}) {
     logger: false,
   });
   const taskService = options.taskService;
+  const calendarService = options.calendarService;
   const consentService = options.consentService ?? (options.db
     ? new ConsentService({ repository: new ConsentGrantRepository(options.db) })
     : undefined);
@@ -4522,6 +4527,49 @@ export function buildApp(options: BuildAppOptions = {}) {
         comment: payload.comment,
       });
       return reply.send({ task, decision: payload.decision, reviewer: reviewerId });
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  // 2026-08-31 next-batch — calendar/commitment projection (Radicale).
+  app.get('/api/calendar/today', async (request, reply) => {
+    if (!calendarService) return reply.status(503).send({ message: 'Calendar service is not configured (set RADICALE_URL + RADICALE_USER + RADICALE_PASSWORD)' });
+    try {
+      const query = calendarQuerySchema.parse(request.query ?? {});
+      const events = await calendarService.listToday(query.domain);
+      return reply.send({ domain: query.domain, events });
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/calendar/conflicts', async (request, reply) => {
+    if (!calendarService) return reply.status(503).send({ message: 'Calendar service is not configured' });
+    try {
+      const query = calendarQuerySchema.parse(request.query ?? {});
+      const conflicts = await calendarService.listConflicts(query.domain);
+      return reply.send({ domain: query.domain, conflicts });
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/calendar/reports/:kind', async (request, reply) => {
+    if (!calendarService) return reply.status(503).send({ message: 'Calendar service is not configured' });
+    try {
+      const params = request.params as { kind: string };
+      if (params.kind !== 'morning' && params.kind !== 'evening') {
+        return reply.status(400).send({ message: `kind must be morning|evening, got ${params.kind}` });
+      }
+      const query = calendarQuerySchema.parse(request.query ?? {});
+      const markdown = params.kind === 'morning'
+        ? await calendarService.morningReport(query.domain)
+        : await calendarService.eveningReport(query.domain);
+      return reply.send({ domain: query.domain, kind: params.kind, markdown });
     } catch (error) {
       const translated = translateError(error);
       return reply.status(translated.statusCode).send(translated.body);

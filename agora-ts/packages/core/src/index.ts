@@ -522,3 +522,4 @@ export {
   type InformationGovernanceServiceOptions,
 } from './governance-service.js';
 export { redactSecrets, redactSecretText } from './secret-redaction.js';
+export { CalendarService, isoDateInTz, type CalendarServiceOptions, type CalendarServiceCollections } from './calendar-service.js';

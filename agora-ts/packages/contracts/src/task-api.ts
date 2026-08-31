@@ -723,3 +723,51 @@ export const decideApprovalRequestSchema = z.object({
   comment: z.string().default(''),
 });
 export type DecideApprovalRequestDto = z.infer<typeof decideApprovalRequestSchema>;
+
+// ─── Calendar (2026-08-31 next-batch) ──────────────────────────────────────
+
+export const calendarDomainSchema = z.enum(['work', 'life']);
+export type CalendarDomainDto = z.infer<typeof calendarDomainSchema>;
+
+export const calendarEventSchema = z.object({
+  uid: z.string(),
+  summary: z.string(),
+  start: z.string(), // ISO 8601
+  end: z.string(),   // ISO 8601
+  location: z.string().nullable(),
+});
+export type CalendarEventDto = z.infer<typeof calendarEventSchema>;
+
+export const calendarConflictSchema = z.object({
+  uid_a: z.string(),
+  uid_b: z.string(),
+  summary_a: z.string(),
+  summary_b: z.string(),
+  start: z.string(),
+  end: z.string(),
+});
+export type CalendarConflictDto = z.infer<typeof calendarConflictSchema>;
+
+export const calendarListResponseSchema = z.object({
+  domain: calendarDomainSchema,
+  events: z.array(calendarEventSchema),
+});
+export type CalendarListResponseDto = z.infer<typeof calendarListResponseSchema>;
+
+export const calendarConflictsResponseSchema = z.object({
+  domain: calendarDomainSchema,
+  conflicts: z.array(calendarConflictSchema),
+});
+export type CalendarConflictsResponseDto = z.infer<typeof calendarConflictsResponseSchema>;
+
+export const calendarReportResponseSchema = z.object({
+  domain: calendarDomainSchema,
+  kind: z.enum(['morning', 'evening']),
+  markdown: z.string(),
+});
+export type CalendarReportResponseDto = z.infer<typeof calendarReportResponseSchema>;
+
+export const calendarQuerySchema = z.object({
+  domain: calendarDomainSchema.default('work'),
+});
+export type CalendarQueryDto = z.infer<typeof calendarQuerySchema>;
