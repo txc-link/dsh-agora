@@ -1,4 +1,4 @@
-import type { AgoraHealth, AgoraTask, AgoraTaskStatus, AgentScorecard, CoordinationRun, CoordinationRunStatus, CreateCoordinationRunInput, CreateAgoraTaskInput, CreateRuntimeDispatchInput, RuntimeDispatch, RecordRuntimeDispatchProgressInput, RuntimeDispatchProgress, RuntimeResultEnvelope, RuntimeDelivery, RuntimeNode, RuntimeNodeHeartbeatInput, RuntimeSessionBinding, RuntimeTarget } from './contracts.js';
+import type { AgoraHealth, AgoraTask, AgoraTaskStatus, AgentScorecard, CoordinationRun, CoordinationRunStatus, CreateCoordinationRunInput, CreateAgoraTaskInput, CreateRuntimeDispatchInput, RuntimeDispatch, RecordRuntimeDispatchProgressInput, RuntimeDispatchProgress, RuntimeResultEnvelope, RuntimeDelivery, RuntimeNode, RuntimeNodeHeartbeatInput, RuntimeHandshakeResponse, RuntimeSessionBinding, RuntimeTarget } from './contracts.js';
 export interface AgoraClientOptions {
     readonly serverUrl: string;
     readonly apiToken?: string | undefined;
@@ -23,6 +23,12 @@ export declare class AgoraClient {
     taskStatus(taskId: string, signal?: AbortSignal): Promise<AgoraTaskStatus>;
     createTask(input: CreateAgoraTaskInput, signal?: AbortSignal): Promise<AgoraTask>;
     heartbeatRuntimeNode(nodeId: string, input: RuntimeNodeHeartbeatInput, signal?: AbortSignal): Promise<RuntimeNode>;
+    runtimeHandshake(input: {
+        protocol: string;
+        plugin_version: string;
+        instance_id: string;
+        capabilities: readonly string[];
+    }, signal?: AbortSignal): Promise<RuntimeHandshakeResponse>;
     listRuntimeNodes(signal?: AbortSignal): Promise<RuntimeNode[]>;
     listRuntimeTargets(signal?: AbortSignal): Promise<RuntimeTarget[]>;
     createRuntimeDispatch(nodeId: string, input: CreateRuntimeDispatchInput, signal?: AbortSignal): Promise<RuntimeDispatch>;

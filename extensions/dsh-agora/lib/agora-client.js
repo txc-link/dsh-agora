@@ -62,6 +62,9 @@ export class AgoraClient {
             method: 'PUT', body: input, signal,
         });
     }
+    runtimeHandshake(input, signal) {
+        return this.request('/api/runtime-handshake', { method: 'POST', body: input, signal });
+    }
     listRuntimeNodes(signal) {
         return this.request('/api/runtime-nodes', { signal }).then(value => value.nodes);
     }

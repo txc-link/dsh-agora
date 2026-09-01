@@ -51,6 +51,17 @@ export class RuntimeNodeWorker {
                 throw new Error('no runtime agents are registered');
             const bots = await this.listBots();
             const now = new Date().toISOString();
+            const handshakeClient = this.options.client;
+            if (typeof handshakeClient.runtimeHandshake === 'function') {
+                const handshake = await handshakeClient.runtimeHandshake({
+                    protocol: DSH_AGORA_NODE_PROTOCOL,
+                    plugin_version: this.options.pluginVersion,
+                    instance_id: this.options.instanceId,
+                    capabilities: ['heartbeat', 'dispatch', 'delivery'],
+                }, this.abortController.signal);
+                if (!handshake.compatible)
+                    throw new Error(`runtime handshake rejected: ${handshake.reason ?? 'incompatible'}`);
+            }
             await this.options.client.heartbeatRuntimeNode(this.options.nodeId, {
                 protocol: DSH_AGORA_NODE_PROTOCOL,
                 instance_id: this.options.instanceId,
