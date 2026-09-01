@@ -34,6 +34,7 @@ export * from './project-membership.js';
 export * from './project-agent-roster.js';
 export * from './runtime-target.js';
 export * from './runtime-node.js';
+export * from './runtime-handshake.js';
 export * from './coordination.js';
 export * from './artifact.js';
 export * from './memory.js';

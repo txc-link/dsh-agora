@@ -79,6 +79,16 @@ export class RuntimeNodeWorker {
       if (agents.length === 0) throw new Error('no runtime agents are registered')
       const bots = await this.listBots()
       const now = new Date().toISOString()
+      const handshakeClient = this.options.client as AgoraClientWithHandshake
+      if (typeof handshakeClient.runtimeHandshake === 'function') {
+        const handshake = await handshakeClient.runtimeHandshake({
+          protocol: DSH_AGORA_NODE_PROTOCOL,
+          plugin_version: this.options.pluginVersion,
+          instance_id: this.options.instanceId,
+          capabilities: ['heartbeat', 'dispatch', 'delivery'],
+        }, this.abortController.signal)
+        if (!handshake.compatible) throw new Error(`runtime handshake rejected: ${handshake.reason ?? 'incompatible'}`)
+      }
       await this.options.client.heartbeatRuntimeNode(this.options.nodeId, {
         protocol: DSH_AGORA_NODE_PROTOCOL,
         instance_id: this.options.instanceId,
@@ -390,6 +400,8 @@ export class RuntimeNodeWorker {
     return this.options.deliveryLeaseSeconds ?? 60
   }
 }
+
+type AgoraClientWithHandshake = AgoraClient & { runtimeHandshake?: (input: { protocol: string; plugin_version: string; instance_id: string; capabilities: readonly string[] }, signal?: AbortSignal) => Promise<{ compatible: boolean; reason?: string | null }> }
 
 function schedule(callback: () => void, delay: number, signal: AbortSignal): ReturnType<typeof setTimeout> | null {
   if (signal.aborted) return null

@@ -210,3 +210,8 @@ agora-ts 这一阶段不主动开 slice。R-E / R-F 按矩阵仓 SSoT phase 3 + 
 6. Company 仅使用 `domain:company`。Life/Health/Companion 继续使用独立顶层 Space、身份和安全域，跨域读取仍需 InformationPolicy/Consent/Gate。
 
 尚未宣称完成的长期能力：自动例行总结、偏好/记忆质量治理、文档模板分层、自主学习预算和 protected-domain E2EE 上线 Gate；这些在现有 Brain/Mem0/Forum/Routine 能力之上继续迭代，不阻碍本次组织与委派主链运行。
+
+## 2026-09-01 版本握手、故障回归与安全域激活
+- RuntimeHandshakeService + POST /api/runtime-handshake：协议、最低插件版本、能力集合协商；插件启动先握手，失败则不上线。
+- 三节点回归覆盖 node-mac/node-home-linux/node-work-windows 的重复心跳、断线 stale、重启接管。
+- Life/Health/Companion 仅在握手与故障回归证据齐备、四个独立顶层 Space/身份通过门禁后激活；本阶段不直接部署。

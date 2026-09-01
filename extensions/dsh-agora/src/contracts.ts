@@ -69,6 +69,11 @@ export interface RuntimeNodeHeartbeatInput {
   readonly metadata?: Readonly<Record<string, unknown>> | null
 }
 
+export interface RuntimeHandshakeResponse {
+  readonly compatible: boolean
+  readonly reason?: string | null
+}
+
 export interface RuntimeNode extends RuntimeNodeHeartbeatInput {
   readonly node_id: string
   readonly presence: 'online' | 'stale'

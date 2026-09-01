@@ -552,3 +552,4 @@ export {
   type PlanningSyncServiceOptions,
   type PlanningTaskStatePort,
 } from './planning-sync-service.js';
+export { RuntimeHandshakeService, type RuntimeHandshakePolicy } from './runtime-handshake-service.js';

@@ -110,6 +110,8 @@ import {
   bindRuntimeSessionRequestSchema,
   runtimeSessionBindingSchema,
   runtimeNodeHeartbeatRequestSchema,
+  runtimeHandshakeRequestSchema,
+  runtimeHandshakeResponseSchema,
   runtimeNodeListResponseSchema,
   runtimeNodeSchema,
   createRuntimeNodeDispatchRequestSchema,
@@ -285,6 +287,7 @@ import {
   GovernedExecutionService,
   CollaborationGovernanceService,
   ActionAuditService,
+  RuntimeHandshakeService,
   TaskTimelineService,
   TaskClaimService,
   type TaskMemorySummaryService,
@@ -362,6 +365,7 @@ export interface BuildAppOptions {
   dashboardQueryService?: DashboardQueryService;
   runtimeTargetService?: RuntimeTargetService;
   runtimeNodeRegistryService?: RuntimeNodeRegistryService;
+  runtimeHandshakeService?: Pick<RuntimeHandshakeService, 'negotiate'>;
   coordinationService?: CoordinationService;
   artifactService?: ArtifactService;
   memoryService?: MemoryService;
@@ -1557,6 +1561,10 @@ export function buildApp(options: BuildAppOptions = {}) {
   const dashboardQueryService = options.dashboardQueryService;
   const runtimeTargetService = options.runtimeTargetService;
   const runtimeNodeRegistryService = options.runtimeNodeRegistryService;
+  const runtimeHandshakeService = options.runtimeHandshakeService ?? new RuntimeHandshakeService({
+    protocol: 'dsh-agora.node/v1', coreVersion: '0.8.0', minPluginVersion: '0.7.0',
+    requiredCapabilities: ['heartbeat', 'dispatch', 'delivery'],
+  });
   const coordinationService = options.coordinationService;
   const artifactService = options.artifactService;
   const memoryService = options.memoryService;
@@ -6055,6 +6063,19 @@ export function buildApp(options: BuildAppOptions = {}) {
     try {
       const { nodeId } = request.params as { nodeId: string };
       return reply.send(runtimeNodeSchema.parse(runtimeNodeRegistryService.getNode(nodeId)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/runtime-handshake', async (request, reply) => {
+    if (!runtimeHandshakeService) {
+      return reply.status(503).send({ message: 'Runtime handshake service is not configured' });
+    }
+    try {
+      const input = runtimeHandshakeRequestSchema.parse(request.body);
+      return reply.send(runtimeHandshakeResponseSchema.parse(runtimeHandshakeService.negotiate(input)));
     } catch (error) {
       const translated = translateError(error);
       return reply.status(translated.statusCode).send(translated.body);

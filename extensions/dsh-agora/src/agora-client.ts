@@ -15,6 +15,7 @@ import type {
   RuntimeDelivery,
   RuntimeNode,
   RuntimeNodeHeartbeatInput,
+  RuntimeHandshakeResponse,
   RuntimeSessionBinding,
   RuntimeTarget,
 } from './contracts.js'
@@ -94,6 +95,10 @@ export class AgoraClient {
     return this.request(`/api/runtime-nodes/${encodeURIComponent(requireValue(nodeId, 'node id'))}/heartbeat`, {
       method: 'PUT', body: input, signal,
     })
+  }
+
+  runtimeHandshake(input: { protocol: string; plugin_version: string; instance_id: string; capabilities: readonly string[] }, signal?: AbortSignal): Promise<RuntimeHandshakeResponse> {
+    return this.request('/api/runtime-handshake', { method: 'POST', body: input, signal })
   }
 
   listRuntimeNodes(signal?: AbortSignal): Promise<RuntimeNode[]> {
