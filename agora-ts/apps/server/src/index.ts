@@ -54,6 +54,7 @@ export function createAppFromRuntime(runtime: ReturnType<typeof createServerRunt
     },
     ...(runtime.imProvisioningPort ? { imProvisioningPort: runtime.imProvisioningPort } : {}),
     ...(runtime.dashboardDir ? { dashboardDir: runtime.dashboardDir } : {}),
+    ...(runtime.calendarService ? { calendarService: runtime.calendarService } : {}),
   });
   app.addHook('onClose', async () => {
     await runtime.dispose?.();

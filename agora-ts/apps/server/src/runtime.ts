@@ -26,9 +26,11 @@ import {
   MergeCoordinatorService,
   RuntimeNodeCredentialService,
   RuntimeTargetService,
+  CalendarService,
 } from '@agora-ts/core';
 import { OpenAiCompatibleProjectBrainEmbeddingAdapter, QdrantProjectBrainVectorIndexAdapter } from '@agora-ts/adapters-brain';
 import { A2aGatewayService } from '@agora-ts/adapters-runtime';
+import { createCalendarServiceFromEnv, readCalendarEnv } from './calendar-factory.js';
 import { FilesystemArtifactContentStore } from '@agora-ts/adapters-materialization';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -284,6 +286,8 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
   });
   const db = createAgoraDatabase({ dbPath: config.db_path, busyTimeoutMs: config.db_busy_timeout_ms });
   runMigrations(db);
+  const calendarEnv = readCalendarEnv(process.env);
+  const calendarService = calendarEnv ? createCalendarServiceFromEnv(calendarEnv) : undefined;
   const templatesDir = new URL('../../../templates', import.meta.url).pathname;
   const rolePackDir = new URL('../../../role-packs/agora-default', import.meta.url).pathname;
   const brainPackDir = ensureRuntimeBrainPackRoot(runtimeEnv.projectRoot);
@@ -389,6 +393,7 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
     config: config as AgoraConfig,
     db,
     ...composition,
+    ...(calendarService ? { calendarService } : {}),
     runtimeTargetService,
     coordinationService,
     artifactService,
