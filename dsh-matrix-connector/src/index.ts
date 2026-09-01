@@ -31,6 +31,7 @@ import { buildStatusPanel } from './status-panel.js';
 import { renderRollup } from './rollup.js';
 import { buildStuckAlert } from './stuck-alert.js';
 import { renderStuckList } from './stuck-list.js';
+import { FishSpeechTtsAdapter } from './voice/tts-adapter.js';
 
 export interface CordisContext {
   on: (event: string, handler: (...args: unknown[]) => void) => void;
@@ -64,6 +65,11 @@ export function createMatrixConnectorPlugin(opts: PluginOptions): CordisPlugin {
   const taskBridge = new TaskBridge(agora);
   const artifactBridge = new ArtifactBridge(agora);
   const attentionBridge = new AttentionBridge(agora);
+
+  // v0.2 B3 — `/agora say <text>` TTS adapter. Reads FISH_SPEECH_URL
+  // from env (default http://127.0.0.1:8080). Construction is lazy
+  // inside the handler so a misconfigured env doesn't break plugin boot.
+  const fishSpeechUrl = process.env.FISH_SPEECH_URL ?? 'http://127.0.0.1:8080';
 
   // v0.3.1 — war-room post-mortem: for each SSE tick on a known task,
   // pulls the task record and posts a one-shot summary back to the room
@@ -247,6 +253,26 @@ export function createMatrixConnectorPlugin(opts: PluginOptions): CordisPlugin {
           rooms: new Set([input.roomId]),
         });
         await matrix.sendText(input.roomId, reply);
+        return;
+      }
+      case 'say': {
+        // v0.2 B3 — synthesize text via fish-speech and post an audio
+        // attachment back to the room. Uses matrix.uploadMxc + a
+        // markdown link to the mxc:// URI as the in-room render, which
+        // avoids depending on transport-side m.audio msgType support.
+        const text = decision.args.join(' ');
+        const tts = new FishSpeechTtsAdapter({ baseUrl: fishSpeechUrl });
+        try {
+          const synth = await tts.synthesize(text);
+          const upload = await matrix.uploadMxc(synth.filename, synth.mediaType, synth.bytes);
+          await matrix.sendText(
+            input.roomId,
+            `🔊 [audio (${synth.filename}, ${upload.sizeBytes} bytes)](${upload.mxcUri})`,
+          );
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          await matrix.sendText(input.roomId, `❌ say failed: ${reason}`);
+        }
         return;
       }
       case 'im': {

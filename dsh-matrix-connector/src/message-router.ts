@@ -14,6 +14,7 @@ export type VerbName =
   | 'im'
   | 'rollup'
   | 'stuck'
+  | 'say'
   | 'help'
   | 'unknown';
 
@@ -106,6 +107,16 @@ export function route(rawMessage: string, opts: RouterOptions = {}): VerbDecisio
       // escalated via SSE inbox_escalated events in this session.
       return { verb: 'stuck', args: tail };
     }
+    case 'say': {
+      // v0.2 B3 — `/agora say <text>` synthesizes speech via fish-speech TTS
+      // and uploads to Matrix as an mxc:// audio attachment. The bridge
+      // dispatches to FishSpeechTtsAdapter (see src/voice/tts-adapter.ts)
+      // and posts the resulting mxc URI back into the room.
+      if (tail.length === 0) {
+        return { verb: 'say', args: [], errorCode: 'MISSING_ARG' };
+      }
+      return { verb: 'say', args: tail };
+    }
     case 'help': {
       return { verb: 'help', args: [] };
     }
@@ -136,5 +147,6 @@ export const HELP_TEXT = [
   '  /agora task <task_id> [artifacts]',
   '  /agora artifact <artifact_id>',
   '  /agora brain search <query>',
+  '  /agora say <text>                       (TTS → audio attachment)',
   '  /agora im health | help',
 ].join('\n');
