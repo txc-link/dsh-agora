@@ -28,6 +28,9 @@ export declare class RuntimeNodeWorker {
     private deliveryTimer;
     private active;
     private started;
+    private ready;
+    private dispatchRunning;
+    private deliveryRunning;
     private imBridge;
     constructor(options: RuntimeNodeWorkerOptions);
     setImBridge(bridge: DshImBridgeV1 | null): void;

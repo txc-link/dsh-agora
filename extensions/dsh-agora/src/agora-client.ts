@@ -97,8 +97,8 @@ export class AgoraClient {
     })
   }
 
-  runtimeHandshake(input: { protocol: string; plugin_version: string; instance_id: string; capabilities: readonly string[] }, signal?: AbortSignal): Promise<RuntimeHandshakeResponse> {
-    return this.request('/api/runtime-handshake', { method: 'POST', body: input, signal })
+  runtimeHandshake(input: { node_id: string; protocol: string; plugin_version: string; instance_id: string; capabilities: readonly string[] }, signal?: AbortSignal): Promise<RuntimeHandshakeResponse> {
+    return this.request(`/api/runtime-nodes/${encodeURIComponent(input.node_id)}/handshake`, { method: 'POST', body: input, signal })
   }
 
   listRuntimeNodes(signal?: AbortSignal): Promise<RuntimeNode[]> {

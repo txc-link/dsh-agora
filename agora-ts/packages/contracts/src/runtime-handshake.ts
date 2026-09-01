@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export const runtimeHandshakeRequestSchema = z.object({
+  node_id: z.string().min(1),
   protocol: z.string().min(1),
   plugin_version: z.string().min(1),
   instance_id: z.string().min(1),

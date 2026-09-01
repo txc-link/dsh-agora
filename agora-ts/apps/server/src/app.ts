@@ -659,6 +659,8 @@ function runtimeNodeCredentialAuthTarget(method: string, rawUrl: string): {
   const path = rawUrl.split('?')[0] ?? rawUrl;
   const heartbeat = /^\/api\/runtime-nodes\/([^/]+)\/heartbeat$/u.exec(path);
   if (method === 'PUT' && heartbeat) return { nodeId: decodeURIComponent(heartbeat[1]!), scope: 'heartbeat' };
+  const handshake = /^\/api\/runtime-nodes\/([^/]+)\/handshake$/u.exec(path);
+  if (method === 'POST' && handshake) return { nodeId: decodeURIComponent(handshake[1]!), scope: 'heartbeat' };
   const dispatch = /^\/api\/runtime-nodes\/([^/]+)\/dispatches(?:\/claim|\/[^/]+\/(?:renew|progress|complete))$/u.exec(path);
   if (method === 'POST' && dispatch) return { nodeId: decodeURIComponent(dispatch[1]!), scope: 'dispatch' };
   const delivery = /^\/api\/runtime-nodes\/([^/]+)\/deliveries(?:\/claim|\/[^/]+\/complete)$/u.exec(path);
@@ -6069,12 +6071,13 @@ export function buildApp(options: BuildAppOptions = {}) {
     }
   });
 
-  app.post('/api/runtime-handshake', async (request, reply) => {
+  app.post('/api/runtime-nodes/:nodeId/handshake', async (request, reply) => {
     if (!runtimeHandshakeService) {
       return reply.status(503).send({ message: 'Runtime handshake service is not configured' });
     }
     try {
-      const input = runtimeHandshakeRequestSchema.parse(request.body);
+      const { nodeId } = request.params as { nodeId: string };
+      const input = runtimeHandshakeRequestSchema.parse({ ...(request.body as object), node_id: nodeId });
       return reply.send(runtimeHandshakeResponseSchema.parse(runtimeHandshakeService.negotiate(input)));
     } catch (error) {
       const translated = translateError(error);

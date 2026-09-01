@@ -8,6 +8,9 @@ export class RuntimeNodeWorker {
     deliveryTimer = null;
     active = 0;
     started = false;
+    ready = false;
+    dispatchRunning = false;
+    deliveryRunning = false;
     imBridge;
     constructor(options) {
         this.options = options;
@@ -22,8 +25,6 @@ export class RuntimeNodeWorker {
         this.started = true;
         this.setStatus({ state: 'connecting', nodeId: this.options.nodeId });
         void this.heartbeatLoop();
-        void this.dispatchLoop();
-        void this.deliveryLoop();
     }
     stop() {
         if (!this.started)
@@ -54,6 +55,7 @@ export class RuntimeNodeWorker {
             const handshakeClient = this.options.client;
             if (typeof handshakeClient.runtimeHandshake === 'function') {
                 const handshake = await handshakeClient.runtimeHandshake({
+                    node_id: this.options.nodeId,
                     protocol: DSH_AGORA_NODE_PROTOCOL,
                     plugin_version: this.options.pluginVersion,
                     instance_id: this.options.instanceId,
@@ -75,8 +77,14 @@ export class RuntimeNodeWorker {
                 metadata: this.options.metadata ?? null,
             }, this.abortController.signal);
             this.setStatus({ state: 'online', nodeId: this.options.nodeId, lastHeartbeatAt: now });
+            this.ready = true;
+            if (!this.dispatchRunning)
+                void this.dispatchLoop();
+            if (!this.deliveryRunning)
+                void this.deliveryLoop();
         }
         catch (error) {
+            this.ready = false;
             if (!this.abortController.signal.aborted) {
                 this.setStatus({
                     state: 'error', nodeId: this.options.nodeId,
@@ -89,8 +97,9 @@ export class RuntimeNodeWorker {
         }
     }
     async dispatchLoop() {
-        if (this.abortController.signal.aborted)
+        if (this.abortController.signal.aborted || !this.ready)
             return;
+        this.dispatchRunning = true;
         try {
             while (this.active < this.maxConcurrent && !this.abortController.signal.aborted) {
                 const dispatch = await this.options.client.claimRuntimeDispatch(this.options.nodeId, this.options.instanceId, this.dispatchLeaseSeconds, this.abortController.signal);
@@ -105,6 +114,7 @@ export class RuntimeNodeWorker {
             // independently so a transient queue error does not flap node presence.
         }
         finally {
+            this.dispatchRunning = false;
             this.dispatchTimer = schedule(() => void this.dispatchLoop(), this.options.dispatchPollIntervalMs ?? 2_000, this.abortController.signal);
         }
     }
@@ -195,8 +205,9 @@ export class RuntimeNodeWorker {
         }
     }
     async deliveryLoop() {
-        if (this.abortController.signal.aborted)
+        if (this.abortController.signal.aborted || !this.ready)
             return;
+        this.deliveryRunning = true;
         try {
             while (!this.abortController.signal.aborted) {
                 const delivery = await this.options.client.claimRuntimeDelivery(this.options.nodeId, this.options.instanceId, this.deliveryLeaseSeconds, this.abortController.signal);
@@ -209,6 +220,7 @@ export class RuntimeNodeWorker {
             // Durable delivery remains pending or is released when its lease expires.
         }
         finally {
+            this.deliveryRunning = false;
             this.deliveryTimer = schedule(() => void this.deliveryLoop(), this.options.deliveryPollIntervalMs ?? 2_000, this.abortController.signal);
         }
     }

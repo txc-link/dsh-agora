@@ -24,6 +24,7 @@ export declare class AgoraClient {
     createTask(input: CreateAgoraTaskInput, signal?: AbortSignal): Promise<AgoraTask>;
     heartbeatRuntimeNode(nodeId: string, input: RuntimeNodeHeartbeatInput, signal?: AbortSignal): Promise<RuntimeNode>;
     runtimeHandshake(input: {
+        node_id: string;
         protocol: string;
         plugin_version: string;
         instance_id: string;
