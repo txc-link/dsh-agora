@@ -10,6 +10,10 @@ import {
   RuntimeTargetOverlayRepository,
   PlanningBindingRepository,
   TaskRepository,
+  TaskMemorySummaryRepository,
+  RoutineRepository,
+  TaskConversationRepository,
+  ProgressLogRepository,
   createAgoraDatabase,
   runMigrations,
 } from '@agora-ts/db';
@@ -38,11 +42,14 @@ import {
   PlanningService,
   PlanningSyncService,
   GovernedDispatchService,
+  TaskMemorySummaryService,
+  RoutineService,
 } from '@agora-ts/core';
 import { OpenAiCompatibleProjectBrainEmbeddingAdapter, QdrantProjectBrainVectorIndexAdapter } from '@agora-ts/adapters-brain';
 import { A2aGatewayService } from '@agora-ts/adapters-runtime';
 import { createCalendarProviderFromEnv, readCalendarEnv } from './calendar-factory.js';
 import { createExternalTaskProviderFromEnv, readTickTickEnv } from './planning-factory.js';
+import { Mem0RestAdapter } from '@agora-ts/adapters-mem0';
 import { FilesystemArtifactContentStore } from '@agora-ts/adapters-materialization';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -128,6 +135,7 @@ function createObservationScheduler(runtime: {
   };
   projectBrainIndexWorkerService?: Pick<ProjectBrainIndexWorkerService, 'drainPendingJobs'>;
   notificationDispatcher?: { scan: () => Promise<{ delivered: number; failed: number }> };
+  memorySummaryService?: Pick<TaskMemorySummaryService, 'scanTerminalTasks'>;
 }): ObservationSchedulerController {
   const { scheduler } = runtime.config;
   const intervalMs = scheduler.enabled ? scheduler.scan_interval_sec * 1000 : null;
@@ -184,6 +192,12 @@ function createObservationScheduler(runtime: {
           module: 'scheduler',
           msg: 'notification_scan_tick',
           result: 'error',
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+      void runtime.memorySummaryService?.scanTerminalTasks().catch((error: unknown) => {
+        emitStructuredLog(structuredLogs, {
+          module: 'scheduler', msg: 'memory_summary_tick', result: 'error',
           error: error instanceof Error ? error.message : String(error),
         });
       });
@@ -358,6 +372,22 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
     new FilesystemArtifactContentStore(process.env.AGORA_ARTIFACTS_DIR ?? join(dirname(config.db_path), 'artifacts')),
   );
   const memoryService = new MemoryService(federationRepository);
+  const groupMemoryPort = process.env.AGORA_MEM0_URL || process.env.AGORA_MEM0_TOKEN
+    ? new Mem0RestAdapter({
+        baseUrl: process.env.AGORA_MEM0_URL ?? 'http://127.0.0.1:8888',
+        token: process.env.AGORA_MEM0_TOKEN ?? null,
+      })
+    : undefined;
+  const taskMemorySummaryService = groupMemoryPort
+    ? new TaskMemorySummaryService({
+        taskRepository: new TaskRepository(db),
+        conversationRepository: new TaskConversationRepository(db),
+        progressRepository: new ProgressLogRepository(db),
+        summaryRepository: new TaskMemorySummaryRepository(db),
+        memoryPort: groupMemoryPort,
+      })
+    : undefined;
+  const routineService = new RoutineService({ repository: new RoutineRepository(db) });
   const runtimeNodeCredentialService = new RuntimeNodeCredentialService(federationRepository);
   const coordinationService = new CoordinationService({
     repository: new CoordinationRepository(db),
@@ -407,6 +437,7 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
     taskService,
     ...(composition.notificationDispatcher ? { notificationDispatcher: composition.notificationDispatcher } : {}),
     ...(projectBrainIndexWorkerService ? { projectBrainIndexWorkerService } : {}),
+    ...(taskMemorySummaryService ? { memorySummaryService: taskMemorySummaryService } : {}),
   });
   const coordinationIntervalMs = Number(process.env.AGORA_COORDINATION_RECONCILE_MS ?? 3_000);
   let coordinationTimer: NodeJS.Timeout | null = setInterval(() => {
@@ -469,6 +500,8 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
     coordinationService,
     artifactService,
     memoryService,
+    ...(taskMemorySummaryService ? { taskMemorySummaryService } : {}),
+    routineService,
     runtimeNodeCredentialService,
     mergeCoordinatorService,
     a2aGatewayService,

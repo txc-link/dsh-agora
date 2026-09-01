@@ -99,6 +99,8 @@ import type {
   RelationshipInitiativeRecord,
   RelationshipInitiativeStatusDto,
 } from './relationship.js';
+import type { TaskMemorySummaryDto } from './memory-summary.js';
+import type { RoutineDto, RoutineRunDto, RoutineStatusDto } from './routine.js';
 
 import type {
   ActionRiskAssessmentRecord,
@@ -1086,4 +1088,23 @@ export interface IActionRiskAssessmentRepository {
   insert(record: ActionRiskAssessmentRecord): ActionRiskAssessmentRecord;
   getById(id: string): ActionRiskAssessmentRecord | null;
   listBySubject(subjectRef: string): ActionRiskAssessmentRecord[];
+}
+
+export interface ITaskMemorySummaryRepository {
+  getByTaskFingerprint(taskId: string, fingerprint: string): TaskMemorySummaryDto | null;
+  insert(record: TaskMemorySummaryDto): TaskMemorySummaryDto;
+  markSucceeded(id: string, memoryId: string, updatedAt: string): TaskMemorySummaryDto | null;
+  markFailed(id: string, error: string, updatedAt: string): TaskMemorySummaryDto | null;
+  listByTask(taskId: string): TaskMemorySummaryDto[];
+}
+
+export interface IRoutineRepository {
+  insert(record: RoutineDto): RoutineDto;
+  getById(routineId: string): RoutineDto | null;
+  list(filters?: { owner_ref?: string; agent_ref?: string; status?: RoutineStatusDto }): RoutineDto[];
+  updateStatus(routineId: string, status: RoutineStatusDto, updatedAt: string): RoutineDto | null;
+  claimDue(input: { now: string; consumer_ref: string; lease_expires_at: string; limit: number; lease_token_factory: () => string }): RoutineRunDto[];
+  markSucceeded(id: string, leaseToken: string, updatedAt: string): RoutineRunDto | null;
+  markFailed(id: string, leaseToken: string, error: string, updatedAt: string): RoutineRunDto | null;
+  listRuns(filters?: { routine_id?: string; status?: RoutineRunDto['status'] }): RoutineRunDto[];
 }

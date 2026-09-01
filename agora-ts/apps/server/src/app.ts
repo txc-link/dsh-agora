@@ -220,6 +220,10 @@ import {
   createActionReceiptRequestSchema,
   actionReceiptSchema,
   actionReceiptListResponseSchema,
+  taskMemorySummarySchema,
+  routineSchema,
+  routineRunSchema,
+  createRoutineRequestSchema,
 } from '@agora-ts/contracts';
 import { RuntimeRepoShimWritebackService } from '@agora-ts/adapters-materialization';
 import {
@@ -283,6 +287,8 @@ import {
   ActionAuditService,
   TaskTimelineService,
   TaskClaimService,
+  type TaskMemorySummaryService,
+  type RoutineService,
   type ExecutiveTaskPort,
 } from '@agora-ts/core';
 import type { A2aGatewayService } from '@agora-ts/adapters-runtime';
@@ -349,6 +355,8 @@ export interface BuildAppOptions {
   progressLogRepository?: Pick<IProgressLogRepository, 'listByTask'>;
   taskTimelineService?: TaskTimelineService;
   taskClaimService?: TaskClaimService;
+  taskMemorySummaryService?: TaskMemorySummaryService;
+  routineService?: RoutineService;
   dashboardQueryService?: DashboardQueryService;
   runtimeTargetService?: RuntimeTargetService;
   runtimeNodeRegistryService?: RuntimeNodeRegistryService;
@@ -1269,6 +1277,8 @@ export function buildApp(options: BuildAppOptions = {}) {
     claimRepo: new TaskClaimRepository(options.db),
     taskExists: taskId => taskService.getTask(taskId) !== null,
   }) : undefined);
+  const taskMemorySummaryService = options.taskMemorySummaryService;
+  const routineService = options.routineService;
   const calendarService = options.calendarService;
   const planningService = options.planningService;
   const planningSyncService = options.planningSyncService;
@@ -6770,6 +6780,95 @@ export function buildApp(options: BuildAppOptions = {}) {
       const translated = translateError(error);
       return reply.status(translated.statusCode).send(translated.body);
     }
+  });
+
+  app.post('/api/tasks/:taskId/memory-summary', async (request, reply) => {
+    if (!taskMemorySummaryService) return reply.status(503).send({ message: 'task memory summary service is not configured' });
+    try {
+      const params = z.object({ taskId: z.string().min(1) }).parse(request.params);
+      const result = await taskMemorySummaryService.summarizeTask(params.taskId, z.object({ scope_ref: z.string().min(1).optional() }).parse(request.body ?? {}).scope_ref);
+      return reply.status(result.status === 'created' ? 201 : 200).send(result);
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/tasks/:taskId/memory-summaries', async (request, reply) => {
+    if (!taskMemorySummaryService) return reply.status(503).send({ message: 'task memory summary service is not configured' });
+    const params = z.object({ taskId: z.string().min(1) }).parse(request.params);
+    return reply.send({ summaries: taskMemorySummaryService.listByTask(params.taskId).map((summary) => taskMemorySummarySchema.parse(summary)) });
+  });
+
+  app.post('/api/memory-summaries/scan', async (request, reply) => {
+    if (!taskMemorySummaryService) return reply.status(503).send({ message: 'task memory summary service is not configured' });
+    const body = z.object({ limit: z.number().int().min(1).max(100).optional() }).strict().parse(request.body ?? {});
+    return reply.send(await taskMemorySummaryService.scanTerminalTasks(body.limit));
+  });
+
+  app.post('/api/routines', async (request, reply) => {
+    if (!routineService) return reply.status(503).send({ message: 'routine service is not configured' });
+    try {
+      const result = routineService.create(createRoutineRequestSchema.parse(request.body));
+      return reply.status(201).send(routineSchema.parse(result));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/routines', async (request, reply) => {
+    if (!routineService) return reply.status(503).send({ message: 'routine service is not configured' });
+    const query = z.object({ owner_ref: z.string().min(1).optional(), agent_ref: z.string().min(1).optional(), status: z.enum(['active', 'paused', 'archived']).optional() }).parse(request.query);
+    const filters: { owner_ref?: string; agent_ref?: string; status?: 'active' | 'paused' | 'archived' } = {};
+    if (query.owner_ref !== undefined) filters.owner_ref = query.owner_ref;
+    if (query.agent_ref !== undefined) filters.agent_ref = query.agent_ref;
+    if (query.status !== undefined) filters.status = query.status;
+    return reply.send({ routines: routineService.list(filters).map((routine) => routineSchema.parse(routine)) });
+  });
+
+  app.patch('/api/routines/:routineId/status', async (request, reply) => {
+    if (!routineService) return reply.status(503).send({ message: 'routine service is not configured' });
+    try {
+      const params = z.object({ routineId: z.string().min(1) }).parse(request.params);
+      const body = z.object({ status: z.enum(['active', 'paused', 'archived']) }).strict().parse(request.body);
+      return reply.send(routineSchema.parse(routineService.setStatus(params.routineId, body.status)));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/routines/claim', async (request, reply) => {
+    if (!routineService) return reply.status(503).send({ message: 'routine service is not configured' });
+    const body = z.object({ consumer_ref: z.string().min(1), limit: z.number().int().min(1).max(20).optional(), lease_ms: z.number().int().min(5000).max(300000).optional() }).strict().parse(request.body);
+    const claimInput: { consumer_ref: string; limit?: number; lease_ms?: number } = { consumer_ref: body.consumer_ref };
+    if (body.limit !== undefined) claimInput.limit = body.limit;
+    if (body.lease_ms !== undefined) claimInput.lease_ms = body.lease_ms;
+    return reply.send({ runs: routineService.claimDue(claimInput).map((run) => routineRunSchema.parse(run)) });
+  });
+
+  app.get('/api/routines/runs', async (request, reply) => {
+    if (!routineService) return reply.status(503).send({ message: 'routine service is not configured' });
+    const query = z.object({ routine_id: z.string().min(1).optional(), status: z.enum(['scheduled', 'claimed', 'succeeded', 'failed', 'cancelled']).optional() }).parse(request.query);
+    const filters: { routine_id?: string; status?: 'scheduled' | 'claimed' | 'succeeded' | 'failed' | 'cancelled' } = {};
+    if (query.routine_id !== undefined) filters.routine_id = query.routine_id;
+    if (query.status !== undefined) filters.status = query.status;
+    return reply.send({ runs: routineService.listRuns(filters).map((run) => routineRunSchema.parse(run)) });
+  });
+
+  app.post('/api/routines/runs/:runId/succeeded', async (request, reply) => {
+    if (!routineService) return reply.status(503).send({ message: 'routine service is not configured' });
+    const params = z.object({ runId: z.string().min(1) }).parse(request.params);
+    const body = z.object({ lease_token: z.string().min(1) }).strict().parse(request.body);
+    return reply.send(routineRunSchema.parse(routineService.markSucceeded(params.runId, body.lease_token)));
+  });
+
+  app.post('/api/routines/runs/:runId/failed', async (request, reply) => {
+    if (!routineService) return reply.status(503).send({ message: 'routine service is not configured' });
+    const params = z.object({ runId: z.string().min(1) }).parse(request.params);
+    const body = z.object({ lease_token: z.string().min(1), error: z.string().min(1).max(2000) }).strict().parse(request.body);
+    return reply.send(routineRunSchema.parse(routineService.markFailed(params.runId, body.lease_token, body.error)));
   });
 
   app.post('/api/runtime-nodes/:nodeId/credentials', async (request, reply) => {

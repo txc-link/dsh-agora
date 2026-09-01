@@ -80,6 +80,7 @@ import {
   runTaskClaimPollCommand,
   GroupMemoryService,
   type GroupMemoryPort,
+  RoutineService,
   TeamService,
   OrgHierarchyResolver,
   DelegateRouter,
@@ -149,6 +150,7 @@ import {
   DelegationAuthorityRepository,
   CollaborationPlanRepository,
   CoordinationRepository,
+  RoutineRepository,
   type AgoraDatabase,
 } from '@agora-ts/db';
 import { LiveRegressionActor } from '@agora-ts/testing';
@@ -169,6 +171,7 @@ import type {
   TaskService,
   TemplateAuthoringService,
   IMProvisioningPort,
+  RoutineService as RoutineServiceContract,
 } from '@agora-ts/core';
 import { OpenClawAgentRegistry } from '@agora-ts/adapters-openclaw';
 import type {
@@ -298,6 +301,7 @@ export interface CliDependencies {
   coordinationService?: Pick<CoordinationService, 'createRun' | 'getRun' | 'listRuns' | 'reconcileRun' | 'cancelRun' | 'listScorecards'>;
   artifactService?: Pick<ArtifactService, 'create' | 'get' | 'list' | 'content'>;
   memoryService?: Pick<MemoryService, 'create' | 'get' | 'query'>;
+  routineService?: RoutineServiceContract;
   runtimeNodeCredentialService?: Pick<RuntimeNodeCredentialService, 'issue' | 'list' | 'rotate' | 'revoke'>;
   mergeCoordinatorService?: Pick<MergeCoordinatorService, 'create' | 'get' | 'list' | 'execute'>;
   borrowService?: BorrowService;
@@ -741,6 +745,7 @@ export function createCliProgram(deps: CliDependencies = {}) {
   const coordinationService = createLazyObject(() => deps.coordinationService ?? resolveComposition().coordinationService);
   const artifactService = createLazyObject(() => deps.artifactService ?? resolveComposition().artifactService);
   const memoryService = createLazyObject(() => deps.memoryService ?? resolveComposition().memoryService);
+  const routineService = createLazyObject(() => deps.routineService ?? new RoutineService({ repository: new RoutineRepository(resolveComposition().db) }));
   const governedExecutionService = createLazyObject(() => deps.governedExecutionService ?? new GovernedExecutionService({
     taskSpecRevisions: new TaskSpecRevisionRepository(resolveComposition().db),
     executionBaselines: new ExecutionBaselineRepository(resolveComposition().db),
@@ -1477,6 +1482,82 @@ export function createCliProgram(deps: CliDependencies = {}) {
     });
 
   let groupMemoryService: GroupMemoryService | null = null;
+  const routine = program.command('routine').description('long-lived role routines with leases and delivery bindings');
+  routine.command('create')
+    .requiredOption('--id <routineId>', 'stable routine id')
+    .requiredOption('--owner <ownerRef>', 'owner reference (organization/user)')
+    .requiredOption('--agent <agentRef>', 'resident agent reference')
+    .requiredOption('--role <roleRef>', 'role/persona reference')
+    .requiredOption('--name <name>', 'routine name')
+    .requiredOption('--prompt <prompt>', 'routine instruction')
+    .requiredOption('--first-run-at <iso>', 'first run timestamp')
+    .option('--interval-seconds <seconds>', 'interval schedule (default: 86400)', parseIntegerOption)
+    .option('--daily-time <HH:mm>', 'daily local-time schedule')
+    .option('--timezone <iana>', 'timezone for daily schedule', 'Asia/Shanghai')
+    .option('--domain <domain>', 'target memory/domain scope', 'work')
+    .requiredOption('--delivery-binding <ref>', 'notification or Matrix binding reference')
+    .option('--metadata <json>', 'metadata JSON object', '{}')
+    .action((options: { id: string; owner: string; agent: string; role: string; name: string; prompt: string; firstRunAt: string; intervalSeconds?: number; dailyTime?: string; timezone: string; domain: string; deliveryBinding: string; metadata: string }) => {
+      const schedule = options.dailyTime
+        ? { kind: 'daily' as const, local_time: options.dailyTime, timezone: options.timezone }
+        : { kind: 'interval' as const, interval_seconds: options.intervalSeconds ?? 86_400 };
+      let metadata: Record<string, unknown> = {};
+      try {
+        metadata = JSON.parse(options.metadata) as Record<string, unknown>;
+      } catch {
+        writeLine(stderr, JSON.stringify({ ok: false, error: '--metadata must be a JSON object' }));
+        process.exitCode = 1;
+        return;
+      }
+      const input = {
+        routine_id: options.id,
+        owner_ref: options.owner,
+        agent_ref: options.agent,
+        role_ref: options.role,
+        name: options.name,
+        prompt: options.prompt,
+        schedule,
+        first_run_at: options.firstRunAt,
+        target_domain: options.domain,
+        delivery_binding_ref: options.deliveryBinding,
+        metadata,
+      };
+      writeLine(stdout, JSON.stringify(routineService.create(input), null, 2));
+    });
+  routine.command('list')
+    .option('--owner <ownerRef>')
+    .option('--agent <agentRef>')
+    .option('--status <status>')
+    .action((options: { owner?: string; agent?: string; status?: 'active' | 'paused' | 'archived' }) => {
+      const filters: { owner_ref?: string; agent_ref?: string; status?: 'active' | 'paused' | 'archived' } = {};
+      if (options.owner !== undefined) filters.owner_ref = options.owner;
+      if (options.agent !== undefined) filters.agent_ref = options.agent;
+      if (options.status !== undefined) filters.status = options.status;
+      writeLine(stdout, JSON.stringify(routineService.list(filters), null, 2));
+    });
+  routine.command('claim')
+    .requiredOption('--consumer <consumerRef>')
+    .option('--limit <count>', 'maximum runs', parseIntegerOption, 5)
+    .option('--lease-ms <milliseconds>', 'lease duration', parseIntegerOption, 120_000)
+    .action((options: { consumer: string; limit: number; leaseMs: number }) => {
+      writeLine(stdout, JSON.stringify(routineService.claimDue({ consumer_ref: options.consumer, limit: options.limit, lease_ms: options.leaseMs }), null, 2));
+    });
+  routine.command('runs')
+    .option('--routine <routineId>')
+    .option('--status <status>')
+    .action((options: { routine?: string; status?: 'scheduled' | 'claimed' | 'succeeded' | 'failed' | 'cancelled' }) => {
+      const filters: { routine_id?: string; status?: 'scheduled' | 'claimed' | 'succeeded' | 'failed' | 'cancelled' } = {};
+      if (options.routine !== undefined) filters.routine_id = options.routine;
+      if (options.status !== undefined) filters.status = options.status;
+      writeLine(stdout, JSON.stringify(routineService.listRuns(filters), null, 2));
+    });
+  routine.command('status')
+    .argument('<routineId>')
+    .requiredOption('--value <status>', 'active | paused | archived')
+    .action((routineId: string, options: { value: 'active' | 'paused' | 'archived' }) => {
+      writeLine(stdout, JSON.stringify(routineService.setStatus(routineId, options.value), null, 2));
+    });
+
   function getGroupMemoryService(): GroupMemoryService {
     if (!groupMemoryService) {
       const memoryPort: GroupMemoryPort = new Mem0RestAdapter({

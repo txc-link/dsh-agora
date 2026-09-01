@@ -50,3 +50,5 @@ export * from './repositories/planning-binding.repository.js';
 export * from './repositories/governed-execution.repository.js';
 export * from './repositories/collaboration-governance.repository.js';
 export * from './repositories/action-audit.repository.js';
+export * from './repositories/memory-summary.repository.js';
+export * from './repositories/routine.repository.js';

@@ -78,6 +78,8 @@ export type { PrepareGovernedDispatchInput, GovernedDispatchServiceOptions } fro
 export { GovernedDispatchService } from './governed-dispatch-service.js';
 export type { TaskTimelineInput } from './task-timeline-service.js';
 export { TaskTimelineService } from './task-timeline-service.js';
+export { TaskMemorySummaryService } from './task-memory-summary-service.js';
+export { RoutineService } from './routine-service.js';
 export type { CoordinationRepositoryPort, CoordinationMemoryReader, CoordinationServiceOptions } from './coordination-service.js';
 export { CoordinationService, synthesize } from './coordination-service.js';
 export type { ArtifactContentStorePort, FederationRepositoryPort } from './federation-services.js';
