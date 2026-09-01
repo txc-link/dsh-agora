@@ -47,4 +47,25 @@ describe('TaskMemorySummaryService', () => {
     });
     await expect(service.summarizeTask('T-1')).resolves.toEqual({ status: 'skipped', reason: 'task is not terminal: active' });
   });
+
+  it('stores structured sections and redacts secrets before persistence', async () => {
+    const memories: GroupMemoryEntry[] = [];
+    const service = new TaskMemorySummaryService({
+      taskRepository: { getTask: () => task(), listTasks: () => [] },
+      conversationRepository: { listByTask: () => [{ body: 'Decision: use api_key=super-secret-value', occurred_at: '2026-09-01T01:00:00.000Z', author_ref: 'agent:research' }] },
+      progressRepository: { listByTask: () => [] },
+      summaryRepository: {
+        getByTaskFingerprint: () => null, insert: (record: TaskMemorySummaryDto) => record,
+        markSucceeded: (_id, memoryId, updatedAt) => ({ id: 's-1', task_id: 'T-1', scope_ref: 'project:company', fingerprint: 'fp', memory_id: memoryId, status: 'succeeded', error: null, created_at: updatedAt, updated_at: updatedAt }),
+        markFailed: () => null, listByTask: () => [],
+      },
+      memoryPort: { add: async (input: GroupMemoryAddInput) => { const memory = { id: 'm-1', scopeRef: input.scopeRef, agentRef: input.agentRef, kind: input.kind, text: input.text, createdAt: '2026-09-01T01:00:00.000Z', metadata: input.metadata ?? null }; memories.push(memory); return memory; }, search: async () => [], list: async () => memories } satisfies GroupMemoryPort,
+      now: () => new Date('2026-09-01T02:00:00.000Z'), idGenerator: () => 's-1',
+    });
+    const result = await service.summarizeTask('T-1');
+    expect(result.status).toBe('created');
+    expect(memories[0]?.text).toContain('## 决策');
+    expect(memories[0]?.text).toContain('[REDACTED:secret_assignment]');
+    expect(memories[0]?.metadata).toMatchObject({ summary_schema: 'agora.task-memory/v2', redacted: true });
+  });
 });

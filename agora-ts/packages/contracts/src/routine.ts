@@ -12,6 +12,9 @@ export type RoutineStatusDto = z.infer<typeof routineStatusSchema>;
 export const routineRunStatusSchema = z.enum(['scheduled', 'claimed', 'succeeded', 'failed', 'cancelled']);
 export type RoutineRunStatusDto = z.infer<typeof routineRunStatusSchema>;
 
+export const routineDeliveryStatusSchema = z.enum(['pending', 'delivered', 'failed', 'skipped']);
+export type RoutineDeliveryStatusDto = z.infer<typeof routineDeliveryStatusSchema>;
+
 const routineInputSchema = z.object({
   routine_id: z.string().min(1),
   owner_ref: z.string().min(1),
@@ -47,6 +50,11 @@ export const routineRunSchema = z.object({
   lease_expires_at: z.string().datetime({ offset: true }).nullable(),
   attempt_count: z.number().int().nonnegative(),
   error: z.string().nullable(),
+  runtime_dispatch_id: z.string().min(1).nullable().default(null),
+  result: z.record(z.string(), z.unknown()).nullable().default(null),
+  artifact_id: z.string().min(1).nullable().default(null),
+  delivery_status: routineDeliveryStatusSchema.default('pending'),
+  delivery_error: z.string().nullable().default(null),
   created_at: z.string(),
   updated_at: z.string(),
 }).strict();

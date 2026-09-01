@@ -169,6 +169,7 @@ export interface ServerComposition {
   taskParticipationService: TaskParticipationService;
   humanAccountService: HumanAccountService;
   notificationDispatcher: NotificationDispatcher;
+  imMessagingPort: IMMessagingPort;
   imProvisioningPort?: IMProvisioningPort;
   taskConversationService: TaskConversationService;
   taskInboundService: TaskInboundService;
@@ -958,6 +959,7 @@ export function buildServerComposition(
     taskParticipationService,
     humanAccountService,
     notificationDispatcher,
+    imMessagingPort: messagingPort,
     ...(imProvisioningPort ? { imProvisioningPort } : {}),
     taskConversationService,
     taskInboundService,

@@ -289,6 +289,7 @@ import {
   TaskClaimService,
   type TaskMemorySummaryService,
   type RoutineService,
+  type RoutineRunner,
   type ExecutiveTaskPort,
 } from '@agora-ts/core';
 import type { A2aGatewayService } from '@agora-ts/adapters-runtime';
@@ -357,6 +358,7 @@ export interface BuildAppOptions {
   taskClaimService?: TaskClaimService;
   taskMemorySummaryService?: TaskMemorySummaryService;
   routineService?: RoutineService;
+  routineRunner?: Pick<RoutineRunner, 'runOnce'>;
   dashboardQueryService?: DashboardQueryService;
   runtimeTargetService?: RuntimeTargetService;
   runtimeNodeRegistryService?: RuntimeNodeRegistryService;
@@ -1279,6 +1281,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   }) : undefined);
   const taskMemorySummaryService = options.taskMemorySummaryService;
   const routineService = options.routineService;
+  const routineRunner = options.routineRunner;
   const calendarService = options.calendarService;
   const planningService = options.planningService;
   const planningSyncService = options.planningSyncService;
@@ -6848,12 +6851,18 @@ export function buildApp(options: BuildAppOptions = {}) {
     return reply.send({ runs: routineService.claimDue(claimInput).map((run) => routineRunSchema.parse(run)) });
   });
 
+  app.post('/api/routines/run', async (_request, reply) => {
+    if (!routineRunner) return reply.status(503).send({ message: 'routine runner is not configured' });
+    return reply.send(await routineRunner.runOnce());
+  });
+
   app.get('/api/routines/runs', async (request, reply) => {
     if (!routineService) return reply.status(503).send({ message: 'routine service is not configured' });
-    const query = z.object({ routine_id: z.string().min(1).optional(), status: z.enum(['scheduled', 'claimed', 'succeeded', 'failed', 'cancelled']).optional() }).parse(request.query);
-    const filters: { routine_id?: string; status?: 'scheduled' | 'claimed' | 'succeeded' | 'failed' | 'cancelled' } = {};
+    const query = z.object({ routine_id: z.string().min(1).optional(), status: z.enum(['scheduled', 'claimed', 'succeeded', 'failed', 'cancelled']).optional(), delivery_status: z.enum(['pending', 'delivered', 'failed', 'skipped']).optional() }).parse(request.query);
+    const filters: { routine_id?: string; status?: 'scheduled' | 'claimed' | 'succeeded' | 'failed' | 'cancelled'; delivery_status?: 'pending' | 'delivered' | 'failed' | 'skipped' } = {};
     if (query.routine_id !== undefined) filters.routine_id = query.routine_id;
     if (query.status !== undefined) filters.status = query.status;
+    if (query.delivery_status !== undefined) filters.delivery_status = query.delivery_status;
     return reply.send({ runs: routineService.listRuns(filters).map((run) => routineRunSchema.parse(run)) });
   });
 

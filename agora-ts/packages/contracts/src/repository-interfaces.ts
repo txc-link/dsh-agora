@@ -1104,7 +1104,10 @@ export interface IRoutineRepository {
   list(filters?: { owner_ref?: string; agent_ref?: string; status?: RoutineStatusDto }): RoutineDto[];
   updateStatus(routineId: string, status: RoutineStatusDto, updatedAt: string): RoutineDto | null;
   claimDue(input: { now: string; consumer_ref: string; lease_expires_at: string; limit: number; lease_token_factory: () => string }): RoutineRunDto[];
-  markSucceeded(id: string, leaseToken: string, updatedAt: string): RoutineRunDto | null;
+  attachDispatch(id: string, leaseToken: string, dispatchId: string, updatedAt: string): RoutineRunDto | null;
+  markSucceeded(id: string, leaseToken: string, updatedAt: string, result?: Record<string, unknown> | null): RoutineRunDto | null;
   markFailed(id: string, leaseToken: string, error: string, updatedAt: string): RoutineRunDto | null;
-  listRuns(filters?: { routine_id?: string; status?: RoutineRunDto['status'] }): RoutineRunDto[];
+  updateArtifact(id: string, artifactId: string, updatedAt: string): RoutineRunDto | null;
+  updateDelivery(id: string, status: 'pending' | 'delivered' | 'failed' | 'skipped', error: string | null, updatedAt: string): RoutineRunDto | null;
+  listRuns(filters?: { routine_id?: string; status?: RoutineRunDto['status']; delivery_status?: 'pending' | 'delivered' | 'failed' | 'skipped' }): RoutineRunDto[];
 }

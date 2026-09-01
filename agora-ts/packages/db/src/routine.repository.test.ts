@@ -23,7 +23,11 @@ describe('RoutineRepository', () => {
     });
     expect(runs).toHaveLength(1);
     expect(runs[0]?.status).toBe('claimed');
-    expect(repository.markSucceeded(runs[0]!.id, 'lease-1', '2026-09-01T08:02:00.000Z')?.status).toBe('succeeded');
+    expect(repository.attachDispatch(runs[0]!.id, 'lease-1', 'dispatch-1', '2026-09-01T08:01:30.000Z')?.runtime_dispatch_id).toBe('dispatch-1');
+    expect(repository.markSucceeded(runs[0]!.id, 'lease-1', '2026-09-01T08:02:00.000Z', { answer: 'done' })?.status).toBe('succeeded');
+    expect(repository.markSucceeded(runs[0]!.id, 'lease-1', '2026-09-01T08:02:00.000Z', { answer: 'done' })).toBeNull();
+    expect(repository.updateArtifact(runs[0]!.id, 'artifact-1', '2026-09-01T08:03:00.000Z')?.artifact_id).toBe('artifact-1');
+    expect(repository.updateDelivery(runs[0]!.id, 'delivered', null, '2026-09-01T08:03:00.000Z')?.delivery_status).toBe('delivered');
     expect(repository.getById('routine-1')?.next_run_at).toBe('2026-09-01T09:00:00.000Z');
   });
 

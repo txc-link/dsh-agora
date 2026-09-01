@@ -64,9 +64,27 @@ export class RoutineService {
     });
   }
 
-  markSucceeded(id: string, leaseToken: string): RoutineRunDto {
-    const updated = this.options.repository.markSucceeded(id, leaseToken, this.now().toISOString());
+  markSucceeded(id: string, leaseToken: string, result: Record<string, unknown> | null = null): RoutineRunDto {
+    const updated = this.options.repository.markSucceeded(id, leaseToken, this.now().toISOString(), result);
     if (!updated) throw new ConflictError(`routine run lease mismatch: ${id}`);
+    return updated;
+  }
+
+  attachDispatch(id: string, leaseToken: string, dispatchId: string): RoutineRunDto {
+    const updated = this.options.repository.attachDispatch(id, leaseToken, dispatchId, this.now().toISOString());
+    if (!updated) throw new ConflictError(`routine run lease mismatch: ${id}`);
+    return updated;
+  }
+
+  updateArtifact(id: string, artifactId: string): RoutineRunDto {
+    const updated = this.options.repository.updateArtifact(id, artifactId, this.now().toISOString());
+    if (!updated) throw new NotFoundError(`routine run not found: ${id}`);
+    return updated;
+  }
+
+  updateDelivery(id: string, status: 'pending' | 'delivered' | 'failed' | 'skipped', error: string | null = null): RoutineRunDto {
+    const updated = this.options.repository.updateDelivery(id, status, error, this.now().toISOString());
+    if (!updated) throw new NotFoundError(`routine run not found: ${id}`);
     return updated;
   }
 
@@ -76,7 +94,7 @@ export class RoutineService {
     return updated;
   }
 
-  listRuns(filters: { routine_id?: string; status?: RoutineRunDto['status'] } = {}): RoutineRunDto[] {
+  listRuns(filters: { routine_id?: string; status?: RoutineRunDto['status']; delivery_status?: RoutineRunDto['delivery_status'] } = {}): RoutineRunDto[] {
     return this.options.repository.listRuns(filters);
   }
 }

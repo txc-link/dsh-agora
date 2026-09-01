@@ -44,6 +44,7 @@ import {
   GovernedDispatchService,
   TaskMemorySummaryService,
   RoutineService,
+  RoutineRunner,
 } from '@agora-ts/core';
 import { OpenAiCompatibleProjectBrainEmbeddingAdapter, QdrantProjectBrainVectorIndexAdapter } from '@agora-ts/adapters-brain';
 import { A2aGatewayService } from '@agora-ts/adapters-runtime';
@@ -388,6 +389,60 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
       })
     : undefined;
   const routineService = new RoutineService({ repository: new RoutineRepository(db) });
+  const routineRunner = new RoutineRunner({
+    routineService,
+    repository: new RoutineRepository(db),
+    runtime: {
+      resolveTarget: (agentRef) => {
+        const target = runtimeTargetService.findRuntimeTarget(agentRef);
+        if (!target) return null;
+        const match = /^dsh:([^:]+):/u.exec(target.runtime_target_ref);
+        return match?.[1] ? { node_id: match[1], runtime_target_ref: target.runtime_target_ref } : null;
+      },
+      createDispatch: (input) => composition.runtimeNodeRegistryService.createDispatch(input.node_id, {
+        task_id: null,
+        runtime_target_ref: input.runtime_target_ref,
+        prompt: input.prompt,
+        idempotency_key: input.idempotency_key,
+        metadata: input.metadata,
+      }),
+      getDispatch: (dispatchId) => {
+        try {
+          return composition.runtimeNodeRegistryService.getDispatch(dispatchId);
+        } catch {
+          return null;
+        }
+      },
+    },
+    artifacts: {
+      createMarkdown: (input) => artifactService.create({
+        name: input.name,
+        kind: 'routine-report',
+        media_type: 'text/markdown',
+        content_base64: Buffer.from(input.content, 'utf8').toString('base64'),
+        owner_kind: 'other',
+        owner_ref: input.ownerRef,
+        metadata: input.metadata,
+      }),
+    },
+    delivery: {
+      deliver: ({ bindingRef, text, routine, run, artifactId }) => composition.imMessagingPort.sendNotification(bindingRef, {
+        task_id: `routine:${run.id}`,
+        event_type: 'routine_completed',
+        data: {
+          routine_id: routine.routine_id,
+          routine_run_id: run.id,
+          name: routine.name,
+          output: text,
+          artifact_id: artifactId ?? null,
+          target_domain: routine.target_domain,
+        },
+      }),
+    },
+    consumerRef: process.env.AGORA_ROUTINE_CONSUMER ?? 'agora:routine-runner',
+    limit: Number(process.env.AGORA_ROUTINE_RUNNER_LIMIT ?? 5),
+    leaseMs: Number(process.env.AGORA_ROUTINE_RUNNER_LEASE_MS ?? 120_000),
+  });
   const runtimeNodeCredentialService = new RuntimeNodeCredentialService(federationRepository);
   const coordinationService = new CoordinationService({
     repository: new CoordinationRepository(db),
@@ -439,6 +494,17 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
     ...(projectBrainIndexWorkerService ? { projectBrainIndexWorkerService } : {}),
     ...(taskMemorySummaryService ? { memorySummaryService: taskMemorySummaryService } : {}),
   });
+  const routineRunnerEnabled = process.env.AGORA_ROUTINE_RUNNER_ENABLED === 'true';
+  const routineRunnerIntervalMs = Math.max(1_000, Number(process.env.AGORA_ROUTINE_RUNNER_INTERVAL_MS ?? 5_000));
+  let routineRunnerTimer: NodeJS.Timeout | null = routineRunnerEnabled
+    ? setInterval(() => {
+        void routineRunner.runOnce().catch((error: unknown) => console.error('[agora] routine runner tick failed', error));
+      }, routineRunnerIntervalMs)
+    : null;
+  routineRunnerTimer?.unref?.();
+  const stopRoutineRunner = () => {
+    if (routineRunnerTimer) { clearInterval(routineRunnerTimer); routineRunnerTimer = null; }
+  };
   const coordinationIntervalMs = Number(process.env.AGORA_COORDINATION_RECONCILE_MS ?? 3_000);
   let coordinationTimer: NodeJS.Timeout | null = setInterval(() => {
     try {
@@ -476,6 +542,7 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
   db.close = () => {
     stopCoordinationReconciliation();
     stopPlanningSync();
+    stopRoutineRunner();
     closeDatabase();
   };
   const dispose = () => {
@@ -486,6 +553,7 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
     observationScheduler.stop();
     stopCoordinationReconciliation();
     stopPlanningSync();
+    stopRoutineRunner();
   };
 
   return {
@@ -502,6 +570,7 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
     memoryService,
     ...(taskMemorySummaryService ? { taskMemorySummaryService } : {}),
     routineService,
+    routineRunner,
     runtimeNodeCredentialService,
     mergeCoordinatorService,
     a2aGatewayService,

@@ -19,11 +19,15 @@ class InMemoryRoutineRepository implements IRoutineRepository {
     routine.status = status; routine.updated_at = updatedAt; return routine;
   }
   claimDue() { return []; }
+  attachDispatch(id: string) { return this.runs.find((run) => run.id === id) ?? null; }
   markSucceeded(id: string) { return this.runs.find((run) => run.id === id) ?? null; }
   markFailed(id: string) { return this.runs.find((run) => run.id === id) ?? null; }
-  listRuns(filters: { routine_id?: string; status?: RoutineRunDto['status'] } = {}) {
+  updateArtifact(id: string) { return this.runs.find((run) => run.id === id) ?? null; }
+  updateDelivery(id: string) { return this.runs.find((run) => run.id === id) ?? null; }
+  listRuns(filters: { routine_id?: string; status?: RoutineRunDto['status']; delivery_status?: RoutineRunDto['delivery_status'] } = {}) {
     return this.runs.filter((run) => (filters.routine_id === undefined || run.routine_id === filters.routine_id)
-      && (filters.status === undefined || run.status === filters.status));
+      && (filters.status === undefined || run.status === filters.status)
+      && (filters.delivery_status === undefined || run.delivery_status === filters.delivery_status));
   }
 }
 
@@ -41,7 +45,8 @@ describe('memory summary and routine routes', () => {
     const routineService = new RoutineService({
       repository: new InMemoryRoutineRepository(), now: () => new Date('2026-09-01T09:00:00.000Z'),
     });
-    const app = buildApp({ taskMemorySummaryService: summaryService, routineService });
+    const routineRunner = { runOnce: vi.fn(async () => ({ claimed: 1, dispatched: 1, waiting: 0, completed: 0, failed: 0, delivered: 0, delivery_failed: 0, delivery_skipped: 0 })) };
+    const app = buildApp({ taskMemorySummaryService: summaryService, routineService, routineRunner });
     const summaryResponse = await app.inject({ method: 'POST', url: '/api/tasks/task-1/memory-summary', payload: { scope_ref: 'project:demo' } });
     expect(summaryResponse.statusCode).toBe(200);
     expect(summaryResponse.json().status).toBe('already_summarized');
@@ -58,6 +63,10 @@ describe('memory summary and routine routes', () => {
     const statusResponse = await app.inject({ method: 'PATCH', url: '/api/routines/routine-1/status', payload: { status: 'paused' } });
     expect(statusResponse.statusCode).toBe(200);
     expect(statusResponse.json().status).toBe('paused');
+    const runResponse = await app.inject({ method: 'POST', url: '/api/routines/run' });
+    expect(runResponse.statusCode).toBe(200);
+    expect(runResponse.json().claimed).toBe(1);
+    expect(routineRunner.runOnce).toHaveBeenCalledTimes(1);
     await app.close();
   });
 });

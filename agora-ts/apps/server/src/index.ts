@@ -60,6 +60,7 @@ export function createAppFromRuntime(runtime: ReturnType<typeof createServerRunt
     actionAuditService: runtime.actionAuditService,
     ...(runtime.taskMemorySummaryService ? { taskMemorySummaryService: runtime.taskMemorySummaryService } : {}),
     routineService: runtime.routineService,
+    routineRunner: runtime.routineRunner,
   });
   app.addHook('onClose', async () => {
     await runtime.dispose?.();

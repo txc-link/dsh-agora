@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { routineRunSchema, routineSchema, type IRoutineRepository, type RoutineDto, type RoutineRunDto, type RoutineStatusDto } from '@agora-ts/contracts';
+import { routineRunSchema, routineSchema, type IRoutineRepository, type RoutineDto, type RoutineRunDto, type RoutineStatusDto, type RoutineDeliveryStatusDto } from '@agora-ts/contracts';
 import type { AgoraDatabase } from '../database.js';
 import { parseJsonValue, stringifyJsonValue } from './json.js';
 
@@ -50,8 +50,8 @@ export class RoutineRepository implements IRoutineRepository {
         const lease = input.lease_token_factory();
         const createdAt = input.now;
         this.db.prepare(`INSERT OR IGNORE INTO routine_runs
-          (id, routine_id, scheduled_for, status, consumer_ref, lease_token, lease_expires_at, attempt_count, error, created_at, updated_at)
-          VALUES (?, ?, ?, 'claimed', ?, ?, ?, 1, NULL, ?, ?)`)
+          (id, routine_id, scheduled_for, status, consumer_ref, lease_token, lease_expires_at, attempt_count, error, runtime_dispatch_id, result, artifact_id, delivery_status, delivery_error, created_at, updated_at)
+          VALUES (?, ?, ?, 'claimed', ?, ?, ?, 1, NULL, NULL, NULL, NULL, 'pending', NULL, ?, ?)`)
           .run(runId, routine.routine_id, routine.next_run_at, input.consumer_ref, lease, input.lease_expires_at, createdAt, createdAt);
         const next = nextRunAfter(routine, new Date(routine.next_run_at));
         this.db.prepare('UPDATE routines SET last_run_at = ?, next_run_at = ?, updated_at = ? WHERE routine_id = ? AND next_run_at = ?')
@@ -64,22 +64,43 @@ export class RoutineRepository implements IRoutineRepository {
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
 
-  markSucceeded(id: string, leaseToken: string, updatedAt: string): RoutineRunDto | null {
-    this.db.prepare("UPDATE routine_runs SET status = 'succeeded', lease_expires_at = NULL, updated_at = ? WHERE id = ? AND status = 'claimed' AND lease_token = ?")
-      .run(updatedAt, id, leaseToken);
+  attachDispatch(id: string, leaseToken: string, dispatchId: string, updatedAt: string): RoutineRunDto | null {
+    const updated = this.db.prepare("UPDATE routine_runs SET runtime_dispatch_id = ?, updated_at = ? WHERE id = ? AND status = 'claimed' AND lease_token = ?")
+      .run(dispatchId, updatedAt, id, leaseToken);
+    if (updated.changes === 0) return null;
+    return this.getRun(id);
+  }
+
+  markSucceeded(id: string, leaseToken: string, updatedAt: string, result: Record<string, unknown> | null = null): RoutineRunDto | null {
+    const updated = this.db.prepare("UPDATE routine_runs SET status = 'succeeded', result = ?, lease_expires_at = NULL, updated_at = ? WHERE id = ? AND status = 'claimed' AND lease_token = ?")
+      .run(stringifyJsonValue(result), updatedAt, id, leaseToken);
+    if (updated.changes === 0) return null;
     return this.getRun(id);
   }
 
   markFailed(id: string, leaseToken: string, error: string, updatedAt: string): RoutineRunDto | null {
-    this.db.prepare("UPDATE routine_runs SET status = 'failed', error = ?, lease_expires_at = NULL, updated_at = ? WHERE id = ? AND status = 'claimed' AND lease_token = ?")
+    const updated = this.db.prepare("UPDATE routine_runs SET status = 'failed', error = ?, lease_expires_at = NULL, updated_at = ? WHERE id = ? AND status = 'claimed' AND lease_token = ?")
       .run(error, updatedAt, id, leaseToken);
+    if (updated.changes === 0) return null;
     return this.getRun(id);
   }
 
-  listRuns(filters: { routine_id?: string; status?: RoutineRunDto['status'] } = {}): RoutineRunDto[] {
+  updateArtifact(id: string, artifactId: string, updatedAt: string): RoutineRunDto | null {
+    this.db.prepare('UPDATE routine_runs SET artifact_id = ?, updated_at = ? WHERE id = ?').run(artifactId, updatedAt, id);
+    return this.getRun(id);
+  }
+
+  updateDelivery(id: string, status: RoutineDeliveryStatusDto, error: string | null, updatedAt: string): RoutineRunDto | null {
+    this.db.prepare('UPDATE routine_runs SET delivery_status = ?, delivery_error = ?, updated_at = ? WHERE id = ?')
+      .run(status, error, updatedAt, id);
+    return this.getRun(id);
+  }
+
+  listRuns(filters: { routine_id?: string; status?: RoutineRunDto['status']; delivery_status?: RoutineDeliveryStatusDto } = {}): RoutineRunDto[] {
     const clauses: string[] = []; const params: string[] = [];
     if (filters.routine_id) { clauses.push('routine_id = ?'); params.push(filters.routine_id); }
     if (filters.status) { clauses.push('status = ?'); params.push(filters.status); }
+    if (filters.delivery_status) { clauses.push('delivery_status = ?'); params.push(filters.delivery_status); }
     const where = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
     return (this.db.prepare(`SELECT * FROM routine_runs${where} ORDER BY scheduled_for DESC, id DESC`).all(...params) as Row[]).map(parseRun);
   }
@@ -105,6 +126,10 @@ function parseRun(row: Row): RoutineRunDto {
     id: String(row.id), routine_id: String(row.routine_id), scheduled_for: String(row.scheduled_for), status: String(row.status),
     consumer_ref: row.consumer_ref === null ? null : String(row.consumer_ref), lease_token: row.lease_token === null ? null : String(row.lease_token),
     lease_expires_at: row.lease_expires_at === null ? null : String(row.lease_expires_at), attempt_count: Number(row.attempt_count),
+    runtime_dispatch_id: row.runtime_dispatch_id === null || row.runtime_dispatch_id === undefined ? null : String(row.runtime_dispatch_id),
+    result: parseJsonValue(row.result, null), artifact_id: row.artifact_id === null || row.artifact_id === undefined ? null : String(row.artifact_id),
+    delivery_status: row.delivery_status === undefined || row.delivery_status === null ? 'pending' : String(row.delivery_status),
+    delivery_error: row.delivery_error === null || row.delivery_error === undefined ? null : String(row.delivery_error),
     error: row.error === null ? null : String(row.error), created_at: String(row.created_at), updated_at: String(row.updated_at),
   });
 }

@@ -9,6 +9,7 @@ import type {
 } from '@agora-ts/contracts';
 import { TaskState } from './enums.js';
 import type { GroupMemoryEntry, GroupMemoryPort } from './group-memory-ports.js';
+import { DefaultMemoryRedactor, DeterministicTaskMemorySummaryProvider, type MemoryRedactor, type StructuredTaskMemorySummary, type TaskMemorySummaryProvider } from './memory-summary-provider.js';
 
 export interface TaskMemorySummaryServiceOptions {
   taskRepository: Pick<ITaskRepository, 'getTask' | 'listTasks'>;
@@ -18,6 +19,8 @@ export interface TaskMemorySummaryServiceOptions {
   memoryPort: GroupMemoryPort;
   now?: () => Date;
   idGenerator?: () => string;
+  summaryProvider?: TaskMemorySummaryProvider;
+  redactor?: MemoryRedactor;
 }
 
 export type TaskMemorySummaryResult =
@@ -33,10 +36,14 @@ export type TaskMemorySummaryResult =
 export class TaskMemorySummaryService {
   private readonly now: () => Date;
   private readonly idGenerator: () => string;
+  private readonly summaryProvider: TaskMemorySummaryProvider;
+  private readonly redactor: MemoryRedactor;
 
   constructor(private readonly options: TaskMemorySummaryServiceOptions) {
     this.now = options.now ?? (() => new Date());
     this.idGenerator = options.idGenerator ?? randomUUID;
+    this.summaryProvider = options.summaryProvider ?? new DeterministicTaskMemorySummaryProvider();
+    this.redactor = options.redactor ?? new DefaultMemoryRedactor();
   }
 
   async summarizeTask(taskId: string, scopeRef?: string): Promise<TaskMemorySummaryResult> {
@@ -58,14 +65,20 @@ export class TaskMemorySummaryService {
       memory_id: null, status: 'pending', error: null, created_at: timestamp, updated_at: timestamp,
     });
     try {
+      const structured = await this.summaryProvider.summarize({ task, conversation, progress });
+      const rendered = renderStructuredSummary(task, conversation, progress, structured, this.redactor);
       const memory = await this.options.memoryPort.add({
         scopeRef: resolvedScope,
         agentRef: resolveSummaryAgent(task),
         kind: task.type === 'research' ? 'research' : 'lesson',
-        text: renderSummary(task, conversation, progress),
+        text: rendered.text,
         metadata: {
           summary_kind: 'task_terminal', task_id: task.id, task_state: task.state,
           fingerprint, contributors: task.team.members.map((member) => member.agentId),
+          summary_schema: 'agora.task-memory/v2', facts: rendered.structured.facts,
+          decisions: rendered.structured.decisions, lessons: rendered.structured.lessons,
+          unresolved: rendered.structured.unresolved, confidence: rendered.structured.confidence,
+          redacted: rendered.redacted, redaction_patterns: rendered.redactionPatterns,
         },
       });
       const summary = this.options.summaryRepository.markSucceeded(pending.id, memory.id, this.now().toISOString());
@@ -114,13 +127,15 @@ function resolveSummaryAgent(task: TaskRecord): string {
     ?? task.creator;
 }
 
-function renderSummary(
+function renderStructuredSummary(
   task: TaskRecord,
   conversation: Array<{ body: string; occurred_at: string; author_ref: string | null }>,
   progress: Array<{ content: string }>,
-): string {
+  structured: StructuredTaskMemorySummary,
+  redactor: MemoryRedactor,
+): { text: string; structured: StructuredTaskMemorySummary; redacted: boolean; redactionPatterns: string[] } {
   const clean = (value: string) => value.replace(/\s+/gu, ' ').trim();
-  const lines = [
+  const original = [
     `任务：${task.title}`,
     `状态：${task.state}`,
     `类型：${task.type}`,
@@ -129,5 +144,13 @@ function renderSummary(
     progress.length ? `进展：${progress.slice(-8).map((entry) => clean(entry.content)).join('；')}` : '',
     conversation.length ? `协作记录：${conversation.slice(-12).map((entry) => `${entry.author_ref ?? 'system'}：${clean(entry.body)}`).join('；')}` : '',
   ].filter(Boolean);
-  return lines.join('\n').slice(0, 12_000);
+  const sections = [
+    `## 事实\n${structured.facts.map(clean).join('\n') || '未记录'}`,
+    `## 决策\n${structured.decisions.map(clean).join('\n') || '未记录'}`,
+    `## 经验\n${structured.lessons.map(clean).join('\n') || '未记录'}`,
+    `## 未决\n${structured.unresolved.map(clean).join('\n') || '无'}`,
+    `## 原始摘要\n${original.join('\n')}`,
+  ];
+  const redacted = redactor.redact(sections.join('\n\n'));
+  return { text: redacted.text.slice(0, 12_000), structured, redacted: redacted.redacted, redactionPatterns: redacted.patterns };
 }

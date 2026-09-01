@@ -81,6 +81,7 @@ import {
   GroupMemoryService,
   type GroupMemoryPort,
   RoutineService,
+  type RoutineRunner,
   TeamService,
   OrgHierarchyResolver,
   DelegateRouter,
@@ -302,6 +303,7 @@ export interface CliDependencies {
   artifactService?: Pick<ArtifactService, 'create' | 'get' | 'list' | 'content'>;
   memoryService?: Pick<MemoryService, 'create' | 'get' | 'query'>;
   routineService?: RoutineServiceContract;
+  routineRunner?: Pick<RoutineRunner, 'runOnce'>;
   runtimeNodeCredentialService?: Pick<RuntimeNodeCredentialService, 'issue' | 'list' | 'rotate' | 'revoke'>;
   mergeCoordinatorService?: Pick<MergeCoordinatorService, 'create' | 'get' | 'list' | 'execute'>;
   borrowService?: BorrowService;
@@ -746,6 +748,7 @@ export function createCliProgram(deps: CliDependencies = {}) {
   const artifactService = createLazyObject(() => deps.artifactService ?? resolveComposition().artifactService);
   const memoryService = createLazyObject(() => deps.memoryService ?? resolveComposition().memoryService);
   const routineService = createLazyObject(() => deps.routineService ?? new RoutineService({ repository: new RoutineRepository(resolveComposition().db) }));
+  const routineRunner = deps.routineRunner;
   const governedExecutionService = createLazyObject(() => deps.governedExecutionService ?? new GovernedExecutionService({
     taskSpecRevisions: new TaskSpecRevisionRepository(resolveComposition().db),
     executionBaselines: new ExecutionBaselineRepository(resolveComposition().db),
@@ -1541,6 +1544,16 @@ export function createCliProgram(deps: CliDependencies = {}) {
     .option('--lease-ms <milliseconds>', 'lease duration', parseIntegerOption, 120_000)
     .action((options: { consumer: string; limit: number; leaseMs: number }) => {
       writeLine(stdout, JSON.stringify(routineService.claimDue({ consumer_ref: options.consumer, limit: options.limit, lease_ms: options.leaseMs }), null, 2));
+    });
+  routine.command('run')
+    .description('claim, dispatch, reconcile and deliver due routines')
+    .action(async () => {
+      if (!routineRunner) {
+        writeLine(stderr, JSON.stringify({ ok: false, error: 'routine runner is not configured; use POST /api/routines/run or inject one' }));
+        process.exitCode = 1;
+        return;
+      }
+      writeLine(stdout, JSON.stringify(await routineRunner.runOnce(), null, 2));
     });
   routine.command('runs')
     .option('--routine <routineId>')
