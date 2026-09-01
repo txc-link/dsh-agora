@@ -70,6 +70,8 @@ import type {
   SubTaskSpecRecord,
   DelegationAuthorityRecord,
   CollaborationPlanRecord,
+  ActionAttemptRecord,
+  ActionReceiptRecord,
 } from './domain-types.js';
 
 import type {
@@ -270,6 +272,21 @@ export interface ICollaborationPlanRepository {
   getByIdempotencyKey(key: string): CollaborationPlanRecord | null;
   listByTask(taskId: string): CollaborationPlanRecord[];
   listByRequirement(requirementId: string): CollaborationPlanRecord[];
+}
+
+export interface IActionAttemptRepository {
+  insert(record: ActionAttemptRecord): ActionAttemptRecord;
+  getById(id: string): ActionAttemptRecord | null;
+  getByIdempotencyKey(key: string): ActionAttemptRecord | null;
+  listByTask(taskId: string): ActionAttemptRecord[];
+}
+
+export interface IActionReceiptRepository {
+  insert(record: ActionReceiptRecord): ActionReceiptRecord;
+  getById(id: string): ActionReceiptRecord | null;
+  getByAttemptId(attemptId: string): ActionReceiptRecord | null;
+  getByIdempotencyKey(key: string): ActionReceiptRecord | null;
+  listByTask(taskId: string): ActionReceiptRecord[];
 }
 
 // ─── 2. Subtask ───────────────────────────────────────────────────────────

@@ -37,6 +37,7 @@ import type {
   DelegationAuthorityDto,
   SubTaskSpecDto,
 } from './collaboration-governance.js';
+import type { ActionAttemptDto, ActionReceiptDto } from './action-audit.js';
 
 // ─── Governed execution ──────────────────────────────────────────────────
 
@@ -47,6 +48,8 @@ export type CollaborationRequirementRecord = CollaborationRequirementDto;
 export type SubTaskSpecRecord = SubTaskSpecDto;
 export type DelegationAuthorityRecord = DelegationAuthorityDto;
 export type CollaborationPlanRecord = CollaborationPlanDto;
+export type ActionAttemptRecord = ActionAttemptDto;
+export type ActionReceiptRecord = ActionReceiptDto;
 
 // ─── Scheduler snapshot ──────────────────────────────────────────────────
 

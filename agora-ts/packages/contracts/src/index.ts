@@ -53,3 +53,4 @@ export * from './thread-task-binding.js';
 export * from './planning.js';
 export * from './governed-execution.js';
 export * from './collaboration-governance.js';
+export * from './action-audit.js';

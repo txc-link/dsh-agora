@@ -96,6 +96,7 @@ import {
   ExecutiveAssistantService,
   GovernedExecutionService,
   CollaborationGovernanceService,
+  ActionAuditService,
   type ExecutiveTaskPort,
   runTaskAskCommand,
   ThreadTaskBindingService,
@@ -147,6 +148,8 @@ import {
   SubTaskSpecRepository,
   DelegationAuthorityRepository,
   CollaborationPlanRepository,
+  ActionAttemptRepository,
+  ActionReceiptRepository,
   CoordinationRepository,
   type AgoraDatabase,
 } from '@agora-ts/db';
@@ -212,6 +215,8 @@ import {
   createSubTaskSpecRequestSchema,
   createDelegationAuthorityRequestSchema,
   createCollaborationPlanRequestSchema,
+  createActionAttemptRequestSchema,
+  createActionReceiptRequestSchema,
 } from '@agora-ts/contracts';
 import { runInitCommand } from './init-command.js';
 import { runStartCommand } from './start-command.js';
@@ -314,6 +319,7 @@ export interface CliDependencies {
   actionRiskService?: ActionRiskService;
   governedExecutionService?: GovernedExecutionService;
   collaborationGovernanceService?: CollaborationGovernanceService;
+  actionAuditService?: ActionAuditService;
   actionRiskAssessmentRepository?: IActionRiskAssessmentRepository;
   organizationService?: OrganizationService;
   organizationRepository?: IOrganizationRepository;
@@ -748,6 +754,13 @@ export function createCliProgram(deps: CliDependencies = {}) {
     authorities: new DelegationAuthorityRepository(resolveComposition().db),
     plans: new CollaborationPlanRepository(resolveComposition().db),
   }));
+  const actionAuditService = createLazyObject(() => deps.actionAuditService ?? new ActionAuditService({
+    attempts: new ActionAttemptRepository(resolveComposition().db),
+    receipts: new ActionReceiptRepository(resolveComposition().db),
+    plans: new CollaborationPlanRepository(resolveComposition().db),
+    authorities: new DelegationAuthorityRepository(resolveComposition().db),
+    baselines: new ExecutionBaselineRepository(resolveComposition().db),
+  }));
   const runtimeNodeCredentialService = createLazyObject(() => deps.runtimeNodeCredentialService ?? resolveComposition().runtimeNodeCredentialService);
   const mergeCoordinatorService = createLazyObject(() => deps.mergeCoordinatorService ?? resolveComposition().mergeCoordinatorService);
   const borrowService = createLazyObject(() => deps.borrowService ?? resolveComposition().borrowService);
@@ -1145,6 +1158,52 @@ export function createCliProgram(deps: CliDependencies = {}) {
   });
   plan.command('show').argument('<planId>').action((planId: string) => {
     writeLine(stdout, JSON.stringify(collaborationGovernanceService.getPlan(planId), null, 2));
+  });
+
+  const audit = program.command('audit').description('runtime action admission and terminal receipts');
+  const attempt = audit.command('attempt').description('admit a governed provider-neutral action');
+  attempt.command('admit')
+    .argument('<taskId>')
+    .requiredOption('--file <path>', 'JSON request file')
+    .option('--idempotency-key <key>', 'override the request idempotency key')
+    .action((taskId: string, options: { file: string; idempotencyKey?: string }) => {
+      const request = parseJsonFile(options.file, 'action attempt request');
+      const created = actionAuditService.admit(createActionAttemptRequestSchema.parse({
+        ...request,
+        task_id: taskId,
+        idempotency_key: options.idempotencyKey ?? request.idempotency_key ?? `cli:attempt:${randomUUID()}`,
+      }));
+      writeLine(stdout, JSON.stringify(created, null, 2));
+    });
+  attempt.command('list').argument('<taskId>').action((taskId: string) => {
+    writeLine(stdout, JSON.stringify(actionAuditService.listAttempts(taskId), null, 2));
+  });
+  attempt.command('show').argument('<attemptId>').action((attemptId: string) => {
+    writeLine(stdout, JSON.stringify(actionAuditService.getAttempt(attemptId), null, 2));
+  });
+
+  const receipt = audit.command('receipt').description('record and inspect terminal action outcomes');
+  receipt.command('record')
+    .argument('<taskId>')
+    .requiredOption('--file <path>', 'JSON request file')
+    .option('--idempotency-key <key>', 'override the request idempotency key')
+    .action((taskId: string, options: { file: string; idempotencyKey?: string }) => {
+      const request = parseJsonFile(options.file, 'action receipt request');
+      const attemptId = typeof request.attempt_id === 'string' ? request.attempt_id : null;
+      if (attemptId && actionAuditService.getAttempt(attemptId).task_id !== taskId) {
+        throw new Error(`ActionAttempt ${attemptId} does not belong to task ${taskId}`);
+      }
+      const created = actionAuditService.recordReceipt(createActionReceiptRequestSchema.parse({
+        ...request,
+        idempotency_key: options.idempotencyKey ?? request.idempotency_key ?? `cli:receipt:${randomUUID()}`,
+      }));
+      writeLine(stdout, JSON.stringify(created, null, 2));
+    });
+  receipt.command('list').argument('<taskId>').action((taskId: string) => {
+    writeLine(stdout, JSON.stringify(actionAuditService.listReceipts(taskId), null, 2));
+  });
+  receipt.command('show').argument('<receiptId>').action((receiptId: string) => {
+    writeLine(stdout, JSON.stringify(actionAuditService.getReceipt(receiptId), null, 2));
   });
 
   const borrow = program.command('borrow').description('Agent borrow requests (Phase 3.5-2)');

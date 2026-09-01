@@ -282,6 +282,8 @@ export type { GovernedExecutionServiceOptions } from './governed-execution-servi
 export { GovernedExecutionService } from './governed-execution-service.js';
 export type { CollaborationGovernanceServiceOptions } from './collaboration-governance-service.js';
 export { CollaborationGovernanceService } from './collaboration-governance-service.js';
+export type { ActionAuditServiceOptions } from './action-audit-service.js';
+export { ActionAuditService } from './action-audit-service.js';
 export type { TaskBrainBindingServiceOptions } from './task-brain-binding-service.js';
 export { TaskBrainBindingService } from './task-brain-binding-service.js';
 export { TASK_BRAIN_RUNTIME_DELIVERY_MANIFEST_RELATIVE_PATH } from './task-brain-port.js';

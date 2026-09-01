@@ -210,6 +210,12 @@ import {
   createCollaborationPlanRequestSchema,
   collaborationPlanSchema,
   collaborationPlanListResponseSchema,
+  createActionAttemptRequestSchema,
+  actionAttemptSchema,
+  actionAttemptListResponseSchema,
+  createActionReceiptRequestSchema,
+  actionReceiptSchema,
+  actionReceiptListResponseSchema,
 } from '@agora-ts/contracts';
 import { RuntimeRepoShimWritebackService } from '@agora-ts/adapters-materialization';
 import {
@@ -270,6 +276,7 @@ import {
   ExecutiveAssistantService,
   GovernedExecutionService,
   CollaborationGovernanceService,
+  ActionAuditService,
   TaskClaimService,
   type ExecutiveTaskPort,
 } from '@agora-ts/core';
@@ -295,6 +302,8 @@ import {
   SubTaskSpecRepository,
   DelegationAuthorityRepository,
   CollaborationPlanRepository,
+  ActionAttemptRepository,
+  ActionReceiptRepository,
   ParticipantBindingRepository,
   ProgressLogRepository,
   TaskClaimRepository,
@@ -379,6 +388,7 @@ export interface BuildAppOptions {
   executiveAssistantService?: ExecutiveAssistantService;
   governedExecutionService?: GovernedExecutionService;
   collaborationGovernanceService?: CollaborationGovernanceService;
+  actionAuditService?: ActionAuditService;
   apiAuth?: {
     enabled: boolean;
     token: string;
@@ -1285,6 +1295,15 @@ export function buildApp(options: BuildAppOptions = {}) {
         specs: new SubTaskSpecRepository(options.db),
         authorities: new DelegationAuthorityRepository(options.db),
         plans: new CollaborationPlanRepository(options.db),
+      })
+    : undefined);
+  const actionAuditService = options.actionAuditService ?? (options.db && collaborationGovernanceService
+    ? new ActionAuditService({
+        attempts: new ActionAttemptRepository(options.db),
+        receipts: new ActionReceiptRepository(options.db),
+        plans: new CollaborationPlanRepository(options.db),
+        authorities: new DelegationAuthorityRepository(options.db),
+        baselines: new ExecutionBaselineRepository(options.db),
       })
     : undefined);
   const organizationRepository = options.db ? new OrganizationRepository(options.db) : undefined;
@@ -3327,6 +3346,66 @@ export function buildApp(options: BuildAppOptions = {}) {
       return reply.send(collaborationPlanListResponseSchema.parse({
         plans: collaborationGovernanceService.listPlans(taskId),
       }));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/tasks/:taskId/action-attempts', async (request, reply) => {
+    if (!actionAuditService) {
+      return reply.status(503).send({ message: 'Action audit service is not configured' });
+    }
+    try {
+      const { taskId } = request.params as { taskId: string };
+      const body = (request.body && typeof request.body === 'object') ? request.body as Record<string, unknown> : {};
+      const attempt = actionAuditService.admit(createActionAttemptRequestSchema.parse({ ...body, task_id: taskId }));
+      return reply.status(201).send(actionAttemptSchema.parse(attempt));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/tasks/:taskId/action-attempts', async (request, reply) => {
+    if (!actionAuditService) {
+      return reply.status(503).send({ message: 'Action audit service is not configured' });
+    }
+    try {
+      const { taskId } = request.params as { taskId: string };
+      return reply.send(actionAttemptListResponseSchema.parse({ attempts: actionAuditService.listAttempts(taskId) }));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/tasks/:taskId/action-receipts', async (request, reply) => {
+    if (!actionAuditService) {
+      return reply.status(503).send({ message: 'Action audit service is not configured' });
+    }
+    try {
+      const { taskId } = request.params as { taskId: string };
+      const body = (request.body && typeof request.body === 'object') ? request.body as Record<string, unknown> : {};
+      const attemptId = typeof body.attempt_id === 'string' ? body.attempt_id : null;
+      if (attemptId && actionAuditService.getAttempt(attemptId).task_id !== taskId) {
+        return reply.status(409).send({ message: 'ActionReceipt attempt does not belong to the requested task' });
+      }
+      const receipt = actionAuditService.recordReceipt(createActionReceiptRequestSchema.parse({ ...body }));
+      return reply.status(201).send(actionReceiptSchema.parse(receipt));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/tasks/:taskId/action-receipts', async (request, reply) => {
+    if (!actionAuditService) {
+      return reply.status(503).send({ message: 'Action audit service is not configured' });
+    }
+    try {
+      const { taskId } = request.params as { taskId: string };
+      return reply.send(actionReceiptListResponseSchema.parse({ receipts: actionAuditService.listReceipts(taskId) }));
     } catch (error) {
       const translated = translateError(error);
       return reply.status(translated.statusCode).send(translated.body);
