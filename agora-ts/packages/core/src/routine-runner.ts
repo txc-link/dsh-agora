@@ -50,6 +50,7 @@ export interface RoutineRunnerServicePort {
   attachDispatch(id: string, leaseToken: string, dispatchId: string): RoutineRunDto;
   markSucceeded(id: string, leaseToken: string, result?: Record<string, unknown> | null): RoutineRunDto;
   markFailed(id: string, leaseToken: string, error: string): RoutineRunDto;
+  reclaimExpired?(limit?: number): number;
   updateArtifact(id: string, artifactId: string): RoutineRunDto;
   updateDelivery(id: string, status: 'pending' | 'delivered' | 'failed' | 'skipped', error?: string | null): RoutineRunDto;
 }
@@ -95,6 +96,7 @@ export class RoutineRunner {
     };
 
     await this.retryFailedDeliveries(result);
+    this.options.routineService.reclaimExpired?.(this.options.limit ?? 20);
     await this.reconcileClaimedRuns(result);
 
     const claimInput: { consumer_ref: string; limit?: number; lease_ms?: number } = { consumer_ref: this.options.consumerRef };

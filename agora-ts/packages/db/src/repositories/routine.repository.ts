@@ -64,6 +64,18 @@ export class RoutineRepository implements IRoutineRepository {
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
 
+  reclaimExpired(now: string, updatedAt: string, limit = 20): number {
+    const rows = this.db.prepare("SELECT id, routine_id, scheduled_for FROM routine_runs WHERE status = 'claimed' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ? ORDER BY lease_expires_at LIMIT ?").all(now, limit) as Row[];
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const row of rows) {
+        this.db.prepare("UPDATE routine_runs SET status = 'failed', error = 'routine lease expired; reclaimed', lease_token = NULL, lease_expires_at = NULL, updated_at = ? WHERE id = ? AND status = 'claimed' AND lease_expires_at <= ?").run(updatedAt, String(row.id), now);
+        this.db.prepare("UPDATE routines SET next_run_at = CASE WHEN next_run_at > ? THEN ? ELSE next_run_at END, updated_at = ? WHERE routine_id = ?").run(String(row.scheduled_for), String(row.scheduled_for), updatedAt, String(row.routine_id));
+      }
+      this.db.exec('COMMIT'); return rows.length;
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+
   attachDispatch(id: string, leaseToken: string, dispatchId: string, updatedAt: string): RoutineRunDto | null {
     const updated = this.db.prepare("UPDATE routine_runs SET runtime_dispatch_id = ?, updated_at = ? WHERE id = ? AND status = 'claimed' AND lease_token = ?")
       .run(dispatchId, updatedAt, id, leaseToken);

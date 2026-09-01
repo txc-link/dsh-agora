@@ -94,6 +94,10 @@ export class RoutineService {
     return updated;
   }
 
+  reclaimExpired(limit = 20): number {
+    return this.options.repository.reclaimExpired?.(this.now().toISOString(), this.now().toISOString(), limit) ?? 0;
+  }
+
   listRuns(filters: { routine_id?: string; status?: RoutineRunDto['status']; delivery_status?: RoutineRunDto['delivery_status'] } = {}): RoutineRunDto[] {
     return this.options.repository.listRuns(filters);
   }
