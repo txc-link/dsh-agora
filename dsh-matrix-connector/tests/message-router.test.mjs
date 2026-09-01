@@ -87,3 +87,20 @@ test('HELP_TEXT: contains every v0.1 verb', () => {
     assert.match(HELP_TEXT, new RegExp(v));
   }
 });
+
+test('route: /agora say <text> → say / [<words>]', () => {
+  const d = route('/agora say 你好世界');
+  assert.equal(d.verb, 'say');
+  assert.deepEqual(d.args, ['你好世界']);
+});
+
+test('route: /agora say (empty) → say / MISSING_ARG', () => {
+  const d = route('/agora say');
+  assert.equal(d.verb, 'say');
+  assert.equal(d.errorCode, 'MISSING_ARG');
+  assert.deepEqual(d.args, []);
+});
+
+test('HELP_TEXT: documents /agora say', () => {
+  assert.match(HELP_TEXT, /\/agora say/);
+});
