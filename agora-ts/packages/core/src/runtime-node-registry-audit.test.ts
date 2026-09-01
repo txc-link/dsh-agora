@@ -126,4 +126,19 @@ describe('RuntimeNodeRegistryService action audit boundary', () => {
     })).toThrow(ConflictError);
     expect(repository.createDispatch).not.toHaveBeenCalled();
   });
+
+  it('requires the governed envelope for tasks with an approved collaboration plan', () => {
+    const repository = {
+      getNode: vi.fn(() => node),
+      createDispatch: vi.fn(),
+    };
+    const service = new RuntimeNodeRegistryService(repository as never, {
+      actionAuditService: {} as never,
+      requireGovernanceForTask: () => true,
+    });
+    expect(() => service.createDispatch('web-1', {
+      task_id: 'task-governed', runtime_target_ref: 'dsh:web-1:worker', prompt: 'work', idempotency_key: 'dispatch-governed',
+    })).toThrow(/governed dispatch envelope/);
+    expect(repository.createDispatch).not.toHaveBeenCalled();
+  });
 });

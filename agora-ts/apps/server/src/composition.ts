@@ -82,6 +82,7 @@ import {
   type AgoraDatabase,
   ApprovalRequestRepository,
   ArchiveJobRepository,
+  CollaborationPlanRepository,
   CitizenRepository,
   CraftsmanExecutionRepository,
   FlowLogRepository,
@@ -343,7 +344,12 @@ export function createDefaultServerCompositionFactories(): ServerCompositionFact
   return {
     createRuntimeNodeRegistryService: (context) => new RuntimeNodeRegistryService(
       new RuntimeNodeRepository(context.db),
-      context.actionAuditService ? { actionAuditService: context.actionAuditService } : undefined,
+      context.actionAuditService ? {
+        actionAuditService: context.actionAuditService,
+        requireGovernanceForTask: taskId => new CollaborationPlanRepository(context.db)
+          .listByTask(taskId)
+          .some(plan => plan.status === 'approved' || plan.status === 'active'),
+      } : undefined,
     ),
     createLiveSessionStore: () => new LiveSessionStore({
       staleAfterMs: Number(process.env.AGORA_LIVE_SESSION_TTL_MS ?? 15 * 60 * 1000),

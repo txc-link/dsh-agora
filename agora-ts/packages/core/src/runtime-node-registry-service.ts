@@ -31,6 +31,7 @@ export interface RuntimeNodeRepositoryPort {
   createDispatch(nodeId: string, input: CreateRuntimeNodeDispatchRequestDto, now?: Date): RuntimeNodeDispatchDto;
   getDispatch(dispatchId: string): RuntimeNodeDispatchDto | null;
   listDispatches(nodeId: string, limit?: number): RuntimeNodeDispatchDto[];
+  listDispatchesByTask(taskId: string, limit?: number): RuntimeNodeDispatchDto[];
   cancelDispatch(dispatchId: string, reason: string, now?: Date): RuntimeNodeDispatchDto | null;
   claimDispatch(nodeId: string, instanceId: string, leaseSeconds: number, now?: Date): RuntimeNodeDispatchDto | null;
   renewDispatch(nodeId: string, dispatchId: string, input: RenewRuntimeNodeDispatchRequestDto, now?: Date): RuntimeNodeDispatchDto | null;
@@ -43,16 +44,19 @@ export interface RuntimeNodeRepositoryPort {
 
 export interface RuntimeNodeRegistryServiceOptions {
   actionAuditService?: ActionAuditService;
+  requireGovernanceForTask?: (taskId: string) => boolean;
 }
 
 export class RuntimeNodeRegistryService implements AgentInventorySource, PresenceSource {
   private readonly actionAuditService: ActionAuditService | undefined;
+  private readonly requireGovernanceForTask: ((taskId: string) => boolean) | undefined;
 
   constructor(
     private readonly repository: RuntimeNodeRepositoryPort,
     options: RuntimeNodeRegistryServiceOptions = {},
   ) {
     this.actionAuditService = options.actionAuditService;
+    this.requireGovernanceForTask = options.requireGovernanceForTask;
   }
 
   heartbeat(nodeId: string, input: RuntimeNodeHeartbeatRequestDto): RuntimeNodeDto {
@@ -84,7 +88,12 @@ export class RuntimeNodeRegistryService implements AgentInventorySource, Presenc
       throw new TypeError(`runtime_target_ref must start with ${expectedPrefix}`);
     }
     const audit = this.readAuditContext(input.metadata);
-    if (!audit) return this.repository.createDispatch(nodeId, input);
+    if (!audit) {
+      if (input.task_id && this.requireGovernanceForTask?.(input.task_id)) {
+        throw new ConflictError('task requires a governed dispatch envelope');
+      }
+      return this.repository.createDispatch(nodeId, input);
+    }
     if (!input.task_id) throw new ConflictError('audited runtime dispatch requires task_id');
     if (!this.actionAuditService) throw new ConflictError('action audit service is not configured');
     const attempt = this.actionAuditService.admit({
@@ -130,6 +139,10 @@ export class RuntimeNodeRegistryService implements AgentInventorySource, Presenc
   listDispatches(nodeId: string, limit?: number): RuntimeNodeDispatchDto[] {
     this.getNode(nodeId);
     return this.repository.listDispatches(nodeId, limit);
+  }
+
+  listDispatchesByTask(taskId: string, limit?: number): RuntimeNodeDispatchDto[] {
+    return this.repository.listDispatchesByTask(taskId, limit);
   }
 
   cancelDispatch(dispatchId: string, reason: string): RuntimeNodeDispatchDto {

@@ -1273,6 +1273,22 @@ export function createCliProgram(deps: CliDependencies = {}) {
     taskRepo: new TaskRepository(resolveComposition().db),
   });
   claim
+    .command('takeover')
+    .description('take over a stale (expired) task claim; live claims are never stolen')
+    .requiredOption('--task <taskId>', 'agora task id')
+    .requiredOption('--agent <agentRef>', 'new agent ref')
+    .option('--reason <reason>', 'why this agent takes over')
+    .option('--ttl-ms <ttlMs>', 'claim time-to-live in ms', (v: string) => Number.parseInt(v, 10), undefined)
+    .action(async (options: { task: string; agent: string; reason?: string; ttlMs?: number }) => {
+      const result = await runTaskClaimCommand(claimDeps(), {
+        subcommand: 'takeover', taskId: options.task, agentRef: options.agent,
+        ...(options.reason !== undefined ? { reason: options.reason } : {}),
+        ...(options.ttlMs !== undefined ? { ttlMs: options.ttlMs } : {}),
+      });
+      writeLine(stdout, JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    });
+  claim
     .command('create')
     .description('claim a task for an agent')
     .requiredOption('--task <taskId>', 'agora task id')

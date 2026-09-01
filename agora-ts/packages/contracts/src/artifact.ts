@@ -25,10 +25,9 @@ export type ArtifactDto = z.infer<typeof artifactSchema>;
 export const artifactListResponseSchema = z.object({ artifacts: z.array(artifactSchema) });
 
 // ─── Markdown collaborative document (2026-08-31 next-batch) ──────────────
-// v0.1: single-writer + content-addressed versioning. Each submit creates
-// a new artifact (sha256 keyed); the client may pass parentArtifactId as
-// a hint for history traversal but the chain is reconstructed from the
-// artifact list filtered by owner_ref.
+// v0.2: single-writer + content-addressed versioning. Each submit creates
+// a new artifact; parent/version/diff/review metadata makes the chain and
+// review posture explicit while owner_kind/owner_ref keeps task association.
 
 export const markdownDocumentResponseSchema = z.object({
   artifact_id: z.string().min(1),
@@ -52,3 +51,10 @@ export const markdownSubmitResponseSchema = z.object({
   is_new_version: z.boolean(),
 });
 export type MarkdownSubmitResponseDto = z.infer<typeof markdownSubmitResponseSchema>;
+
+export const reviewArtifactRequestSchema = z.object({
+  status: z.enum(['draft', 'in_review', 'approved', 'rejected']),
+  reviewed_by: z.string().min(1).max(512),
+  comment: z.string().max(4_000).nullable().optional(),
+}).strict();
+export type ReviewArtifactRequestDto = z.infer<typeof reviewArtifactRequestSchema>;

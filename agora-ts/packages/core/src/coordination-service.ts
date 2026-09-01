@@ -12,6 +12,8 @@ import {
   type CoordinationScorecardDto,
   type CoordinationSynthesisDto,
   type CreateCoordinationRunRequestDto,
+  delegationActionSchema,
+  type DelegationActionDto,
   type MemoryEntryDto,
   type RuntimeNodeDispatchDto,
   type RuntimeResultEnvelopeDto,
@@ -19,6 +21,7 @@ import {
 } from '@agora-ts/contracts';
 import { ConflictError, NotFoundError } from './errors.js';
 import type { RuntimeNodeRegistryService } from './runtime-node-registry-service.js';
+import type { GovernedDispatchService } from './governed-dispatch-service.js';
 
 export interface CoordinationRepositoryPort {
   createRun(input: CreateCoordinationRunRequestDto, now?: Date): CoordinationRunDto;
@@ -83,6 +86,7 @@ export interface CoordinationServiceOptions {
   runtimeNodes: Pick<RuntimeNodeRegistryService,
     'listNodes' | 'createDispatch' | 'getDispatch' | 'cancelDispatch'>;
   memory?: CoordinationMemoryReader;
+  governedDispatchService?: GovernedDispatchService;
   now?: () => Date;
 }
 
@@ -301,13 +305,38 @@ export class CoordinationService {
 
   private dispatchMember(run: CoordinationRunDto, item: ScoredCandidate, role: CoordinationMemberRoleDto, round: number, prompt: string): CoordinationMemberDto {
     const { nodeId } = parseTarget(item.candidate.runtime_target_ref);
-    const dispatch = this.options.runtimeNodes.createDispatch(nodeId, {
+    const idempotencyKey = `coordination:${run.id}:${round}:${role}:${item.candidate.runtime_target_ref}`;
+    const metadata = {
+      coordination_run_id: run.id,
+      coordination_role: role,
+      coordination_round: round,
+      task_type: run.task_type,
+      budget: run.budget,
+    };
+    const planId = stringMetadata(run.metadata, 'collaboration_plan_id');
+    const dispatchInput = planId && this.options.governedDispatchService
+      ? this.options.governedDispatchService.toRuntimeDispatch(this.options.governedDispatchService.prepare({
+        task_id: run.task_id!,
+        collaboration_plan_id: planId,
+        runtime_target_ref: item.candidate.runtime_target_ref,
+        prompt: appendMemories(prompt, this.readMemories(run, item.candidate.runtime_target_ref)),
+        idempotency_key: idempotencyKey,
+        actor_ref: stringMetadata(run.metadata, 'actor_ref') ?? 'agent:assistant',
+        action: parseAction(stringMetadata(run.metadata, 'governed_action')),
+        subject_ref: item.candidate.runtime_target_ref,
+        delegation_authority_id: stringMetadata(run.metadata, 'delegation_authority_id'),
+        execution_baseline_id: stringMetadata(run.metadata, 'execution_baseline_id'),
+        subtask_spec_id: stringMetadata(run.metadata, 'subtask_spec_id'),
+        metadata,
+      }))
+      : {
       task_id: run.task_id,
       runtime_target_ref: item.candidate.runtime_target_ref,
       prompt: appendMemories(prompt, this.readMemories(run, item.candidate.runtime_target_ref)),
-      idempotency_key: `coordination:${run.id}:${round}:${role}:${item.candidate.runtime_target_ref}`,
-      metadata: { coordination_run_id: run.id, coordination_role: role, coordination_round: round, task_type: run.task_type, budget: run.budget },
-    });
+      idempotency_key: idempotencyKey,
+      metadata,
+    };
+    const dispatch = this.options.runtimeNodes.createDispatch(nodeId, dispatchInput);
     return this.options.repository.addMember({
       run_id: run.id, dispatch_id: dispatch.id, runtime_target_ref: item.candidate.runtime_target_ref,
       role, round, selection_score: item.score, selection_reason: item.reasons,
@@ -505,6 +534,11 @@ function isMemberTerminal(status: CoordinationMemberStatusDto): boolean { return
 function elapsed(start: string, end: string | null): number | null { return end ? Math.max(0, new Date(end).getTime() - new Date(start).getTime()) : null; }
 function clamp(value: number, minimum: number, maximum: number): number { return Math.max(minimum, Math.min(maximum, value)); }
 function stringMetadata(metadata: Record<string, unknown> | null, key: string): string | null { const value = metadata?.[key]; return typeof value === 'string' && value ? value : null; }
+
+function parseAction(value: string | null): DelegationActionDto {
+  const parsed = delegationActionSchema.safeParse(value ?? 'dispatch_subtask');
+  return parsed.success ? parsed.data : 'dispatch_subtask';
+}
 function deduplicateConflicts(conflicts: CoordinationConflictDto[]): CoordinationConflictDto[] { return [...new Map(conflicts.map(item => [item.id, item])).values()]; }
 function matchesRequest(run: CoordinationRunDto, input: CreateCoordinationRunRequestDto): boolean {
   return run.task_id === (input.task_id ?? null)

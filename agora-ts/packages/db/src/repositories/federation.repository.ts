@@ -46,6 +46,13 @@ export class FederationRepository {
     return (rows as Record<string, unknown>[]).map(parseArtifact);
   }
 
+  updateArtifactMetadata(id: string, metadata: Record<string, unknown> | null): ArtifactDto | null {
+    const result = this.db.prepare('UPDATE artifacts SET metadata = ? WHERE id = ?').run(
+      metadata ? stringifyJsonValue(metadata) : null, id,
+    );
+    return Number(result.changes ?? 0) === 1 ? this.getArtifact(id) : null;
+  }
+
   createMemory(input: CreateMemoryEntryRequestDto, now = new Date()): MemoryEntryDto {
     const id = randomUUID();
     const expiresAt = input.ttl_seconds ? new Date(now.getTime() + input.ttl_seconds * 1_000).toISOString() : null;

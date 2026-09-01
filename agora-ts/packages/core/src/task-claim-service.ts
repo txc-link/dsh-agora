@@ -36,10 +36,14 @@ export class TaskClaimService {
       throw new Error(`task claim rejected: task '${input.taskId}' not found`);
     }
     const existing = this.opts.claimRepo.getByTaskId(input.taskId);
-    if (existing && existing.status === 'claimed') {
-      throw new Error(`task claim rejected: task '${input.taskId}' already claimed by '${existing.agentRef}'`);
-    }
     const now = new Date().toISOString();
+    if (existing && existing.status === 'claimed' && existing.expiresAt && existing.expiresAt <= now) {
+      this.opts.claimRepo.updateStatus(existing.id, 'expired', now);
+    }
+    const current = this.opts.claimRepo.getByTaskId(input.taskId);
+    if (current && current.status === 'claimed') {
+      throw new Error(`task claim rejected: task '${input.taskId}' already claimed by '${current.agentRef}'`);
+    }
     const claim = this.opts.claimRepo.insert({
       taskId: input.taskId,
       agentRef: input.agentRef,
@@ -48,6 +52,15 @@ export class TaskClaimService {
     });
     const updated = this.opts.claimRepo.updateStatus(claim.id, 'claimed', now) ?? claim;
     return { claim: updated, status: updated.status, claimedAt: updated.claimedAt };
+  }
+
+  /** Explicit takeover command: only expired claims may be replaced. */
+  takeover(input: ClaimTaskInput): ClaimResult {
+    const existing = this.opts.claimRepo.getByTaskId(input.taskId);
+    if (existing?.status === 'claimed' && (!existing.expiresAt || existing.expiresAt > new Date().toISOString())) {
+      throw new Error(`task takeover rejected: live claim belongs to '${existing.agentRef}'`);
+    }
+    return this.claim({ ...input, reason: input.reason ?? 'stale claim takeover' });
   }
 
   release(claimId: string, agentRef: string): TaskClaimRecord {

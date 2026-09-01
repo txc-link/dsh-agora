@@ -132,6 +132,10 @@ import {
   createArtifactRequestSchema,
   artifactSchema,
   artifactListResponseSchema,
+  markdownDocumentResponseSchema,
+  markdownSubmitResponseSchema,
+  reviewArtifactRequestSchema,
+  taskTimelineResponseSchema,
   createMemoryEntryRequestSchema,
   memoryEntrySchema,
   memoryQuerySchema,
@@ -277,6 +281,7 @@ import {
   GovernedExecutionService,
   CollaborationGovernanceService,
   ActionAuditService,
+  TaskTimelineService,
   TaskClaimService,
   type ExecutiveTaskPort,
 } from '@agora-ts/core';
@@ -342,6 +347,8 @@ export interface BuildAppOptions {
   citizenService?: CitizenService;
   flowLogRepository?: Pick<IFlowLogRepository, 'listByTask'>;
   progressLogRepository?: Pick<IProgressLogRepository, 'listByTask'>;
+  taskTimelineService?: TaskTimelineService;
+  taskClaimService?: TaskClaimService;
   dashboardQueryService?: DashboardQueryService;
   runtimeTargetService?: RuntimeTargetService;
   runtimeNodeRegistryService?: RuntimeNodeRegistryService;
@@ -1258,6 +1265,10 @@ export function buildApp(options: BuildAppOptions = {}) {
     logger: false,
   });
   const taskService = options.taskService;
+  const taskClaimService = options.taskClaimService ?? (options.db && taskService ? new TaskClaimService({
+    claimRepo: new TaskClaimRepository(options.db),
+    taskExists: taskId => taskService.getTask(taskId) !== null,
+  }) : undefined);
   const calendarService = options.calendarService;
   const planningService = options.planningService;
   const planningSyncService = options.planningSyncService;
@@ -1529,6 +1540,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   const citizenService = options.citizenService;
   const flowLogRepository = options.flowLogRepository;
   const progressLogRepository = options.progressLogRepository;
+  const taskTimelineService = options.taskTimelineService ?? new TaskTimelineService();
   const dashboardQueryService = options.dashboardQueryService;
   const runtimeTargetService = options.runtimeTargetService;
   const runtimeNodeRegistryService = options.runtimeNodeRegistryService;
@@ -5346,6 +5358,31 @@ export function buildApp(options: BuildAppOptions = {}) {
     }
   });
 
+  app.get('/api/tasks/:taskId/timeline', async (request, reply) => {
+    if (!taskService) return reply.status(503).send({ message: 'Task service is not configured' });
+    if (!flowLogRepository || !progressLogRepository) return reply.status(503).send({ message: 'Task timeline repositories are not configured' });
+    try {
+      const { taskId } = request.params as { taskId: string };
+      const task = taskService.getTask(taskId);
+      if (!task) return reply.status(404).send({ message: `Task ${taskId} not found` });
+      const query = request.query as { stuck_after_ms?: string } | undefined;
+      const parsedThreshold = Number.parseInt(query?.stuck_after_ms ?? '', 10);
+      const threshold = Number.isFinite(parsedThreshold) && parsedThreshold > 0 ? parsedThreshold : undefined;
+      return reply.send(taskTimelineResponseSchema.parse(taskTimelineService.build({
+        task,
+        flowLogs: flowLogRepository.listByTask(taskId),
+        progressLogs: progressLogRepository.listByTask(taskId),
+        ...(options.actionAuditService ? { actionAttempts: options.actionAuditService.listAttempts(taskId), actionReceipts: options.actionAuditService.listReceipts(taskId) } : {}),
+        ...(runtimeNodeRegistryService ? { dispatches: runtimeNodeRegistryService.listDispatchesByTask(taskId) } : {}),
+        ...(artifactService ? { artifacts: artifactService.list('task', taskId) } : {}),
+        ...(threshold === undefined ? {} : { stuckAfterMs: threshold }),
+      })));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
   app.post('/api/tasks/:taskId/subtasks', async (request, reply) => {
     if (!taskService) {
       return reply.status(503).send({ message: 'Task service is not configured' });
@@ -6337,14 +6374,15 @@ export function buildApp(options: BuildAppOptions = {}) {
         return reply.status(415).send({ message: `artifact ${artifactId} is not markdown (media_type=${artifact.media_type})` });
       }
       const content = Buffer.from(artifactService.content(artifactId)).toString('utf8');
-      return reply.send({
+      const response = markdownDocumentResponseSchema.parse({
         artifact_id: artifactId,
         content,
         content_hash: artifact.sha256,
         size_bytes: artifact.size_bytes,
         created_at: artifact.created_at,
-        parent_artifact_id: null,
+        parent_artifact_id: typeof artifact.metadata?.parent_artifact_id === 'string' ? artifact.metadata.parent_artifact_id : null,
       });
+      return reply.send(response);
     } catch (error) {
       const translated = translateError(error);
       return reply.status(translated.statusCode).send(translated.body);
@@ -6357,23 +6395,83 @@ export function buildApp(options: BuildAppOptions = {}) {
       const { artifactId } = request.params as { artifactId: string };
       const payload = submitMarkdownRequestSchema.parse(request.body);
       const previous = artifactService.get(artifactId);
-      const newArtifact = artifactService.create({
-        name: previous.name,
-        kind: previous.kind,
-        media_type: 'text/markdown',
-        content_base64: Buffer.from(payload.content, 'utf8').toString('base64'),
-        owner_kind: previous.owner_kind,
-        owner_ref: previous.owner_ref,
-        metadata: {
-          ...(previous.metadata ?? {}),
-          parent_artifact_id: payload.parent_artifact_id ?? artifactId,
-        },
-      });
-      return reply.send({
+      if (payload.parent_artifact_id && payload.parent_artifact_id !== artifactId) {
+        const parent = artifactService.get(payload.parent_artifact_id);
+        if (parent.owner_kind !== previous.owner_kind || parent.owner_ref !== previous.owner_ref) {
+          return reply.status(409).send({ message: 'parent artifact must belong to the same document' });
+        }
+      }
+      const newArtifact = artifactService.createVersion(payload.parent_artifact_id ?? artifactId, payload.content);
+      return reply.send(markdownSubmitResponseSchema.parse({
         artifact: newArtifact,
         content_hash: newArtifact.sha256,
         is_new_version: true,
-      });
+      }));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/tasks/:taskId/claims/takeover', async (request, reply) => {
+    if (!taskClaimService) return reply.status(503).send({ message: 'Task claim service is not configured' });
+    try {
+      const { taskId } = request.params as { taskId: string };
+      const payload = z.object({
+        agent_ref: z.string().min(1).max(512),
+        reason: z.string().min(1).max(2_000).nullable().optional(),
+        ttl_ms: z.number().int().positive().max(86_400_000).nullable().optional(),
+      }).strict().parse(request.body ?? {});
+      const expiresAt = payload.ttl_ms ? new Date(Date.now() + payload.ttl_ms).toISOString() : null;
+      return reply.send(taskClaimService.takeover({
+        taskId, agentRef: payload.agent_ref, reason: payload.reason ?? 'stale claim takeover',
+        ...(expiresAt ? { expiresAt } : {}),
+      }));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/tasks/:taskId/artifacts', async (request, reply) => {
+    if (!artifactService) return reply.status(503).send({ message: 'Artifact service is not configured' });
+    try {
+      const { taskId } = request.params as { taskId: string };
+      return reply.send(artifactListResponseSchema.parse({ artifacts: artifactService.list('task', taskId, 200) }));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/artifacts/:artifactId/versions', async (request, reply) => {
+    if (!artifactService) return reply.status(503).send({ message: 'Artifact service is not configured' });
+    try {
+      const { artifactId } = request.params as { artifactId: string };
+      const root = artifactService.get(artifactId);
+      const versions = artifactService.list(root.owner_kind, root.owner_ref, 200)
+        .filter(item => item.media_type.startsWith('text/markdown'))
+        .sort((left, right) => (metadataVersion(left.metadata) - metadataVersion(right.metadata)) || left.created_at.localeCompare(right.created_at));
+      return reply.send(artifactListResponseSchema.parse({ artifacts: versions }));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/artifacts/:artifactId/review', async (request, reply) => {
+    if (!artifactService) return reply.status(503).send({ message: 'Artifact service is not configured' });
+    try {
+      const { artifactId } = request.params as { artifactId: string };
+      const payload = reviewArtifactRequestSchema.parse(request.body);
+      const humanActor = resolveHumanActor(request, dashboardSessions, humanAccountService);
+      if (shouldRequireHumanActor({ apiAuth, dashboardAuth, humanAccountService }) && !humanActor) {
+        return reply.status(403).send({ message: 'an authenticated human Dashboard request is required to review an artifact' });
+      }
+      return reply.send(artifactSchema.parse(artifactService.review(artifactId, {
+        ...payload,
+        reviewed_by: humanActor?.username ?? payload.reviewed_by,
+      })));
     } catch (error) {
       const translated = translateError(error);
       return reply.status(translated.statusCode).send(translated.body);
@@ -6615,7 +6713,6 @@ export function buildApp(options: BuildAppOptions = {}) {
             cursor = Math.max(cursor, row.seq);
           }
         } catch (error) {
-          // eslint-disable-next-line no-console
           console.error('[agora] events-stream tick failed', error);
           raw.write(`event: error\ndata: ${JSON.stringify({ message: 'tick failed' })}\n\n`);
         }
@@ -7444,4 +7541,9 @@ function requireNonEmptyString(value: unknown, field: string) {
     throw new Error(`${field} is required`);
   }
   return parsed;
+}
+
+function metadataVersion(metadata: Record<string, unknown> | null | undefined): number {
+  const value = metadata?.version;
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : 1;
 }

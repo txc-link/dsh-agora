@@ -37,6 +37,7 @@ import {
   CalendarService,
   PlanningService,
   PlanningSyncService,
+  GovernedDispatchService,
 } from '@agora-ts/core';
 import { OpenAiCompatibleProjectBrainEmbeddingAdapter, QdrantProjectBrainVectorIndexAdapter } from '@agora-ts/adapters-brain';
 import { A2aGatewayService } from '@agora-ts/adapters-runtime';
@@ -304,6 +305,11 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
     authorities: new DelegationAuthorityRepository(db),
     baselines: new ExecutionBaselineRepository(db),
   });
+  const governedDispatchService = new GovernedDispatchService({
+    plans: new CollaborationPlanRepository(db),
+    authorities: new DelegationAuthorityRepository(db),
+    baselines: new ExecutionBaselineRepository(db),
+  });
   const calendarEnv = readCalendarEnv(process.env);
   const calendarProvider = calendarEnv ? createCalendarProviderFromEnv(calendarEnv) : undefined;
   const calendarService = calendarProvider ? new CalendarService({
@@ -356,6 +362,7 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
   const coordinationService = new CoordinationService({
     repository: new CoordinationRepository(db),
     runtimeNodes: composition.runtimeNodeRegistryService,
+    governedDispatchService,
     memory: {
       query: input => memoryService.query({ ...input, limit: input.limit ?? 20 }),
     },

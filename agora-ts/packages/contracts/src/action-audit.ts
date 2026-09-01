@@ -82,3 +82,23 @@ export const runtimeActionAuditContextSchema = z.object({
   attempt_id: z.string().min(1).nullable().optional(),
 }).strict();
 export type RuntimeActionAuditContextDto = z.infer<typeof runtimeActionAuditContextSchema>;
+
+/**
+ * Provider-neutral dispatch contract. Composition roots may translate this
+ * envelope into a runtime-node request, but providers never need to know the
+ * governance records behind it.
+ */
+export const governedDispatchEnvelopeSchema = z.object({
+  schema: z.literal('agora.governed-dispatch/v1'),
+  task_id: z.string().min(1),
+  participant_binding_id: z.string().min(1).nullable().optional(),
+  runtime_target_ref: z.string().min(1),
+  session_id: z.string().min(1).nullable().optional(),
+  workspace_alias: z.string().min(1).nullable().optional(),
+  agent_preset: z.string().min(1).nullable().optional(),
+  prompt: z.string().min(1).max(200_000),
+  idempotency_key: z.string().min(1).max(256),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+  action_audit: runtimeActionAuditContextSchema.omit({ attempt_id: true }),
+}).strict();
+export type GovernedDispatchEnvelopeDto = z.infer<typeof governedDispatchEnvelopeSchema>;

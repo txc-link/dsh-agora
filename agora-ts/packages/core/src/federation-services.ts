@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import {
-  type ArtifactDto, type CreateArtifactRequestDto, type CreateMemoryEntryRequestDto,
+  type ArtifactDto, type CreateArtifactRequestDto, type CreateMemoryEntryRequestDto, type ReviewArtifactRequestDto,
   type CreateMergeProposalRequestDto, type IssuedRuntimeNodeCredentialDto, type MemoryEntryDto,
   type MemoryQueryDto, type MergeProposalDto, type RuntimeNodeCredentialDto, type RuntimeNodeCredentialScopeDto,
 } from '@agora-ts/contracts';
@@ -12,6 +12,7 @@ export interface ArtifactContentStorePort { put(sha256: string, bytes: Buffer): 
 export interface FederationRepositoryPort {
   createArtifact(input: Omit<CreateArtifactRequestDto, 'content_base64'> & { sha256: string; size_bytes: number; content_uri: string }, now?: Date): ArtifactDto;
   getArtifact(id: string): ArtifactDto | null; listArtifacts(ownerKind?: string, ownerRef?: string, limit?: number): ArtifactDto[];
+  updateArtifactMetadata(id: string, metadata: Record<string, unknown> | null): ArtifactDto | null;
   createMemory(input: CreateMemoryEntryRequestDto, now?: Date): MemoryEntryDto; getMemory(id: string, now?: Date): MemoryEntryDto | null;
   queryMemory(input: MemoryQueryDto, now?: Date): MemoryEntryDto[];
   createNodeCredential(input: { node_id: string; token_hash: string; scopes: RuntimeNodeCredentialScopeDto[]; label: string | null; expires_at: string | null }, now?: Date): RuntimeNodeCredentialDto;
@@ -32,8 +33,11 @@ export class ArtifactService {
     if (bytes.length === 0 || bytes.toString('base64').replace(/=+$/u, '') !== input.content_base64.replace(/=+$/u, '')) throw new TypeError('content_base64 is not canonical base64');
     if (bytes.length > 5_000_000) throw new TypeError('artifact content exceeds 5 MB');
     const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const metadata = input.media_type.startsWith('text/markdown') && input.metadata?.version === undefined
+      ? { ...(input.metadata ?? {}), version: 1, review_status: 'draft' }
+      : input.metadata ?? null;
     return this.repository.createArtifact({ name: input.name, kind: input.kind, media_type: input.media_type,
-      owner_kind: input.owner_kind, owner_ref: input.owner_ref, metadata: input.metadata ?? null,
+      owner_kind: input.owner_kind, owner_ref: input.owner_ref, metadata,
       sha256, size_bytes: bytes.length, content_uri: this.store.put(sha256, bytes) });
   }
   get(id: string): ArtifactDto { const value = this.repository.getArtifact(id); if (!value) throw new NotFoundError(`Artifact ${id} not found`); return value; }
@@ -43,6 +47,36 @@ export class ArtifactService {
     return bytes;
   }
   list(ownerKind?: string, ownerRef?: string, limit?: number): ArtifactDto[] { return this.repository.listArtifacts(ownerKind, ownerRef, limit); }
+  createVersion(parentArtifactId: string, content: string): ArtifactDto {
+    const parent = this.get(parentArtifactId);
+    if (!parent.media_type.startsWith('text/markdown')) throw new ConflictError(`artifact ${parentArtifactId} is not markdown`);
+    const parentVersion = metadataNumber(parent.metadata, 'version') ?? 1;
+    const previousContent = this.content(parentArtifactId).toString('utf8');
+    return this.create({
+      name: parent.name, kind: parent.kind, media_type: 'text/markdown',
+      content_base64: Buffer.from(content, 'utf8').toString('base64'),
+      owner_kind: parent.owner_kind, owner_ref: parent.owner_ref,
+      metadata: {
+        ...(parent.metadata ?? {}), parent_artifact_id: parent.id, version: parentVersion + 1, review_status: 'draft',
+        diff_base_sha256: parent.sha256, diff_kind: previousContent === content ? 'unchanged' : 'modified',
+        diff_changed_bytes: Math.abs(Buffer.byteLength(content, 'utf8') - Buffer.byteLength(previousContent, 'utf8')),
+      },
+    });
+  }
+  review(id: string, input: ReviewArtifactRequestDto): ArtifactDto {
+    const artifact = this.get(id);
+    const updated = this.repository.updateArtifactMetadata(id, {
+      ...(artifact.metadata ?? {}), review_status: input.status, reviewed_by: input.reviewed_by,
+      reviewed_at: new Date().toISOString(), review_comment: input.comment ?? null,
+    });
+    if (!updated) throw new NotFoundError(`Artifact ${id} not found`);
+    return updated;
+  }
+}
+
+function metadataNumber(metadata: Record<string, unknown> | null | undefined, key: string): number | null {
+  const value = metadata?.[key];
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
 }
 
 export class MemoryService {

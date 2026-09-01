@@ -63,6 +63,7 @@ import { createDashboardSessionClient, type DashboardSessionClient } from './das
 import {
   CitizenService,
   ActionAuditService,
+  GovernedDispatchService,
   CompositeAgentInventorySource,
   CraftsmanCallbackService,
   CraftsmanDispatcher,
@@ -811,9 +812,21 @@ export function createCliComposition(
     authorities: new DelegationAuthorityRepository(db),
     baselines: new ExecutionBaselineRepository(db),
   });
+  const collaborationPlans = new CollaborationPlanRepository(db);
+  const runtimeNodeRegistryService = new RuntimeNodeRegistryService(new RuntimeNodeRepository(db), {
+    actionAuditService,
+    requireGovernanceForTask: taskId => collaborationPlans.listByTask(taskId)
+      .some(plan => plan.status === 'approved' || plan.status === 'active'),
+  });
+  const governedDispatchService = new GovernedDispatchService({
+    plans: collaborationPlans,
+    authorities: new DelegationAuthorityRepository(db),
+    baselines: new ExecutionBaselineRepository(db),
+  });
   const coordinationService = new CoordinationService({
     repository: new CoordinationRepository(db),
-    runtimeNodes: new RuntimeNodeRegistryService(new RuntimeNodeRepository(db), { actionAuditService }),
+    runtimeNodes: runtimeNodeRegistryService,
+    governedDispatchService,
     memory: { query: input => memoryService.query({ ...input, limit: input.limit ?? 20 }) },
   });
   const mergeCoordinatorService = new MergeCoordinatorService(

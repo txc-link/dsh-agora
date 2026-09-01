@@ -82,6 +82,26 @@ function makeInput(overrides: Partial<ClaimTaskInput> = {}): ClaimTaskInput {
 }
 
 describe('TaskClaimService.claim', () => {
+  it('automatically expires a stale claim before accepting a new owner', () => {
+    const repo: Partial<ITaskClaimRepository> = {
+      getByTaskId: vi.fn()
+        .mockReturnValueOnce(makeRecord({ status: 'claimed', expiresAt: '2020-01-01T00:00:00.000Z' }))
+        .mockReturnValueOnce(makeRecord({ status: 'expired', expiresAt: '2020-01-01T00:00:00.000Z' })),
+      updateStatus: vi.fn((_id, status, at) => makeRecord({ status: status === 'expired' ? 'expired' : 'claimed', claimedAt: status === 'claimed' ? at : null })),
+    };
+    const { service } = makeService({ repo });
+    expect(service.claim(makeInput({ agentRef: 'agent:new' })).status).toBe('claimed');
+    expect(repo.updateStatus).toHaveBeenCalledWith('claim-1', 'expired', expect.any(String));
+  });
+
+  it('explicit takeover refuses a live claim', () => {
+    const repo: Partial<ITaskClaimRepository> = {
+      getByTaskId: vi.fn().mockReturnValue(makeRecord({ status: 'claimed', expiresAt: '2999-01-01T00:00:00.000Z' })),
+    };
+    const { service } = makeService({ repo });
+    expect(() => service.takeover(makeInput({ agentRef: 'agent:new' }))).toThrow(/live claim/);
+  });
+
   it('任务存在 + 未认领 → claim 写入且状态 claimed', () => {
     const { service, repo } = makeService();
     const result = service.claim(makeInput());

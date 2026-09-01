@@ -126,6 +126,16 @@ export class RuntimeNodeRepository {
     return rows.map((row) => this.parseDispatch(row));
   }
 
+  listDispatchesByTask(taskId: string, limit = 200): RuntimeNodeDispatchDto[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM runtime_node_dispatches
+      WHERE task_id = ?
+      ORDER BY created_at ASC, id ASC
+      LIMIT ?
+    `).all(taskId, limit) as Record<string, unknown>[];
+    return rows.map((row) => this.parseDispatch(row));
+  }
+
   cancelDispatch(dispatchId: string, reason: string, now = new Date()): RuntimeNodeDispatchDto | null {
     const existing = this.getDispatch(dispatchId);
     if (!existing) return null;

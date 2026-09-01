@@ -1,12 +1,12 @@
 /**
  * task-claim-command.ts — org-aware-work-os S2: Agent 任务认领 CLI 入口 (§2 Entry Surface).
  *
- * Subcommands: claim | release | list | claimable. Plain JSON output.
+ * Subcommands: claim | takeover | release | list | claimable. Plain JSON output.
  * No interactive prompts (the CLI is for agents, not humans; humans use Dashboard).
  */
 
 import type { ITaskClaimRepository, ITaskRepository } from '@agora-ts/contracts';
-import { TaskClaimService } from './task-claim-service.js';
+import type { TaskClaimService } from './task-claim-service.js';
 import { matchTaskToAgent } from './task-claim-matcher.js';
 
 export interface TaskClaimCommandDeps {
@@ -15,7 +15,7 @@ export interface TaskClaimCommandDeps {
   taskRepo: Pick<ITaskRepository, 'getTask' | 'listTasks'>;
 }
 
-export type TaskClaimSubcommand = 'claim' | 'release' | 'list' | 'claimable';
+export type TaskClaimSubcommand = 'claim' | 'takeover' | 'release' | 'list' | 'claimable';
 
 export interface RunTaskClaimCommandOptions {
   subcommand: TaskClaimSubcommand;
@@ -47,6 +47,8 @@ export async function runTaskClaimCommand(
   switch (options.subcommand) {
     case 'claim':
       return runClaim(deps, options);
+    case 'takeover':
+      return runTakeover(deps, options);
     case 'release':
       return runRelease(deps, options);
     case 'list':
@@ -90,6 +92,20 @@ function runRelease(deps: TaskClaimCommandDeps, options: RunTaskClaimCommandOpti
   try {
     const released = deps.claimService.release(options.claimId as string, options.agentRef as string);
     return { ok: true, data: released };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function runTakeover(deps: TaskClaimCommandDeps, options: RunTaskClaimCommandOptions): TaskClaimCommandResult {
+  const missing = requireString(options.taskId, '--task') ?? requireString(options.agentRef, '--agent');
+  if (missing) return { ok: false, error: missing };
+  try {
+    const expiresAt = options.ttlMs && options.ttlMs > 0 ? new Date(Date.now() + options.ttlMs).toISOString() : null;
+    return { ok: true, data: deps.claimService.takeover({
+      taskId: options.taskId as string, agentRef: options.agentRef as string,
+      reason: options.reason ?? 'stale claim takeover', ...(expiresAt ? { expiresAt } : {}),
+    }) };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
