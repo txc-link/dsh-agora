@@ -198,6 +198,18 @@ import {
   createEvidenceManifestRequestSchema,
   evidenceManifestSchema,
   evidenceManifestListResponseSchema,
+  createCollaborationRequirementRequestSchema,
+  collaborationRequirementSchema,
+  collaborationRequirementListResponseSchema,
+  createSubTaskSpecRequestSchema,
+  subTaskSpecSchema,
+  subTaskSpecListResponseSchema,
+  createDelegationAuthorityRequestSchema,
+  delegationAuthoritySchema,
+  delegationAuthorityListResponseSchema,
+  createCollaborationPlanRequestSchema,
+  collaborationPlanSchema,
+  collaborationPlanListResponseSchema,
 } from '@agora-ts/contracts';
 import { RuntimeRepoShimWritebackService } from '@agora-ts/adapters-materialization';
 import {
@@ -257,6 +269,7 @@ import {
   OrganizationService,
   ExecutiveAssistantService,
   GovernedExecutionService,
+  CollaborationGovernanceService,
   TaskClaimService,
   type ExecutiveTaskPort,
 } from '@agora-ts/core';
@@ -278,6 +291,10 @@ import {
   TaskSpecRevisionRepository,
   ExecutionBaselineRepository,
   EvidenceManifestRepository,
+  CollaborationRequirementRepository,
+  SubTaskSpecRepository,
+  DelegationAuthorityRepository,
+  CollaborationPlanRepository,
   ParticipantBindingRepository,
   ProgressLogRepository,
   TaskClaimRepository,
@@ -361,6 +378,7 @@ export interface BuildAppOptions {
   organizationService?: OrganizationService;
   executiveAssistantService?: ExecutiveAssistantService;
   governedExecutionService?: GovernedExecutionService;
+  collaborationGovernanceService?: CollaborationGovernanceService;
   apiAuth?: {
     enabled: boolean;
     token: string;
@@ -1259,6 +1277,14 @@ export function buildApp(options: BuildAppOptions = {}) {
         taskSpecRevisions: new TaskSpecRevisionRepository(options.db),
         executionBaselines: new ExecutionBaselineRepository(options.db),
         evidenceManifests: new EvidenceManifestRepository(options.db),
+      })
+    : undefined);
+  const collaborationGovernanceService = options.collaborationGovernanceService ?? (options.db
+    ? new CollaborationGovernanceService({
+        requirements: new CollaborationRequirementRepository(options.db),
+        specs: new SubTaskSpecRepository(options.db),
+        authorities: new DelegationAuthorityRepository(options.db),
+        plans: new CollaborationPlanRepository(options.db),
       })
     : undefined);
   const organizationRepository = options.db ? new OrganizationRepository(options.db) : undefined;
@@ -3172,6 +3198,134 @@ export function buildApp(options: BuildAppOptions = {}) {
       const { taskId } = request.params as { taskId: string };
       return reply.send(evidenceManifestListResponseSchema.parse({
         manifests: governedExecutionService.listEvidenceManifests(taskId),
+      }));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/tasks/:taskId/collaboration-requirements', async (request, reply) => {
+    if (!collaborationGovernanceService) {
+      return reply.status(503).send({ message: 'Collaboration governance service is not configured' });
+    }
+    try {
+      const { taskId } = request.params as { taskId: string };
+      const body = (request.body && typeof request.body === 'object') ? request.body as Record<string, unknown> : {};
+      const requirement = collaborationGovernanceService.createRequirement(
+        createCollaborationRequirementRequestSchema.parse({ ...body, task_id: taskId }),
+      );
+      return reply.status(201).send(collaborationRequirementSchema.parse(requirement));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/tasks/:taskId/collaboration-requirements', async (request, reply) => {
+    if (!collaborationGovernanceService) {
+      return reply.status(503).send({ message: 'Collaboration governance service is not configured' });
+    }
+    try {
+      const { taskId } = request.params as { taskId: string };
+      return reply.send(collaborationRequirementListResponseSchema.parse({
+        requirements: collaborationGovernanceService.listRequirements(taskId),
+      }));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/tasks/:taskId/subtask-specs', async (request, reply) => {
+    if (!collaborationGovernanceService) {
+      return reply.status(503).send({ message: 'Collaboration governance service is not configured' });
+    }
+    try {
+      const { taskId } = request.params as { taskId: string };
+      const body = (request.body && typeof request.body === 'object') ? request.body as Record<string, unknown> : {};
+      const spec = collaborationGovernanceService.createSubTaskSpec(
+        createSubTaskSpecRequestSchema.parse({ ...body, task_id: taskId }),
+      );
+      return reply.status(201).send(subTaskSpecSchema.parse(spec));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/tasks/:taskId/subtask-specs', async (request, reply) => {
+    if (!collaborationGovernanceService) {
+      return reply.status(503).send({ message: 'Collaboration governance service is not configured' });
+    }
+    try {
+      const { taskId } = request.params as { taskId: string };
+      return reply.send(subTaskSpecListResponseSchema.parse({
+        specs: collaborationGovernanceService.listSubTaskSpecs(taskId),
+      }));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/tasks/:taskId/delegation-authorities', async (request, reply) => {
+    if (!collaborationGovernanceService) {
+      return reply.status(503).send({ message: 'Collaboration governance service is not configured' });
+    }
+    try {
+      const { taskId } = request.params as { taskId: string };
+      const body = (request.body && typeof request.body === 'object') ? request.body as Record<string, unknown> : {};
+      const authority = collaborationGovernanceService.grantDelegationAuthority(
+        createDelegationAuthorityRequestSchema.parse({ ...body, task_id: taskId }),
+      );
+      return reply.status(201).send(delegationAuthoritySchema.parse(authority));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/tasks/:taskId/delegation-authorities', async (request, reply) => {
+    if (!collaborationGovernanceService) {
+      return reply.status(503).send({ message: 'Collaboration governance service is not configured' });
+    }
+    try {
+      const { taskId } = request.params as { taskId: string };
+      return reply.send(delegationAuthorityListResponseSchema.parse({
+        authorities: collaborationGovernanceService.listDelegationAuthorities(taskId),
+      }));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/tasks/:taskId/collaboration-plans', async (request, reply) => {
+    if (!collaborationGovernanceService) {
+      return reply.status(503).send({ message: 'Collaboration governance service is not configured' });
+    }
+    try {
+      const { taskId } = request.params as { taskId: string };
+      const body = (request.body && typeof request.body === 'object') ? request.body as Record<string, unknown> : {};
+      const plan = collaborationGovernanceService.createPlan(
+        createCollaborationPlanRequestSchema.parse({ ...body, task_id: taskId }),
+      );
+      return reply.status(201).send(collaborationPlanSchema.parse(plan));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/tasks/:taskId/collaboration-plans', async (request, reply) => {
+    if (!collaborationGovernanceService) {
+      return reply.status(503).send({ message: 'Collaboration governance service is not configured' });
+    }
+    try {
+      const { taskId } = request.params as { taskId: string };
+      return reply.send(collaborationPlanListResponseSchema.parse({
+        plans: collaborationGovernanceService.listPlans(taskId),
       }));
     } catch (error) {
       const translated = translateError(error);

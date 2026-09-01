@@ -48,3 +48,4 @@ export * from './repositories/executive-assistant.repository.js';
 export * from './repositories/thread-task-binding.repository.js';
 export * from './repositories/planning-binding.repository.js';
 export * from './repositories/governed-execution.repository.js';
+export * from './repositories/collaboration-governance.repository.js';

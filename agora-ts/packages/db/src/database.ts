@@ -116,6 +116,7 @@ export function runMigrations(db: AgoraDatabase): void {
     '045_planning_bindings.sql',
     '046_planning_sync.sql',
     '047_governed_execution.sql',
+    '048_collaboration_governance.sql',
   ];
   const migrationsDir = resolveMigrationsDir();
 

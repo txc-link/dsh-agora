@@ -95,6 +95,7 @@ import {
   OrganizationService,
   ExecutiveAssistantService,
   GovernedExecutionService,
+  CollaborationGovernanceService,
   type ExecutiveTaskPort,
   runTaskAskCommand,
   ThreadTaskBindingService,
@@ -142,6 +143,10 @@ import {
   TaskSpecRevisionRepository,
   ExecutionBaselineRepository,
   EvidenceManifestRepository,
+  CollaborationRequirementRepository,
+  SubTaskSpecRepository,
+  DelegationAuthorityRepository,
+  CollaborationPlanRepository,
   CoordinationRepository,
   type AgoraDatabase,
 } from '@agora-ts/db';
@@ -203,6 +208,10 @@ import {
   memoryQuerySchema,
   createMergeProposalRequestSchema,
   createTaskSpecRevisionRequestSchema,
+  createCollaborationRequirementRequestSchema,
+  createSubTaskSpecRequestSchema,
+  createDelegationAuthorityRequestSchema,
+  createCollaborationPlanRequestSchema,
 } from '@agora-ts/contracts';
 import { runInitCommand } from './init-command.js';
 import { runStartCommand } from './start-command.js';
@@ -304,6 +313,7 @@ export interface CliDependencies {
   consentGrantRepository?: IConsentGrantRepository;
   actionRiskService?: ActionRiskService;
   governedExecutionService?: GovernedExecutionService;
+  collaborationGovernanceService?: CollaborationGovernanceService;
   actionRiskAssessmentRepository?: IActionRiskAssessmentRepository;
   organizationService?: OrganizationService;
   organizationRepository?: IOrganizationRepository;
@@ -732,6 +742,12 @@ export function createCliProgram(deps: CliDependencies = {}) {
     executionBaselines: new ExecutionBaselineRepository(resolveComposition().db),
     evidenceManifests: new EvidenceManifestRepository(resolveComposition().db),
   }));
+  const collaborationGovernanceService = createLazyObject(() => deps.collaborationGovernanceService ?? new CollaborationGovernanceService({
+    requirements: new CollaborationRequirementRepository(resolveComposition().db),
+    specs: new SubTaskSpecRepository(resolveComposition().db),
+    authorities: new DelegationAuthorityRepository(resolveComposition().db),
+    plans: new CollaborationPlanRepository(resolveComposition().db),
+  }));
   const runtimeNodeCredentialService = createLazyObject(() => deps.runtimeNodeCredentialService ?? resolveComposition().runtimeNodeCredentialService);
   const mergeCoordinatorService = createLazyObject(() => deps.mergeCoordinatorService ?? resolveComposition().mergeCoordinatorService);
   const borrowService = createLazyObject(() => deps.borrowService ?? resolveComposition().borrowService);
@@ -1044,6 +1060,91 @@ export function createCliProgram(deps: CliDependencies = {}) {
   });
   evidence.command('show').argument('<manifestId>').action((manifestId: string) => {
     writeLine(stdout, JSON.stringify(governedExecutionService.getEvidenceManifest(manifestId), null, 2));
+  });
+
+  const collaboration = program.command('collaboration').description('provider-neutral collaboration requirements, specs, authorities and plans');
+  const requirement = collaboration.command('requirement').description('collaboration requirement records');
+  requirement.command('append')
+    .argument('<taskId>')
+    .requiredOption('--file <path>', 'JSON request file')
+    .option('--idempotency-key <key>', 'override the request idempotency key')
+    .action((taskId: string, options: { file: string; idempotencyKey?: string }) => {
+      const request = parseJsonFile(options.file, 'collaboration requirement request');
+      const created = collaborationGovernanceService.createRequirement(createCollaborationRequirementRequestSchema.parse({
+        ...request,
+        task_id: taskId,
+        idempotency_key: options.idempotencyKey ?? request.idempotency_key ?? `cli:requirement:${randomUUID()}`,
+      }));
+      writeLine(stdout, JSON.stringify(created, null, 2));
+    });
+  requirement.command('list').argument('<taskId>').action((taskId: string) => {
+    writeLine(stdout, JSON.stringify(collaborationGovernanceService.listRequirements(taskId), null, 2));
+  });
+  requirement.command('show').argument('<requirementId>').action((requirementId: string) => {
+    writeLine(stdout, JSON.stringify(collaborationGovernanceService.getRequirement(requirementId), null, 2));
+  });
+
+  const spec = collaboration.command('spec').description('immutable collaboration subtask specifications');
+  spec.command('append')
+    .argument('<taskId>')
+    .requiredOption('--file <path>', 'JSON request file')
+    .option('--idempotency-key <key>', 'override the request idempotency key')
+    .action((taskId: string, options: { file: string; idempotencyKey?: string }) => {
+      const request = parseJsonFile(options.file, 'subtask specification request');
+      const created = collaborationGovernanceService.createSubTaskSpec(createSubTaskSpecRequestSchema.parse({
+        ...request,
+        task_id: taskId,
+        idempotency_key: options.idempotencyKey ?? request.idempotency_key ?? `cli:spec:${randomUUID()}`,
+      }));
+      writeLine(stdout, JSON.stringify(created, null, 2));
+    });
+  spec.command('list').argument('<taskId>').action((taskId: string) => {
+    writeLine(stdout, JSON.stringify(collaborationGovernanceService.listSubTaskSpecs(taskId), null, 2));
+  });
+  spec.command('show').argument('<specId>').action((specId: string) => {
+    writeLine(stdout, JSON.stringify(collaborationGovernanceService.getSubTaskSpec(specId), null, 2));
+  });
+
+  const authority = collaboration.command('authority').description('delegation authorities');
+  authority.command('grant')
+    .argument('<taskId>')
+    .requiredOption('--file <path>', 'JSON request file')
+    .option('--idempotency-key <key>', 'override the request idempotency key')
+    .action((taskId: string, options: { file: string; idempotencyKey?: string }) => {
+      const request = parseJsonFile(options.file, 'delegation authority request');
+      const created = collaborationGovernanceService.grantDelegationAuthority(createDelegationAuthorityRequestSchema.parse({
+        ...request,
+        task_id: taskId,
+        idempotency_key: options.idempotencyKey ?? request.idempotency_key ?? `cli:authority:${randomUUID()}`,
+      }));
+      writeLine(stdout, JSON.stringify(created, null, 2));
+    });
+  authority.command('list').argument('<taskId>').action((taskId: string) => {
+    writeLine(stdout, JSON.stringify(collaborationGovernanceService.listDelegationAuthorities(taskId), null, 2));
+  });
+  authority.command('show').argument('<authorityId>').action((authorityId: string) => {
+    writeLine(stdout, JSON.stringify(collaborationGovernanceService.getDelegationAuthority(authorityId), null, 2));
+  });
+
+  const plan = collaboration.command('plan').description('proposed collaboration plans');
+  plan.command('propose')
+    .argument('<taskId>')
+    .requiredOption('--file <path>', 'JSON request file')
+    .option('--idempotency-key <key>', 'override the request idempotency key')
+    .action((taskId: string, options: { file: string; idempotencyKey?: string }) => {
+      const request = parseJsonFile(options.file, 'collaboration plan request');
+      const created = collaborationGovernanceService.createPlan(createCollaborationPlanRequestSchema.parse({
+        ...request,
+        task_id: taskId,
+        idempotency_key: options.idempotencyKey ?? request.idempotency_key ?? `cli:plan:${randomUUID()}`,
+      }));
+      writeLine(stdout, JSON.stringify(created, null, 2));
+    });
+  plan.command('list').argument('<taskId>').action((taskId: string) => {
+    writeLine(stdout, JSON.stringify(collaborationGovernanceService.listPlans(taskId), null, 2));
+  });
+  plan.command('show').argument('<planId>').action((planId: string) => {
+    writeLine(stdout, JSON.stringify(collaborationGovernanceService.getPlan(planId), null, 2));
   });
 
   const borrow = program.command('borrow').description('Agent borrow requests (Phase 3.5-2)');

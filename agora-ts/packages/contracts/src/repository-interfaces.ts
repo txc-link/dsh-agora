@@ -66,6 +66,10 @@ import type {
   TaskSpecRevisionRecord,
   ExecutionBaselineRecord,
   EvidenceManifestRecord,
+  CollaborationRequirementRecord,
+  SubTaskSpecRecord,
+  DelegationAuthorityRecord,
+  CollaborationPlanRecord,
 } from './domain-types.js';
 
 import type {
@@ -233,6 +237,39 @@ export interface IEvidenceManifestRepository {
   getById(id: string): EvidenceManifestRecord | null;
   getByIdempotencyKey(key: string): EvidenceManifestRecord | null;
   listByTask(taskId: string): EvidenceManifestRecord[];
+}
+
+// ─── Collaboration governance ───────────────────────────────────────────
+
+export interface ICollaborationRequirementRepository {
+  insert(record: CollaborationRequirementRecord): CollaborationRequirementRecord;
+  getById(id: string): CollaborationRequirementRecord | null;
+  getByIdempotencyKey(key: string): CollaborationRequirementRecord | null;
+  listByTask(taskId: string): CollaborationRequirementRecord[];
+}
+
+export interface ISubTaskSpecRepository {
+  insert(record: SubTaskSpecRecord): SubTaskSpecRecord;
+  getById(id: string): SubTaskSpecRecord | null;
+  getByIdempotencyKey(key: string): SubTaskSpecRecord | null;
+  listByTask(taskId: string): SubTaskSpecRecord[];
+  listByRequirement(requirementId: string): SubTaskSpecRecord[];
+}
+
+export interface IDelegationAuthorityRepository {
+  insert(record: DelegationAuthorityRecord): DelegationAuthorityRecord;
+  getById(id: string): DelegationAuthorityRecord | null;
+  getByIdempotencyKey(key: string): DelegationAuthorityRecord | null;
+  listByTask(taskId: string): DelegationAuthorityRecord[];
+  listByRequirement(requirementId: string): DelegationAuthorityRecord[];
+}
+
+export interface ICollaborationPlanRepository {
+  insert(record: CollaborationPlanRecord): CollaborationPlanRecord;
+  getById(id: string): CollaborationPlanRecord | null;
+  getByIdempotencyKey(key: string): CollaborationPlanRecord | null;
+  listByTask(taskId: string): CollaborationPlanRecord[];
+  listByRequirement(requirementId: string): CollaborationPlanRecord[];
 }
 
 // ─── 2. Subtask ───────────────────────────────────────────────────────────

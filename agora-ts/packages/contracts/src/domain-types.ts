@@ -31,12 +31,22 @@ import type {
   ExecutionBaselineDto,
   TaskSpecRevisionDto,
 } from './governed-execution.js';
+import type {
+  CollaborationPlanDto,
+  CollaborationRequirementDto,
+  DelegationAuthorityDto,
+  SubTaskSpecDto,
+} from './collaboration-governance.js';
 
 // ─── Governed execution ──────────────────────────────────────────────────
 
 export type TaskSpecRevisionRecord = TaskSpecRevisionDto;
 export type ExecutionBaselineRecord = ExecutionBaselineDto;
 export type EvidenceManifestRecord = EvidenceManifestDto;
+export type CollaborationRequirementRecord = CollaborationRequirementDto;
+export type SubTaskSpecRecord = SubTaskSpecDto;
+export type DelegationAuthorityRecord = DelegationAuthorityDto;
+export type CollaborationPlanRecord = CollaborationPlanDto;
 
 // ─── Scheduler snapshot ──────────────────────────────────────────────────
 
