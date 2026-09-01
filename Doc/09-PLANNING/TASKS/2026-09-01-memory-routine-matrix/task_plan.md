@@ -21,7 +21,7 @@
 - [x] B. Core/contracts/db/server/CLI：通用例行定义与 durable run outbox；
 - [x] C. Matrix adapter：协同上下文命令、线程摘要、参与者交接提示；
 - [x] D. 测试、SSoT、架构文档、walkthrough、构建与质量门；
-- [ ] E. 两仓提交并推送远程。
+- [x] E. 两仓提交并推送远程。
 
 ## 约束
 

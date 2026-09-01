@@ -8,4 +8,4 @@
 - Core workspace build 通过；新增 migration 050、终态记忆 fingerprint/幂等服务、Routine 租约服务、server REST 和 CLI `routine` 命令。
 - Core memory/routine tests 3/3、DB routine repository test 1/1、server route test 1/1 通过。
 - Matrix connector 新增 `task collab|timeline|context`、绑定房间普通消息回流和 REST timeline/conversation client；`npm test` 292/292、build 通过。
-- 已完成 Architecture README、walkthrough、Agora/connector SSoT 回写；尚未提交/推送。
+- 已完成 Architecture README、walkthrough、Agora/connector SSoT 回写；Agora `3bdf458` 与 connector `de0c547` 已提交并推送到各自主分支。
