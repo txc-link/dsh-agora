@@ -94,6 +94,7 @@ import {
   ActionRiskService,
   OrganizationService,
   ExecutiveAssistantService,
+  GovernedExecutionService,
   type ExecutiveTaskPort,
   runTaskAskCommand,
   ThreadTaskBindingService,
@@ -138,6 +139,9 @@ import {
   ForumRepository,
   OrganizationRepository,
   ExecutiveAssistantRepository,
+  TaskSpecRevisionRepository,
+  ExecutionBaselineRepository,
+  EvidenceManifestRepository,
   CoordinationRepository,
   type AgoraDatabase,
 } from '@agora-ts/db';
@@ -198,6 +202,7 @@ import {
   createMemoryEntryRequestSchema,
   memoryQuerySchema,
   createMergeProposalRequestSchema,
+  createTaskSpecRevisionRequestSchema,
 } from '@agora-ts/contracts';
 import { runInitCommand } from './init-command.js';
 import { runStartCommand } from './start-command.js';
@@ -298,6 +303,7 @@ export interface CliDependencies {
   consentService?: ConsentService;
   consentGrantRepository?: IConsentGrantRepository;
   actionRiskService?: ActionRiskService;
+  governedExecutionService?: GovernedExecutionService;
   actionRiskAssessmentRepository?: IActionRiskAssessmentRepository;
   organizationService?: OrganizationService;
   organizationRepository?: IOrganizationRepository;
@@ -721,6 +727,11 @@ export function createCliProgram(deps: CliDependencies = {}) {
   const coordinationService = createLazyObject(() => deps.coordinationService ?? resolveComposition().coordinationService);
   const artifactService = createLazyObject(() => deps.artifactService ?? resolveComposition().artifactService);
   const memoryService = createLazyObject(() => deps.memoryService ?? resolveComposition().memoryService);
+  const governedExecutionService = createLazyObject(() => deps.governedExecutionService ?? new GovernedExecutionService({
+    taskSpecRevisions: new TaskSpecRevisionRepository(resolveComposition().db),
+    executionBaselines: new ExecutionBaselineRepository(resolveComposition().db),
+    evidenceManifests: new EvidenceManifestRepository(resolveComposition().db),
+  }));
   const runtimeNodeCredentialService = createLazyObject(() => deps.runtimeNodeCredentialService ?? resolveComposition().runtimeNodeCredentialService);
   const mergeCoordinatorService = createLazyObject(() => deps.mergeCoordinatorService ?? resolveComposition().mergeCoordinatorService);
   const borrowService = createLazyObject(() => deps.borrowService ?? resolveComposition().borrowService);
@@ -996,6 +1007,44 @@ export function createCliProgram(deps: CliDependencies = {}) {
     .action((runId: string, options: { reason: string }) => writeLine(stdout, JSON.stringify(coordinationService.cancelRun(runId, options.reason), null, 2)));
   coordination.command('scorecards').option('--target <runtimeTargetRef>').option('--task-type <taskType>')
     .action((options: { target?: string; taskType?: string }) => writeLine(stdout, JSON.stringify(coordinationService.listScorecards(options.target, options.taskType), null, 2)));
+
+  const execution = program.command('execution').description('immutable task specifications, execution baselines and evidence manifests');
+  const revision = execution.command('revision').description('append-only task specification revisions');
+  revision.command('append')
+    .argument('<taskId>')
+    .requiredOption('--file <path>', 'JSON request file containing base_task_version, payload and created_by')
+    .option('--idempotency-key <key>', 'override the request idempotency key')
+    .action((taskId: string, options: { file: string; idempotencyKey?: string }) => {
+      const request = parseJsonFile(options.file, 'task specification revision request');
+      const created = governedExecutionService.createTaskSpecRevision(createTaskSpecRevisionRequestSchema.parse({
+        ...request,
+        task_id: taskId,
+        idempotency_key: options.idempotencyKey ?? request.idempotency_key ?? `cli:revision:${randomUUID()}`,
+      }));
+      writeLine(stdout, JSON.stringify(created, null, 2));
+    });
+  revision.command('list').argument('<taskId>').action((taskId: string) => {
+    writeLine(stdout, JSON.stringify(governedExecutionService.listTaskSpecRevisions(taskId), null, 2));
+  });
+  revision.command('show').argument('<revisionId>').action((revisionId: string) => {
+    writeLine(stdout, JSON.stringify(governedExecutionService.getTaskSpecRevision(revisionId), null, 2));
+  });
+
+  const baseline = execution.command('baseline').description('approved execution baseline read model (creation is Dashboard-gated)');
+  baseline.command('list').argument('<taskId>').action((taskId: string) => {
+    writeLine(stdout, JSON.stringify(governedExecutionService.listExecutionBaselines(taskId), null, 2));
+  });
+  baseline.command('show').argument('<baselineId>').action((baselineId: string) => {
+    writeLine(stdout, JSON.stringify(governedExecutionService.getExecutionBaseline(baselineId), null, 2));
+  });
+
+  const evidence = execution.command('evidence').description('sealed evidence manifest read model');
+  evidence.command('list').argument('<taskId>').action((taskId: string) => {
+    writeLine(stdout, JSON.stringify(governedExecutionService.listEvidenceManifests(taskId), null, 2));
+  });
+  evidence.command('show').argument('<manifestId>').action((manifestId: string) => {
+    writeLine(stdout, JSON.stringify(governedExecutionService.getEvidenceManifest(manifestId), null, 2));
+  });
 
   const borrow = program.command('borrow').description('Agent borrow requests (Phase 3.5-2)');
   borrow

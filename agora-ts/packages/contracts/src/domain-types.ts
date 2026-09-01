@@ -26,6 +26,17 @@ import type {
   TaskTeamDto,
   WorkflowDto,
 } from './task-api.js';
+import type {
+  EvidenceManifestDto,
+  ExecutionBaselineDto,
+  TaskSpecRevisionDto,
+} from './governed-execution.js';
+
+// ─── Governed execution ──────────────────────────────────────────────────
+
+export type TaskSpecRevisionRecord = TaskSpecRevisionDto;
+export type ExecutionBaselineRecord = ExecutionBaselineDto;
+export type EvidenceManifestRecord = EvidenceManifestDto;
 
 // ─── Scheduler snapshot ──────────────────────────────────────────────────
 

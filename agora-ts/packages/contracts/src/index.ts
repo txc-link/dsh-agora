@@ -51,3 +51,4 @@ export * from './domain-types.js';
 
 export * from './thread-task-binding.js';
 export * from './planning.js';
+export * from './governed-execution.js';

@@ -189,6 +189,15 @@ import {
   reviseRelationshipProfileRequestSchema,
   setRelationshipProfileStatusRequestSchema,
   scheduleRelationshipInitiativeRequestSchema,
+  createTaskSpecRevisionRequestSchema,
+  taskSpecRevisionSchema,
+  taskSpecRevisionListResponseSchema,
+  createExecutionBaselineRequestSchema,
+  executionBaselineSchema,
+  executionBaselineListResponseSchema,
+  createEvidenceManifestRequestSchema,
+  evidenceManifestSchema,
+  evidenceManifestListResponseSchema,
 } from '@agora-ts/contracts';
 import { RuntimeRepoShimWritebackService } from '@agora-ts/adapters-materialization';
 import {
@@ -247,6 +256,7 @@ import {
   redactSecrets,
   OrganizationService,
   ExecutiveAssistantService,
+  GovernedExecutionService,
   TaskClaimService,
   type ExecutiveTaskPort,
 } from '@agora-ts/core';
@@ -265,6 +275,9 @@ import {
   RelationshipInitiativeRepository,
   OrganizationRepository,
   ExecutiveAssistantRepository,
+  TaskSpecRevisionRepository,
+  ExecutionBaselineRepository,
+  EvidenceManifestRepository,
   ParticipantBindingRepository,
   ProgressLogRepository,
   TaskClaimRepository,
@@ -347,6 +360,7 @@ export interface BuildAppOptions {
   actionRiskService?: ActionRiskService;
   organizationService?: OrganizationService;
   executiveAssistantService?: ExecutiveAssistantService;
+  governedExecutionService?: GovernedExecutionService;
   apiAuth?: {
     enabled: boolean;
     token: string;
@@ -1239,6 +1253,13 @@ export function buildApp(options: BuildAppOptions = {}) {
     : undefined);
   const actionRiskService = options.actionRiskService ?? (options.db
     ? new ActionRiskService({ repository: new ActionRiskAssessmentRepository(options.db) })
+    : undefined);
+  const governedExecutionService = options.governedExecutionService ?? (options.db
+    ? new GovernedExecutionService({
+        taskSpecRevisions: new TaskSpecRevisionRepository(options.db),
+        executionBaselines: new ExecutionBaselineRepository(options.db),
+        evidenceManifests: new EvidenceManifestRepository(options.db),
+      })
     : undefined);
   const organizationRepository = options.db ? new OrganizationRepository(options.db) : undefined;
   const organizationService = options.organizationService ?? (organizationRepository
@@ -3042,6 +3063,118 @@ export function buildApp(options: BuildAppOptions = {}) {
     } catch (error) {
       const translated = translateError(error);
       recordTaskAction(metrics, 'create', 'error');
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/tasks/:taskId/spec-revisions', async (request, reply) => {
+    if (!governedExecutionService) {
+      return reply.status(503).send({ message: 'Governed execution service is not configured' });
+    }
+    try {
+      const { taskId } = request.params as { taskId: string };
+      const body = (request.body && typeof request.body === 'object')
+        ? request.body as Record<string, unknown>
+        : {};
+      const revision = governedExecutionService.createTaskSpecRevision(
+        createTaskSpecRevisionRequestSchema.parse({ ...body, task_id: taskId }),
+      );
+      return reply.status(201).send(taskSpecRevisionSchema.parse(revision));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/tasks/:taskId/spec-revisions', async (request, reply) => {
+    if (!governedExecutionService) {
+      return reply.status(503).send({ message: 'Governed execution service is not configured' });
+    }
+    try {
+      const { taskId } = request.params as { taskId: string };
+      return reply.send(taskSpecRevisionListResponseSchema.parse({
+        revisions: governedExecutionService.listTaskSpecRevisions(taskId),
+      }));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/tasks/:taskId/execution-baselines', async (request, reply) => {
+    if (!governedExecutionService) {
+      return reply.status(503).send({ message: 'Governed execution service is not configured' });
+    }
+    let humanActor: HumanActor | null = null;
+    try {
+      const { taskId } = request.params as { taskId: string };
+      const body = (request.body && typeof request.body === 'object')
+        ? request.body as Record<string, unknown>
+        : {};
+      humanActor = resolveHumanActor(request, dashboardSessions, humanAccountService);
+      const requiresHumanApproval = shouldRequireHumanActor({ apiAuth, dashboardAuth, humanAccountService });
+      if (requiresHumanApproval && (!humanActor || humanActor.source !== 'dashboard')) {
+        return reply.status(403).send({ message: 'execution baseline approval requires an authenticated dashboard human actor' });
+      }
+      const baseline = governedExecutionService.createExecutionBaseline(
+        createExecutionBaselineRequestSchema.parse({
+          ...body,
+          task_id: taskId,
+          ...(humanActor ? { approved_by: humanActor.username } : {}),
+        }),
+      );
+      return reply.status(201).send(executionBaselineSchema.parse(baseline));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/tasks/:taskId/execution-baselines', async (request, reply) => {
+    if (!governedExecutionService) {
+      return reply.status(503).send({ message: 'Governed execution service is not configured' });
+    }
+    try {
+      const { taskId } = request.params as { taskId: string };
+      return reply.send(executionBaselineListResponseSchema.parse({
+        baselines: governedExecutionService.listExecutionBaselines(taskId),
+      }));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/tasks/:taskId/evidence-manifests', async (request, reply) => {
+    if (!governedExecutionService) {
+      return reply.status(503).send({ message: 'Governed execution service is not configured' });
+    }
+    try {
+      const { taskId } = request.params as { taskId: string };
+      const body = (request.body && typeof request.body === 'object')
+        ? request.body as Record<string, unknown>
+        : {};
+      const manifest = governedExecutionService.sealEvidenceManifest(
+        createEvidenceManifestRequestSchema.parse({ ...body, task_id: taskId }),
+      );
+      return reply.status(201).send(evidenceManifestSchema.parse(manifest));
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/tasks/:taskId/evidence-manifests', async (request, reply) => {
+    if (!governedExecutionService) {
+      return reply.status(503).send({ message: 'Governed execution service is not configured' });
+    }
+    try {
+      const { taskId } = request.params as { taskId: string };
+      return reply.send(evidenceManifestListResponseSchema.parse({
+        manifests: governedExecutionService.listEvidenceManifests(taskId),
+      }));
+    } catch (error) {
+      const translated = translateError(error);
       return reply.status(translated.statusCode).send(translated.body);
     }
   });

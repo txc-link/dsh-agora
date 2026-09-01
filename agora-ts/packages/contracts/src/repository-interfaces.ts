@@ -63,6 +63,9 @@ import type {
   UpsertRuntimeTargetOverlayInput,
   UpsertRuntimeSessionBindingInput,
   UpsertTaskAuthorityInput,
+  TaskSpecRevisionRecord,
+  ExecutionBaselineRecord,
+  EvidenceManifestRecord,
 } from './domain-types.js';
 
 import type {
@@ -206,6 +209,30 @@ export interface ITaskRepository {
     updates: UpdateTaskInput,
   ): TaskRecord;
   listTasks(state?: string, projectId?: string): TaskRecord[];
+}
+
+// ─── Governed execution foundation ───────────────────────────────────────
+
+export interface ITaskSpecRevisionRepository {
+  insert(record: TaskSpecRevisionRecord): TaskSpecRevisionRecord;
+  getById(id: string): TaskSpecRevisionRecord | null;
+  getLatest(taskId: string): TaskSpecRevisionRecord | null;
+  getByIdempotencyKey(key: string): TaskSpecRevisionRecord | null;
+  listByTask(taskId: string): TaskSpecRevisionRecord[];
+}
+
+export interface IExecutionBaselineRepository {
+  insert(record: ExecutionBaselineRecord): ExecutionBaselineRecord;
+  getById(id: string): ExecutionBaselineRecord | null;
+  getByIdempotencyKey(key: string): ExecutionBaselineRecord | null;
+  listByTask(taskId: string): ExecutionBaselineRecord[];
+}
+
+export interface IEvidenceManifestRepository {
+  insert(record: EvidenceManifestRecord): EvidenceManifestRecord;
+  getById(id: string): EvidenceManifestRecord | null;
+  getByIdempotencyKey(key: string): EvidenceManifestRecord | null;
+  listByTask(taskId: string): EvidenceManifestRecord[];
 }
 
 // ─── 2. Subtask ───────────────────────────────────────────────────────────
