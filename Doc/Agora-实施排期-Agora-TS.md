@@ -1,6 +1,6 @@
 # 实施排期 SSoT — agora-ts (主仓后端)
 
-**Last updated**: 2026-08-30 (Asia/Shanghai)
+**Last updated**: 2026-09-01 (Asia/Shanghai)
 **Owner**: 总工
 **Repo**: txc-link/dsh-agora (主仓, branch master / develop)
 **Phase**: 3 (matrix-connector v0.1.x + 准备 R-E Space / R-F Web Detail)
@@ -19,6 +19,7 @@
 | 5. agora-ts 自身大改 | ⏳ not started | 需新建独立 phase 计划 |
 | **6. Onboarding cross-platform (债 4 闭环)** | ✅ **done (turn 157)** | `agora init --non-interactive` (CI 友好 + `--admin-password-stdin` + `--skip-assets`) + `agora serve` 跨5 平台 (systemd/launchd/windows/docker/bare) + `Doc/scripts/install-agora.sh` 一键 wrapper; 现有 `agora start` dev helper 保持不变; walkthrough `Doc/10-WALKTHROUGH/2026-08-30-agora-onboarding-cross-platform.md` |
 | **7. Company OS v0.1** | ✅ **deployed** | Organization/Unit/Position/Employment + EA request/runtime dispatch/task/commitment + SHA-256 Markdown deliverable；REST/CLI/Matrix；restart recovery；`469a23b` / `a633447` / `dc7363a` |
+| **8. v0.1.1 slash command smoke closeout** (cross-仓事件, turn 24) | ✅ **smoke 通过** | matrix-connector v0.1.1 CEO 收件箱实测 5 ✅ / 1 ⚠️ / 3 ❌；3 个后端缺口 (calendar / markdown artifact / information policy / LiveKit) 按 §6 流程转交后续 phase (B1-B4)；securityBoundary 9 房间白名单设计澄清（自然对话不走 boundary）；task_dir `Doc/09-PLANNING/TASKS/2026-09-01-v011-slash-command-smoke-closeout/` + walkthrough `Doc/10-WALKTHROUGH/2026-09-01-v011-slash-command-smoke-closeout.md`；本仓本轮**无代码改动** |
 
 **Phase 3 默认原则**：R-E / R-F 严格限定在 connector + dashboard 侧，**agora-ts 这一阶段不主动大改**。仅当 connector / dashboard 侧需要 agora-ts 暴露新能力时，按 §6 流程加 slice。
 
@@ -114,6 +115,7 @@ agora-ts 这一阶段不主动开 slice。R-E / R-F 按矩阵仓 SSoT phase 3 + 
 
 ## 7. Change Log
 
+- 2026-09-01: **v0.1.1 slash command smoke closeout** (turn 24, 跨仓事件 — connector v0.1.1) — CEO 收件箱实测：✅ `/agora task <id>` / `task <id> artifacts` / `task transfer`（"not implemented yet" 占位明确）/ 自然对话；⚠️ `/agora call join`（LiveKit 未部署，占位 token）；❌ `/agora calendar today`（404 — `adapters-calendar` 12/12 测试已过但未 wire server）/ `doc show <id>`（404 — Markdown artifact 路由未落地）/ `say 语音测试`（information policy not found）。**3 个 ❌ 按 §6 流程转交后续 phase backlog**：B1 (P0) adapters-calendar wire + REST `/api/calendar/today`；B2 (P0) Markdown artifact route `/api/artifacts/:id/markdown`；B3 (P1) information policy + fish-speech :8080 probe + connector 配置；B4 (P2) LiveKit SFU 部署。**安全设计澄清**：`securityBoundary` 9 房间白名单（CEO 收件箱 / 公司简报 / 虚拟女友 等），`node-home-linux` 不在白名单是设计意图非 bug，自然对话不走 boundary 检查（实测确认 node-home-linux 普通对话能正常回）。本次为**纯文档收口**（task_dir 三件套 + walkthrough + SSoT 回写），本仓**无代码改动**；connector 仓 SSoT（`.repos/dsh-matrix-connector/Doc/...`）由 connector 仓主人维护，本仓未触碰。Planning: `Doc/09-PLANNING/TASKS/2026-09-01-v011-slash-command-smoke-closeout/`；Walkthrough: `Doc/10-WALKTHROUGH/2026-09-01-v011-slash-command-smoke-closeout.md`。
 - 2026-08-31: **2026-08-31 next batch** (`feat/2026-08-31-next-batch`，commit e012a0c / 2e9d521 / 3da427e / b8c08cd / 9fe8dc6) — 任务中心 + 日历 + 监控 + 文档。① 任务中心进度 + 审批队列：`TaskService.getTaskProgress(taskId)`（done/in_flight/failed/cancelled + percent + parent_state）；`TaskApprovalService` 新增可选 `approvalRequestRepository` 暴露 `getApprovalRequest` / `listPendingApprovals` / `decideApproval`（按 gate_type 分派到 approve/reject/archon-*，守护 "not configured"）；REST `GET /api/tasks/:id/progress`、`GET /api/approvals/pending?limit=`、`POST /api/approvals/:id/decide`（Dashboard session 强制，A4）；CLI `agora task subtasks|progress`、`agora approvals list|decide`；Dashboard `ApprovalsQueuePage` + `SubtaskPanel`。② 日历 / 承诺中心：新包 `@agora-ts/adapters-calendar`（iCal 解析、冲突检测、晨报晚检生成器 + Radicale 客户端）；`CalendarService`（listToday/conflicts/morningReport/eveningReport）；REST `GET /api/calendar/today|conflicts`、`POST /api/calendar/reports/:kind`；CLI `agora calendar today|conflicts|morning|evening`；Radicale docker-compose snippet。③ 系统监控：`apps/monitoring-relay` Node HTTP 服务（POST /webhook/grafana + GET /healthz，bearer 鉴权 + Matrix 转发）；Grafana 运维面板 JSON；Element widget customWidgets entry。④ 协作文档：artifact markdown endpoints（GET/POST `text/markdown`，sha256 内容寻址 + parent_artifact_id 元数据，单写者 v0.1）+ Dashboard `MarkdownDocumentPanel`。⑤ TDD 通过率：adapters-calendar 12/12、calendar-service 3/3、approval-service 11/11（含 queue + decide）。⑥ Workspace build clean，dashboard tsc clean。⑦ 跟进：T_transfer (RuntimeBinding/Employment) 推迟到独立 follow-up；Grafana iframe 鉴权 / Element Call SFU 部署留给用户拍板；CRDT/HedgeDoc 列为 P1。
 - 2026-08-31: **P0 任务中心 + Agent 语音**（connector `0.4.0`，发布 npm）— ① 语音：
   新增 `FishSpeechSpeechAdapter`（HTTP JSON POST /v1/tts，串行队列+超时），
