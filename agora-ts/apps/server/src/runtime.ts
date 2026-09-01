@@ -3,6 +3,8 @@ import {
   FederationRepository,
   ProjectBrainIndexJobRepository,
   RuntimeTargetOverlayRepository,
+  PlanningBindingRepository,
+  TaskRepository,
   createAgoraDatabase,
   runMigrations,
 } from '@agora-ts/db';
@@ -27,10 +29,12 @@ import {
   RuntimeNodeCredentialService,
   RuntimeTargetService,
   CalendarService,
+  PlanningService,
 } from '@agora-ts/core';
 import { OpenAiCompatibleProjectBrainEmbeddingAdapter, QdrantProjectBrainVectorIndexAdapter } from '@agora-ts/adapters-brain';
 import { A2aGatewayService } from '@agora-ts/adapters-runtime';
-import { createCalendarServiceFromEnv, readCalendarEnv } from './calendar-factory.js';
+import { createCalendarProviderFromEnv, readCalendarEnv } from './calendar-factory.js';
+import { createExternalTaskProviderFromEnv, readTickTickEnv } from './planning-factory.js';
 import { FilesystemArtifactContentStore } from '@agora-ts/adapters-materialization';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -287,7 +291,19 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
   const db = createAgoraDatabase({ dbPath: config.db_path, busyTimeoutMs: config.db_busy_timeout_ms });
   runMigrations(db);
   const calendarEnv = readCalendarEnv(process.env);
-  const calendarService = calendarEnv ? createCalendarServiceFromEnv(calendarEnv) : undefined;
+  const calendarProvider = calendarEnv ? createCalendarProviderFromEnv(calendarEnv) : undefined;
+  const calendarService = calendarProvider ? new CalendarService({
+    provider: calendarProvider,
+    ...(calendarEnv?.timezoneOffsetMinutes === undefined ? {} : { timezoneOffsetMinutes: calendarEnv.timezoneOffsetMinutes }),
+  }) : undefined;
+  const tickTickEnv = readTickTickEnv(process.env);
+  const externalTaskProvider = tickTickEnv ? createExternalTaskProviderFromEnv(tickTickEnv) : undefined;
+  const planningService = new PlanningService({
+    repo: new PlanningBindingRepository(db),
+    taskRepo: new TaskRepository(db),
+    ...(calendarProvider ? { calendarProvider } : {}),
+    ...(externalTaskProvider ? { taskProvider: externalTaskProvider } : {}),
+  });
   const templatesDir = new URL('../../../templates', import.meta.url).pathname;
   const rolePackDir = new URL('../../../role-packs/agora-default', import.meta.url).pathname;
   const brainPackDir = ensureRuntimeBrainPackRoot(runtimeEnv.projectRoot);
@@ -394,6 +410,7 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
     db,
     ...composition,
     ...(calendarService ? { calendarService } : {}),
+    planningService,
     runtimeTargetService,
     coordinationService,
     artifactService,

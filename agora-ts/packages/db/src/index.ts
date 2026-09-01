@@ -46,3 +46,4 @@ export * from './repositories/organization.repository.js';
 export * from './repositories/executive-assistant.repository.js';
 
 export * from './repositories/thread-task-binding.repository.js';
+export * from './repositories/planning-binding.repository.js';

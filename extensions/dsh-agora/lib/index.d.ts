@@ -1,5 +1,7 @@
 import type { DshAgoraContext } from './context-types.js';
 import { type ConfiguredDshAgent } from './harness-runtime.js';
+import { type OpenClawRuntimeOptions } from './openclaw-runtime.js';
+import { type HermesdRuntimeOptions } from './hermesd-runtime.js';
 export { AgoraApiError, AgoraClient } from './agora-client.js';
 export { AgoraCommandParseError, executeAgoraCommand, parseAgoraCommand } from './command.js';
 export * from './contracts.js';
@@ -9,6 +11,9 @@ export * from './im-bridge-v1.js';
 export * from './command-adapter.js';
 export * from './extension-sdk.js';
 export * from './harness-runtime.js';
+export * from './runtime-command.js';
+export * from './openclaw-runtime.js';
+export * from './hermesd-runtime.js';
 export { RuntimeNodeWorker } from './node-worker.js';
 export { DshAgoraService } from './service.js';
 export * from './tool.js';
@@ -36,6 +41,8 @@ export interface Config {
     readonly maxConcurrent?: number;
     readonly runtimeReplyTimeoutMs?: number;
     readonly runtimeAgents?: readonly ConfiguredDshAgent[];
+    readonly openClawRuntime?: OpenClawRuntimeOptions;
+    readonly hermesdRuntime?: HermesdRuntimeOptions;
     readonly nodeMetadata?: Readonly<Record<string, unknown>>;
     readonly extensionSecurity?: {
         readonly requireSignedThirdParty?: boolean;

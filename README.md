@@ -156,7 +156,7 @@ Scheduler · Notification · Archive · Recovery
                 |
                 v
 Runtime / Execution Adapters
-Hosted runtimes: OpenClaw · future hosts
+Hosted runtimes: DSH · OpenClaw · Hermes · future hosts
 Execution substrates: ACPX (default) · tmux (legacy fallback)
 ```
 
@@ -179,7 +179,7 @@ Core rule:
 
 Optional:
 
-- OpenClaw, if you want IM-hosted agent participation
+- OpenClaw or Hermes, if you want an existing agent runtime governed by Agora
 - Discord, if you want the live thread experience
 - Docker plus an embedding API, if you want `project brain` hybrid retrieval instead of raw lexical search
 
@@ -219,7 +219,9 @@ dsh plugin --profile web add /absolute/path/to/Agora/extensions/dsh-agora
 
 See [Doc/dsh-integration.md](Doc/dsh-integration.md) for the command surface, security boundary, and the versioned dsh-im collaboration contract.
 
-The DSH adapter also exposes durable budgeted coordination (`single`, `fanout`, `review`, `debate`, `council`), evidence/conflict synthesis, Agent Scorecards, scoped node credentials, layered memory, content-addressed artifacts, governed merge proposals, and an A2A 1.0 HTTP+JSON boundary. The complete operator guide is in [extensions/dsh-agora/README.md](extensions/dsh-agora/README.md); the design boundary is recorded in [Doc/03-ARCHITECTURE/dsh-agora-coordination-and-federation-v1.md](Doc/03-ARCHITECTURE/dsh-agora-coordination-and-federation-v1.md).
+The DSH adapter also exposes OpenClaw CLI and Hermes Runs API runtimes, durable budgeted coordination (`single`, `fanout`, `review`, `debate`, `council`), evidence/conflict synthesis, Agent Scorecards, scoped node credentials, layered memory, content-addressed artifacts, governed merge proposals, and an A2A 1.0 HTTP+JSON boundary. The complete operator guide is in [extensions/dsh-agora/README.md](extensions/dsh-agora/README.md); the design boundary is recorded in [Doc/03-ARCHITECTURE/dsh-agora-coordination-and-federation-v1.md](Doc/03-ARCHITECTURE/dsh-agora-coordination-and-federation-v1.md).
+
+Calendar and personal-task integrations follow the same adapter rule: set `CALENDAR_PROVIDER=google` for Google Calendar and `TICKTICK_ACCESS_TOKEN` for TickTick Open API. Agora persists only the Task ↔ external task ↔ calendar event relationship in `planning_bindings`, never provider tokens. See [the provider/runtime adapter decision](Doc/03-ARCHITECTURE/2026-09-01-provider-runtime-adapters/README.md).
 
 If you want semantic `project brain` retrieval, `./agora init` now offers an optional setup phase that:
 

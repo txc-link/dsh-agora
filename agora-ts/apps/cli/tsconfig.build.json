@@ -18,6 +18,7 @@
     { "path": "../../packages/adapters-cc-connect/tsconfig.build.json" },
     { "path": "../../packages/adapters-obsidian/tsconfig.build.json" },
     { "path": "../../packages/adapters-discord/tsconfig.build.json" },
+    { "path": "../../packages/adapters-calendar/tsconfig.build.json" },
     { "path": "../../packages/testing/tsconfig.build.json" }
   ],
   "exclude": ["src/**/*.test.ts", "dist", "**/dist/**"]

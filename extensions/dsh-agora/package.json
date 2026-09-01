@@ -1,6 +1,6 @@
 {
   "name": "dsh-agora-plugin",
-  "version": "0.6.5",
+  "version": "0.7.0",
   "description": "DSH-native adapter for an Agora governance server (npm name dsh-agora-plugin; the bare dsh-agora name on npm belongs to AgoraIO's skill bundle)",
   "type": "module",
   "main": "lib/index.js",

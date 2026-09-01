@@ -113,6 +113,7 @@ export function runMigrations(db: AgoraDatabase): void {
     '042_relationship_initiatives.sql',
     '043_company_organization.sql',
     '044_executive_assistant.sql',
+    '045_planning_bindings.sql',
   ];
   const migrationsDir = resolveMigrationsDir();
 

@@ -11,7 +11,7 @@
 
 本文档从空白环境开始，给出一套可复制的中央服务器、多节点、Web 界面和 Discord 配置流程。
 
-> **节点装机速览（2026-08-30）**: 当前节点插件版本为 `dsh-agora-plugin@0.6.3`。新节点安装 = `dsh plugin --profile web add dsh-agora-plugin` + agora row patch（nodeApiToken 用 CORE `agora node-credentials issue` 签发的 scoped token）。完整两插件（本插件 + dsh-matrix-connector）装机指引见 `dsh-matrix-connector` 仓 `deploy/README.md` 第 5 节；两仓/两插件关系见 `dsh-agora` 主仓 `Doc/10-WALKTHROUGH/2026-08-30-agora-ecosystem-deployment-map.md`。
+> **节点装机速览（2026-09-01）**: 当前节点插件版本为 `dsh-agora-plugin@0.7.0`。新节点安装 = `dsh plugin --profile web add dsh-agora-plugin` + agora row patch（nodeApiToken 用 CORE `agora node-credentials issue` 签发的 scoped token）。完整两插件（本插件 + dsh-matrix-connector）装机指引见 `dsh-matrix-connector` 仓 `deploy/README.md` 第 5 节；两仓/两插件关系见 `dsh-agora` 主仓 `Doc/10-WALKTHROUGH/2026-08-30-agora-ecosystem-deployment-map.md`。
 
 
 ## 部署拓扑
@@ -180,6 +180,32 @@ dsh plugin --profile web add dsh-better-sidebar
         capabilities: ['research', 'coding']
 ```
 
+同一个节点可以把 OpenClaw 和 Hermes API Server 暴露成 Agora 的受治理 runtime。它们仍由 Agora 分配任务、限制并发、记录进度和持久化结果，不会取得公司级调度权：
+
+```yaml
+- id: agora
+  config:
+    openClawRuntime:
+      binary: 'openclaw'
+      timeoutMs: 600000
+      agents:
+        - id: 'researcher'
+          displayName: 'OpenClaw 研究员'
+          workspace: '/absolute/path/to/workspace'
+          roles: ['researcher']
+          capabilities: ['research', 'web']
+    hermesdRuntime:
+      baseUrl: 'http://127.0.0.1:8642'
+      profiles:
+        - id: 'analyst'
+          displayName: 'Hermes 分析师'
+          serverProfile: 'analysis'
+          roles: ['analyst']
+          capabilities: ['research', 'analysis']
+```
+
+Hermes 当前官方入口是 `hermes gateway` 提供的 API Server；`hermesdRuntime` 是插件配置名，不要求系统里存在名为 `hermesd` 的可执行文件。`serverProfile` 对应 Hermes multiplex profile 的 `/p/<profile>` 前缀；单 profile 部署可以省略。API Server 启用鉴权时，优先通过节点环境变量 `HERMES_API_SERVER_KEY` 注入，也可用 `hermesdRuntime.apiKey`，不要把密钥提交进仓库。创建 Run 时插件会透传 Agora dispatch 的稳定幂等键，支持 worker 安全重放。
+
 推荐让管理请求与 worker 使用不同凭据。管理员使用 `apiToken`；每个节点通过中央 CLI 获得只属于自己的 worker token：
 
 ```bash
@@ -201,6 +227,9 @@ workspace: 'C:/Users/example/workspace'
 - `serverUrl`：中央 Agora API origin，不是 Dashboard 地址，也不要带 `/api`；
 - `nodeId`：整个 Agora 网络内稳定且唯一，重启后不要变化；省略时使用主机名；
 - `runtimeAgents[].id`：节点内唯一；完整目标格式为 `dsh:<nodeId>:<agentId>`；
+- `openClawRuntime.agents[].id`：目标为 `dsh:<nodeId>:openclaw/<agentId>`；插件通过 `openclaw agent --json` 执行并用稳定 session key 续接；
+- `hermesdRuntime.profiles[].id`：目标为 `dsh:<nodeId>:hermes/<profileId>`（同时兼容输入 `hermesd/<profileId>`）；插件使用 `/v1/runs` 创建、轮询和停止 Run；
+- OpenClaw/Hermes 的短期子 Agent 只能是单次派发内部实现；跨团队 fan-out、预算、审计和停止条件仍由 Agora coordination 管理；
 - `workspace`：目标 DSH 可以访问的绝对路径；省略 Agent 清单时使用一个 `default` Agent 和当前工作目录；
 - `maxConcurrent`：该节点允许同时执行的派发数；
 - `dispatchLeaseSeconds`：默认 120 秒；worker 会在约三分之一租约时自动续租；用 `claim_renewed_at` 判断租约存活，用 `latest_progress` 判断实际工作推进，不要再用 dispatch `updated_at` 混淆两者；
@@ -360,7 +389,7 @@ imBridge: connected — dsh-im.bridge/v1
 - `dispatch`、`dispatch_status`；
 - `attach_session`。
 
-目标格式为 `dsh:<nodeId>:<agentId>`。重试派发时应复用稳定的 `idempotency_key`，避免重复执行。
+目标格式为 `dsh:<nodeId>:<agentId>`；外部 runtime 使用 namespaced agent ref，例如 `dsh:node-mac:openclaw/researcher` 和 `dsh:node-home-linux:hermes/analyst`。重试派发时应复用稳定的 `idempotency_key`，避免重复执行。
 
 ### Web 面板
 
@@ -474,7 +503,7 @@ MINIMAX_CN_API_KEY: '...'
 
 ## 插件扩展和 Host API
 
-第三方插件可以导入 `dsh-agora/sdk` 并注册 `dsh-agora.extension/v1`。当前内置 `runtime` 扩展负责 Agent 描述、Session 创建/恢复和 prompt 执行；新的 runtime adapter 应实现 `supportsTarget(runtimeTargetRef)`，注册表会显式选择支持目标的 adapter，并在没有第三方匹配时回退到内置 DSH runtime。新的 provider、策略或观察器应沿注册表扩展，不依赖 dsh-im 私有实现。生产环境建议启用 `extensionSecurity.requireSignedThirdParty` 并在 `trustedPublicKeys` 中配置 `publisher-id:key-id` 对应的 PEM 公钥。
+第三方插件可以导入 `dsh-agora/sdk` 并注册 `dsh-agora.extension/v1`。当前内置 DSH、OpenClaw 和 Hermes runtime 扩展都通过同一接口负责 Agent 描述、Session 创建/恢复、prompt 执行和取消；新的 runtime adapter 应实现 `supportsTarget(runtimeTargetRef)`，注册表会显式选择支持目标的 adapter，并在没有第三方匹配时回退到内置 DSH runtime。新的 provider、策略或观察器应沿注册表扩展，不依赖 dsh-im 私有实现。生产环境建议启用 `extensionSecurity.requireSignedThirdParty` 并在 `trustedPublicKeys` 中配置 `publisher-id:key-id` 对应的 PEM 公钥。
 
 严格模式下，第三方扩展必须提供 `dsh-agora.extension-manifest/v1`、Ed25519 签名和与 `integrity_sha256` 匹配的 package bytes；manifest 必须逐项声明 capability、permission 和 resource。安装前可调用 `runExtensionConformance()` 检查能力唯一性、runtime 协议、Agent 描述确定性和 manifest 权限对齐。
 

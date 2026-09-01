@@ -148,7 +148,7 @@ Scheduler · Notification · Archive · Recovery
                 |
                 v
 Runtime / Execution Adapters
-Hosted runtimes: OpenClaw · future hosts
+Hosted runtimes: DSH · OpenClaw · Hermes · future hosts
 Execution substrates: ACPX（默认） · tmux（legacy fallback）
 ```
 
@@ -171,7 +171,7 @@ Execution substrates: ACPX（默认） · tmux（legacy fallback）
 
 可选：
 
-- OpenClaw，如果你要做 IM-hosted agent participation
+- OpenClaw 或 Hermes，如果你要把现有 Agent runtime 纳入 Agora 治理
 - Discord，如果你要 live thread 体验
 - Docker + embedding API，如果你要让 `project brain` 走 hybrid retrieval，而不是纯 lexical 搜索
 
@@ -212,7 +212,9 @@ dsh plugin --profile web add "$PWD"
 
 每套协同网络只部署一个中央 Agora Server；每个参与执行的 DSH 都安装一次 `dsh-agora`，并配置唯一、稳定的 `nodeId`。完整的多节点配置、Web 面板、dsh-im bridge 补丁、Discord 验收和 pnpm 排障流程见 [`extensions/dsh-agora/README.md`](./extensions/dsh-agora/README.md)。英文集成指南见 [`Doc/dsh-integration.md`](./Doc/dsh-integration.md)。
 
-当前 DSH 适配器还提供持久预算化协同（`single`、`fanout`、`review`、`debate`、`council`）、证据/冲突汇总、Agent Scorecard、节点最小权限凭据、分层 memory、内容寻址制品、受治理 merge proposal 和 A2A 1.0 HTTP+JSON 边界。设计边界见 [`Doc/03-ARCHITECTURE/dsh-agora-coordination-and-federation-v1.md`](./Doc/03-ARCHITECTURE/dsh-agora-coordination-and-federation-v1.md)。
+当前 DSH 适配器还提供 OpenClaw CLI 与 Hermes Runs API runtime、持久预算化协同（`single`、`fanout`、`review`、`debate`、`council`）、证据/冲突汇总、Agent Scorecard、节点最小权限凭据、分层 memory、内容寻址制品、受治理 merge proposal 和 A2A 1.0 HTTP+JSON 边界。设计边界见 [`Doc/03-ARCHITECTURE/dsh-agora-coordination-and-federation-v1.md`](./Doc/03-ARCHITECTURE/dsh-agora-coordination-and-federation-v1.md)。
+
+日历和个人任务同样遵循 adapter 边界：`CALENDAR_PROVIDER=google` 可直接接 Google Calendar，`TICKTICK_ACCESS_TOKEN` 可接 TickTick Open API；Agora 用 `planning_bindings` 持久记录 Task ↔ 外部任务 ↔ 日历事件的关联，但不保存 provider token。具体决策见 [`Doc/03-ARCHITECTURE/2026-09-01-provider-runtime-adapters/`](./Doc/03-ARCHITECTURE/2026-09-01-provider-runtime-adapters/README.md)。
 
 如果你要启用语义化 `project brain` 检索，`./agora init` 现在会提供一个可选安装阶段，自动完成：
 

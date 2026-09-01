@@ -18,6 +18,8 @@
     { "path": "../../packages/adapters-cc-connect" },
     { "path": "../../packages/adapters-materialization" },
     { "path": "../../packages/adapters-obsidian" },
-    { "path": "../../packages/adapters-discord" }
+    { "path": "../../packages/adapters-discord" },
+    { "path": "../../packages/adapters-calendar" },
+    { "path": "../../packages/adapters-tasks" }
   ]
 }

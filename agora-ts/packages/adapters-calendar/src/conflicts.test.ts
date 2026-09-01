@@ -61,4 +61,12 @@ describe('computeConflicts', () => {
     const pairs = conflicts.map((c) => `${c.uid_a}|${c.uid_b}`).sort();
     expect(pairs).toEqual(['a|b', 'a|c', 'b|c'].sort());
   });
+
+  it('compares instants correctly when providers return different UTC offsets', () => {
+    const events = [
+      ev({ uid: 'shanghai', start: '2026-09-01T09:00:00+08:00', end: '2026-09-01T10:00:00+08:00' }),
+      ev({ uid: 'utc', start: '2026-09-01T01:30:00Z', end: '2026-09-01T02:30:00Z' }),
+    ];
+    expect(computeConflicts(events)).toHaveLength(1);
+  });
 });

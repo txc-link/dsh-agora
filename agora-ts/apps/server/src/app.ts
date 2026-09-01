@@ -60,6 +60,8 @@ import {
   decideApprovalRequestSchema,
   listPendingApprovalsQuerySchema,
   calendarQuerySchema,
+  projectExternalTaskRequestSchema,
+  projectCalendarEventRequestSchema,
   submitMarkdownRequestSchema,
   archiveJobScanRequestSchema,
   archiveJobStatusUpdateRequestSchema,
@@ -221,7 +223,8 @@ import {
   type InboxReplyService,
   type TaskParticipationService,
   type TaskContextBindingService,
-  CalendarService,
+  type CalendarService,
+  type PlanningService,
   type TaskService,
   type TemplateAuthoringService,
   type WorkspaceBootstrapService,
@@ -329,8 +332,9 @@ export interface BuildAppOptions {
   notificationDispatcher?: NotificationDispatcher;
   /** im.notify_on_task_create: 建任务后写 task_created 公告行, 由 scheduler 周期扫描推送 */
   taskCreatedNotify?: { enabled: boolean };
-  // 2026-08-31 next-batch — calendar/commitment projection (Radicale adapter).
+  // Calendar/commitment projection through a provider-neutral port.
   calendarService?: CalendarService;
+  planningService?: PlanningService;
   imProvisioningPort?: IMProvisioningPort;
   humanAccountService?: HumanAccountService;
   relationshipProfileService?: RelationshipProfileService;
@@ -1210,6 +1214,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   });
   const taskService = options.taskService;
   const calendarService = options.calendarService;
+  const planningService = options.planningService;
   const consentService = options.consentService ?? (options.db
     ? new ConsentService({ repository: new ConsentGrantRepository(options.db) })
     : undefined);
@@ -4534,9 +4539,9 @@ export function buildApp(options: BuildAppOptions = {}) {
     }
   });
 
-  // 2026-08-31 next-batch — calendar/commitment projection (Radicale).
+  // Calendar/commitment projection (Google or Radicale at composition root).
   app.get('/api/calendar/today', async (request, reply) => {
-    if (!calendarService) return reply.status(503).send({ message: 'Calendar service is not configured (set RADICALE_URL + RADICALE_USER + RADICALE_PASSWORD)' });
+    if (!calendarService) return reply.status(503).send({ message: 'Calendar service is not configured (select Google Calendar or Radicale)' });
     try {
       const query = calendarQuerySchema.parse(request.query ?? {});
       const events = await calendarService.listToday(query.domain);
@@ -4571,6 +4576,59 @@ export function buildApp(options: BuildAppOptions = {}) {
         ? await calendarService.morningReport(query.domain)
         : await calendarService.eveningReport(query.domain);
       return reply.send({ domain: query.domain, kind: params.kind, markdown });
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.get('/api/planning/tasks/:taskId', async (request, reply) => {
+    if (!planningService) return reply.status(503).send({ message: 'Planning service is not configured' });
+    const params = request.params as { taskId: string };
+    const binding = planningService.getByTask(params.taskId);
+    return binding ? reply.send({ binding }) : reply.status(404).send({ message: `Planning binding not found for task ${params.taskId}` });
+  });
+
+  app.post('/api/planning/tasks/:taskId/external-task', async (request, reply) => {
+    if (!planningService?.canProjectExternalTasks) return reply.status(503).send({ message: 'External task provider is not configured' });
+    try {
+      const params = request.params as { taskId: string };
+      const payload = projectExternalTaskRequestSchema.parse(request.body);
+      const humanActor = resolveHumanActor(request, dashboardSessions, humanAccountService);
+      const risk = actionRiskService?.assess({
+        actor_ref: humanActor?.username ?? 'api:unattributed', subject_ref: `task:${params.taskId}`,
+        action_kind: 'external_side_effect', reversibility: 'reversible', recurrence: 'one_off',
+        sensitive_disclosure: payload.domain === 'life', health_impact: false, third_party_effect: true, new_counterparty: false,
+        metadata: { provider: 'external-task', domain: payload.domain },
+      });
+      if (risk?.decision === 'require_human_gate' && !humanActor) {
+        return reply.status(403).send({ message: 'An authenticated human Dashboard request is required for this external write', risk_assessment_id: risk.id });
+      }
+      const binding = await planningService.projectExternalTask({ taskId: params.taskId, ...payload });
+      return reply.status(201).send({ binding });
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/planning/tasks/:taskId/calendar-event', async (request, reply) => {
+    if (!planningService?.canProjectCalendarEvents) return reply.status(503).send({ message: 'Writable calendar provider is not configured' });
+    try {
+      const params = request.params as { taskId: string };
+      const payload = projectCalendarEventRequestSchema.parse(request.body);
+      const humanActor = resolveHumanActor(request, dashboardSessions, humanAccountService);
+      const risk = actionRiskService?.assess({
+        actor_ref: humanActor?.username ?? 'api:unattributed', subject_ref: `task:${params.taskId}`,
+        action_kind: 'schedule', reversibility: 'reversible', recurrence: 'one_off',
+        sensitive_disclosure: payload.domain === 'life', health_impact: false, third_party_effect: true, new_counterparty: false,
+        metadata: { provider: 'calendar', domain: payload.domain },
+      });
+      if (risk?.decision === 'require_human_gate' && !humanActor) {
+        return reply.status(403).send({ message: 'An authenticated human Dashboard request is required for this external write', risk_assessment_id: risk.id });
+      }
+      const binding = await planningService.projectCalendarEvent({ taskId: params.taskId, ...payload });
+      return reply.status(201).send({ binding });
     } catch (error) {
       const translated = translateError(error);
       return reply.status(translated.statusCode).send(translated.body);

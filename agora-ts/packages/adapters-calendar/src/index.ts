@@ -4,3 +4,7 @@ export { generateMorningReport, generateEveningReport } from './reports.js';
 export type { MorningReportInput, EveningReportInput } from './reports.js';
 export { RadicaleClient } from './radicale-client.js';
 export type { RadicaleClientOptions } from './radicale-client.js';
+export { RadicaleCalendarAdapter } from './radicale-calendar.js';
+export type { RadicaleCalendarAdapterOptions } from './radicale-calendar.js';
+export { GoogleCalendarAdapter } from './google-calendar.js';
+export type { GoogleCalendarAdapterOptions, GoogleCalendarCreateEventInput } from './google-calendar.js';

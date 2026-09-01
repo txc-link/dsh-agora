@@ -5559,30 +5559,34 @@ export function createCliProgram(deps: CliDependencies = {}) {
     });
 
   // 2026-08-31 next-batch — calendar / commitment center.
-  // Reads events directly via Radicale; deployment sets RADICALE_URL +
-  // RADICALE_USER + RADICALE_PASSWORD. Without them the command prints
-  // a clear "not configured" message (no silent fallback per §1.5).
+  // Reads events through the selected provider. Google and Radicale remain
+  // composition choices; Core never imports either concrete client.
   const calendar = program
     .command('calendar')
-    .description('calendar / commitment center (Radicale adapter)');
+    .description('calendar / commitment center (Google or Radicale adapter)');
 
   const calendarResolveService = async () => {
+    const { CalendarService } = await import('@agora-ts/core');
+    const { GoogleCalendarAdapter, RadicaleCalendarAdapter, RadicaleClient } = await import('@agora-ts/adapters-calendar');
+    if ((process.env.CALENDAR_PROVIDER ?? '').toLowerCase() === 'google' || process.env.GOOGLE_CALENDAR_ACCESS_TOKEN) {
+      const token = process.env.GOOGLE_CALENDAR_ACCESS_TOKEN;
+      const work = process.env.GOOGLE_CALENDAR_WORK_ID;
+      const life = process.env.GOOGLE_CALENDAR_LIFE_ID;
+      if (!token || !work || !life) throw new Error('Google calendar not configured: set GOOGLE_CALENDAR_ACCESS_TOKEN + GOOGLE_CALENDAR_WORK_ID + GOOGLE_CALENDAR_LIFE_ID');
+      return new CalendarService({ provider: new GoogleCalendarAdapter({ accessToken: token, calendarIds: { work, life } }) });
+    }
     const url = process.env.RADICALE_URL;
     const user = process.env.RADICALE_USER;
     const password = process.env.RADICALE_PASSWORD;
-    if (!url || !user || !password) {
-      throw new Error('calendar not configured: set RADICALE_URL + RADICALE_USER + RADICALE_PASSWORD');
-    }
-    const { CalendarService } = await import('@agora-ts/core');
-    const { RadicaleClient } = await import('@agora-ts/adapters-calendar');
+    if (!url || !user || !password) throw new Error('calendar not configured: select Google or set RADICALE_URL + RADICALE_USER + RADICALE_PASSWORD');
     const client = new RadicaleClient({ baseUrl: url, username: user, password });
-    return new CalendarService({
+    return new CalendarService({ provider: new RadicaleCalendarAdapter({
       client,
       collections: {
         work: process.env.RADICALE_WORK_COLLECTION ?? `/${user}/work/`,
         life: process.env.RADICALE_LIFE_COLLECTION ?? `/${user}/life/`,
       },
-    });
+    }) });
   };
 
   calendar

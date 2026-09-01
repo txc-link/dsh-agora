@@ -1,19 +1,9 @@
 import type { CalendarConflictDto, CalendarEventDto, CalendarDomainDto } from '@agora-ts/contracts';
-import {
-  computeConflicts,
-  generateEveningReport,
-  generateMorningReport,
-  type RadicaleClient,
-} from '@agora-ts/adapters-calendar';
-
-export interface CalendarServiceCollections {
-  work: string;
-  life: string;
-}
+import type { CalendarProviderPort } from './calendar-provider-port.js';
+import { computeCalendarConflicts, generateCalendarEveningReport, generateCalendarMorningReport } from './calendar-reporting.js';
 
 export interface CalendarServiceOptions {
-  client: RadicaleClient;
-  collections: CalendarServiceCollections;
+  provider: CalendarProviderPort;
   /** Timezone offset in minutes for "today" boundaries (default 0 = UTC). */
   timezoneOffsetMinutes?: number;
   /** Clock injected for deterministic tests. */
@@ -36,26 +26,20 @@ function bucketByDate(events: CalendarEventDto[], date: string): CalendarEventDt
 }
 
 /**
- * CalendarService — orchestrates the Radicale adapter for the
+ * CalendarService — orchestrates a provider-neutral calendar port for the
  * commitment / commitment-calendar projection. All read methods are
  * async because they fan out to the adapter; the morning/evening
- * builders compose the pure formatters from `@agora-ts/adapters-calendar`.
+ * builders compose Core-owned pure formatters.
  */
 export class CalendarService {
-  private readonly client: RadicaleClient;
-  private readonly collections: CalendarServiceCollections;
+  private readonly provider: CalendarProviderPort;
   private readonly offsetMinutes: number;
   private readonly now: () => Date;
 
   constructor(options: CalendarServiceOptions) {
-    this.client = options.client;
-    this.collections = options.collections;
+    this.provider = options.provider;
     this.offsetMinutes = options.timezoneOffsetMinutes ?? 0;
     this.now = options.now ?? (() => new Date());
-  }
-
-  private collectionPath(domain: CalendarDomainDto): string {
-    return domain === 'work' ? this.collections.work : this.collections.life;
   }
 
   private currentDate(): string {
@@ -68,7 +52,7 @@ export class CalendarService {
   }
 
   async listEvents(domain: CalendarDomainDto): Promise<CalendarEventDto[]> {
-    return this.client.fetchCollection(this.collectionPath(domain));
+    return this.provider.listEvents(domain);
   }
 
   async listToday(domain: CalendarDomainDto): Promise<CalendarEventDto[]> {
@@ -83,20 +67,20 @@ export class CalendarService {
 
   async listConflicts(domain: CalendarDomainDto): Promise<CalendarConflictDto[]> {
     const events = await this.listEvents(domain);
-    return computeConflicts(events);
+    return computeCalendarConflicts(events);
   }
 
   async morningReport(domain: CalendarDomainDto): Promise<string> {
     const events = await this.listEvents(domain);
-    const conflicts = computeConflicts(events);
-    return generateMorningReport({ domain, date: this.currentDate(), events, conflicts });
+    const conflicts = computeCalendarConflicts(events);
+    return generateCalendarMorningReport({ domain, date: this.currentDate(), events, conflicts });
   }
 
   async eveningReport(domain: CalendarDomainDto): Promise<string> {
     const events = await this.listEvents(domain);
     const tomorrow = await this.listTomorrow(domain);
-    const conflicts = computeConflicts(events);
-    return generateEveningReport({
+    const conflicts = computeCalendarConflicts(events);
+    return generateCalendarEveningReport({
       domain,
       date: this.currentDate(),
       today: events,

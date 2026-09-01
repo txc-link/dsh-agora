@@ -10,6 +10,8 @@ import { createAgoraTool } from './tool.js'
 import { DshAgoraExtensionRegistry, DSH_AGORA_EXTENSION_PROTOCOL } from './extension-sdk.js'
 import { HarnessRuntimeAdapter, type ConfiguredDshAgent } from './harness-runtime.js'
 import { RuntimeNodeWorker } from './node-worker.js'
+import { OpenClawRuntimeAdapter, type OpenClawRuntimeOptions } from './openclaw-runtime.js'
+import { HermesdRuntimeAdapter, type HermesdRuntimeOptions } from './hermesd-runtime.js'
 
 export { AgoraApiError, AgoraClient } from './agora-client.js'
 export { AgoraCommandParseError, executeAgoraCommand, parseAgoraCommand } from './command.js'
@@ -20,6 +22,9 @@ export * from './im-bridge-v1.js'
 export * from './command-adapter.js'
 export * from './extension-sdk.js'
 export * from './harness-runtime.js'
+export * from './runtime-command.js'
+export * from './openclaw-runtime.js'
+export * from './hermesd-runtime.js'
 export { RuntimeNodeWorker } from './node-worker.js'
 export { DshAgoraService } from './service.js'
 export * from './tool.js'
@@ -29,7 +34,7 @@ export const name = 'dsh-agora-plugin'
 // node worker. Declaring it here also makes Cordis delay apply() until the web
 // host is initialized instead of silently starting in command-only mode.
 export const inject = ['commands', 'tools', 'webServer']
-const PLUGIN_VERSION = '0.6.5'
+const PLUGIN_VERSION = '0.7.0'
 
 export interface Config {
   readonly serverUrl?: string
@@ -53,6 +58,8 @@ export interface Config {
   readonly maxConcurrent?: number
   readonly runtimeReplyTimeoutMs?: number
   readonly runtimeAgents?: readonly ConfiguredDshAgent[]
+  readonly openClawRuntime?: OpenClawRuntimeOptions
+  readonly hermesdRuntime?: HermesdRuntimeOptions
   readonly nodeMetadata?: Readonly<Record<string, unknown>>
   readonly extensionSecurity?: {
     readonly requireSignedThirdParty?: boolean
@@ -77,7 +84,7 @@ export function apply(ctx: DshAgoraContext, config: Config = {}): void {
     ...(config.extensionSecurity?.trustedPublicKeys === undefined
       ? {}
       : { trustedPublicKeys: config.extensionSecurity.trustedPublicKeys }),
-    builtInExtensionIds: ['dsh-runtime'],
+    builtInExtensionIds: ['dsh-runtime', 'openclaw-runtime', 'hermesd-runtime'],
   })
   const client = new AgoraClient({
     serverUrl: config.serverUrl ?? process.env.AGORA_SERVER_URL ?? 'http://127.0.0.1:18008',
@@ -150,6 +157,32 @@ export function apply(ctx: DshAgoraContext, config: Config = {}): void {
       runtime,
     })
     own(ctx, unregisterRuntime, 'dsh-agora: built-in DSH runtime adapter')
+  }
+
+  if ((config.openClawRuntime?.agents.length ?? 0) > 0) {
+    const unregisterRuntime = service.registerExtension({
+      protocol: DSH_AGORA_EXTENSION_PROTOCOL,
+      id: 'openclaw-runtime',
+      kind: 'runtime',
+      capabilities: ['runtime.execute', 'session.create', 'session.resume', 'session.cancel'],
+      runtime: new OpenClawRuntimeAdapter(config.openClawRuntime!),
+    })
+    own(ctx, unregisterRuntime, 'dsh-agora: built-in OpenClaw runtime adapter')
+  }
+
+  if ((config.hermesdRuntime?.profiles.length ?? 0) > 0) {
+    const hermesApiKey = config.hermesdRuntime?.apiKey ?? process.env.HERMES_API_SERVER_KEY
+    const unregisterRuntime = service.registerExtension({
+      protocol: DSH_AGORA_EXTENSION_PROTOCOL,
+      id: 'hermesd-runtime',
+      kind: 'runtime',
+      capabilities: ['runtime.execute', 'session.create', 'session.resume', 'session.cancel'],
+      runtime: new HermesdRuntimeAdapter({
+        ...config.hermesdRuntime!,
+        ...(hermesApiKey?.trim() ? { apiKey: hermesApiKey.trim() } : {}),
+      }),
+    })
+    own(ctx, unregisterRuntime, 'dsh-agora: built-in Hermes runtime adapter')
   }
 
   const unregisterCommand = ctx.commands.register({
