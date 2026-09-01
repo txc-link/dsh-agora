@@ -75,9 +75,9 @@ export class TaskMemorySummaryService {
         metadata: {
           summary_kind: 'task_terminal', task_id: task.id, task_state: task.state,
           fingerprint, contributors: task.team.members.map((member) => member.agentId),
-          summary_schema: 'agora.task-memory/v2', facts: rendered.structured.facts,
-          decisions: rendered.structured.decisions, lessons: rendered.structured.lessons,
-          unresolved: rendered.structured.unresolved, confidence: rendered.structured.confidence,
+          summary_schema: 'agora.task-memory/v2', facts: redactStructured(rendered.structured.facts, this.redactor),
+          decisions: redactStructured(rendered.structured.decisions, this.redactor), lessons: redactStructured(rendered.structured.lessons, this.redactor),
+          unresolved: redactStructured(rendered.structured.unresolved, this.redactor), confidence: rendered.structured.confidence,
           redacted: rendered.redacted, redaction_patterns: rendered.redactionPatterns,
         },
       });
@@ -107,6 +107,15 @@ export class TaskMemorySummaryService {
   listByTask(taskId: string): TaskMemorySummaryDto[] {
     return this.options.summaryRepository.listByTask(taskId);
   }
+}
+
+function redactStructured(value: unknown, redactor: MemoryRedactor): unknown {
+  if (typeof value === 'string') return redactor.redact(value).text;
+  if (Array.isArray(value)) return value.map((item) => redactStructured(item, redactor));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redactStructured(item, redactor)]));
+  }
+  return value;
 }
 
 function fingerprintTask(

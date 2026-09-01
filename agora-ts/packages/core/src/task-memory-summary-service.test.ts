@@ -67,5 +67,6 @@ describe('TaskMemorySummaryService', () => {
     expect(memories[0]?.text).toContain('## 决策');
     expect(memories[0]?.text).toContain('[REDACTED:secret_assignment]');
     expect(memories[0]?.metadata).toMatchObject({ summary_schema: 'agora.task-memory/v2', redacted: true });
+    expect(JSON.stringify(memories[0]?.metadata)).not.toContain('super-secret-value');
   });
 });
