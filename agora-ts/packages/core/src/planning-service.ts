@@ -1,4 +1,4 @@
-import type { CalendarDomainDto, IPlanningBindingRepository, ITaskRepository, PlanningBinding } from '@agora-ts/contracts';
+import type { CalendarDomainDto, IPlanningBindingRepository, ITaskRepository, PlanningBinding, PlanningSyncMode } from '@agora-ts/contracts';
 import type { CalendarProviderPort } from './calendar-provider-port.js';
 import type { ExternalTaskProviderPort } from './external-task-provider-port.js';
 
@@ -21,7 +21,7 @@ export class PlanningService {
 
   async projectExternalTask(input: {
     taskId: string; domain: CalendarDomainDto; projectRef: string; title?: string | undefined; content?: string | undefined;
-    start?: string | undefined; due?: string | undefined; timeZone?: string | undefined;
+    start?: string | undefined; due?: string | undefined; timeZone?: string | undefined; syncMode?: PlanningSyncMode | undefined;
   }): Promise<PlanningBinding> {
     const task = this.requireTask(input.taskId);
     const existing = this.options.repo.getByTask(task.id);
@@ -40,11 +40,13 @@ export class PlanningService {
     return this.options.repo.upsert({
       taskId: task.id, domain: input.domain,
       externalTask: { provider: provider.providerId, ref: projected.id, projectRef: projected.projectRef },
+      ...(input.syncMode === undefined ? {} : { syncMode: input.syncMode }),
     });
   }
 
   async projectCalendarEvent(input: {
     taskId: string; domain: CalendarDomainDto; summary?: string | undefined; start: string; end: string; location?: string | null | undefined;
+    syncMode?: PlanningSyncMode | undefined;
   }): Promise<PlanningBinding> {
     const task = this.requireTask(input.taskId);
     const existing = this.options.repo.getByTask(task.id);
@@ -60,7 +62,13 @@ export class PlanningService {
     return this.options.repo.upsert({
       taskId: task.id, domain: input.domain,
       calendarEvent: { provider: provider.providerId, ref: event.uid },
+      ...(input.syncMode === undefined ? {} : { syncMode: input.syncMode }),
     });
+  }
+
+  configureSync(taskId: string, mode: PlanningSyncMode): PlanningBinding {
+    this.requireTask(taskId);
+    return this.options.repo.setSyncMode(required(taskId, 'taskId'), mode);
   }
 
   private requireTask(taskId: string) {

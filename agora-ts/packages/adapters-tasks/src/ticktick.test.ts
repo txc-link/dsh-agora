@@ -41,4 +41,29 @@ describe('TickTickTaskAdapter', () => {
     await adapter.completeTask({ projectRef: 'project/a', taskRef: 'task b' });
     expect(url).toBe('https://api.ticktick.com/open/v1/project/project%2Fa/task/task%20b/complete');
   });
+
+  it('reads completed state and maps 404 to deleted', async () => {
+    const responses = [
+      Response.json({ id: 'tt-1', projectId: 'project-1', title: 'Done', status: 2 }),
+      new Response(null, { status: 404 }),
+    ];
+    const adapter = new TickTickTaskAdapter({ accessToken: 'token', fetchImpl: async () => responses.shift()! });
+
+    expect(await adapter.getTask({ projectRef: 'project-1', taskRef: 'tt-1' })).toMatchObject({ status: 'completed' });
+    expect(await adapter.getTask({ projectRef: 'project-1', taskRef: 'missing' })).toBeNull();
+  });
+
+  it('deletes a task through the official project task endpoint', async () => {
+    let request: { url: string; method?: string } | undefined;
+    const adapter = new TickTickTaskAdapter({
+      accessToken: 'token',
+      fetchImpl: async (input, init) => {
+        request = { url: String(input), ...(init?.method === undefined ? {} : { method: init.method }) };
+        return new Response(null, { status: 200 });
+      },
+    });
+
+    await adapter.deleteTask({ projectRef: 'project-1', taskRef: 'tt-1' });
+    expect(request).toEqual({ url: 'https://api.ticktick.com/open/v1/project/project-1/task/tt-1', method: 'DELETE' });
+  });
 });

@@ -25,6 +25,7 @@ Agora dispatch -> DSH node extension registry
 6. External writes are explicit service calls. Inferred preferences do not create or complete external tasks/events.
 7. Credentials are composition-root configuration and are never copied into metadata, result envelopes, logs or planning bindings.
 8. Planning writes are assessed by the existing `ActionRiskService`. When the assessment requires a human gate, the request must come from an authenticated Dashboard human; a bearer-only agent cannot bypass that gate.
+9. Terminal state synchronization is implemented separately from projection. Its consent, monotonic mapping and conflict rules are recorded in [the bidirectional state-sync decision](../2026-09-01-planning-bidirectional-sync/README.md).
 
 ## Failure and recovery rules
 

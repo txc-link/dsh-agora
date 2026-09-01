@@ -214,7 +214,7 @@ dsh plugin --profile web add "$PWD"
 
 当前 DSH 适配器还提供 OpenClaw CLI 与 Hermes Runs API runtime、持久预算化协同（`single`、`fanout`、`review`、`debate`、`council`）、证据/冲突汇总、Agent Scorecard、节点最小权限凭据、分层 memory、内容寻址制品、受治理 merge proposal 和 A2A 1.0 HTTP+JSON 边界。设计边界见 [`Doc/03-ARCHITECTURE/dsh-agora-coordination-and-federation-v1.md`](./Doc/03-ARCHITECTURE/dsh-agora-coordination-and-federation-v1.md)。
 
-日历和个人任务同样遵循 adapter 边界：`CALENDAR_PROVIDER=google` 可直接接 Google Calendar，`TICKTICK_ACCESS_TOKEN` 可接 TickTick Open API；Agora 用 `planning_bindings` 持久记录 Task ↔ 外部任务 ↔ 日历事件的关联，但不保存 provider token。具体决策见 [`Doc/03-ARCHITECTURE/2026-09-01-provider-runtime-adapters/`](./Doc/03-ARCHITECTURE/2026-09-01-provider-runtime-adapters/README.md)。
+日历和个人任务同样遵循 adapter 边界：`CALENDAR_PROVIDER=google` 可直接接 Google Calendar，`TICKTICK_ACCESS_TOKEN` 可接 TickTick Open API；Agora 用 `planning_bindings` 持久记录 Task ↔ 外部任务 ↔ 日历事件的关联，但不保存 provider token。经人类明确授权的绑定可以双向同步终态：TickTick 完成会把兼容的 Agora 任务推进到 `done`，删除/日历取消会推进到 `cancelled`，Agora 的完成/取消也会写回；标题和日期不做多主合并，终态冲突只记录、不抢写。具体决策见 [`provider/runtime adapter`](./Doc/03-ARCHITECTURE/2026-09-01-provider-runtime-adapters/README.md) 与 [`planning state sync`](./Doc/03-ARCHITECTURE/2026-09-01-planning-bidirectional-sync/README.md)。
 
 如果你要启用语义化 `project brain` 检索，`./agora init` 现在会提供一个可选安装阶段，自动完成：
 

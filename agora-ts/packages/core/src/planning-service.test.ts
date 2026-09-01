@@ -13,6 +13,10 @@ class MemoryPlanningRepo {
       externalTaskProjectRef: input.externalTask?.projectRef ?? this.binding?.externalTaskProjectRef ?? null,
       calendarProvider: input.calendarEvent?.provider ?? this.binding?.calendarProvider ?? null,
       calendarEventRef: input.calendarEvent?.ref ?? this.binding?.calendarEventRef ?? null,
+      syncMode: input.syncMode ?? this.binding?.syncMode ?? 'manual',
+      lastSyncStatus: this.binding?.lastSyncStatus ?? 'pending',
+      lastSyncAt: this.binding?.lastSyncAt ?? null,
+      lastSyncError: this.binding?.lastSyncError ?? null,
       createdAt: this.binding?.createdAt ?? now, updatedAt: now,
     };
     return this.binding;
@@ -20,6 +24,16 @@ class MemoryPlanningRepo {
   getByTask(taskId: string): PlanningBinding | undefined { return this.binding?.taskId === taskId ? this.binding : undefined; }
   list(): readonly PlanningBinding[] { return this.binding ? [this.binding] : []; }
   removeByTask(taskId: string): boolean { if (this.binding?.taskId !== taskId) return false; this.binding = undefined; return true; }
+  setSyncMode(taskId: string, mode: PlanningBinding['syncMode']): PlanningBinding {
+    if (!this.binding || this.binding.taskId !== taskId) throw new Error('not found');
+    this.binding = { ...this.binding, syncMode: mode, lastSyncStatus: 'pending', lastSyncError: null };
+    return this.binding;
+  }
+  recordSyncResult(taskId: string, input: { status: PlanningBinding['lastSyncStatus']; syncedAt: string; error?: string | null }): PlanningBinding {
+    if (!this.binding || this.binding.taskId !== taskId) throw new Error('not found');
+    this.binding = { ...this.binding, lastSyncStatus: input.status, lastSyncAt: input.syncedAt, lastSyncError: input.error ?? null };
+    return this.binding;
+  }
 }
 
 const taskRepo = {

@@ -43,6 +43,8 @@ POST /api/planning/tasks/:taskId/calendar-event
 
 Each create first verifies the Agora Task and the existing binding. Repeating an already-bound projection returns that binding rather than deliberately creating a duplicate. A binding cannot change from `work` to `life` or the reverse. External writes are assessed by `ActionRiskService`; when it returns `require_human_gate`, only an authenticated Dashboard human may proceed.
 
+Terminal state synchronization was added in the follow-up [planning bidirectional sync walkthrough](./2026-09-01-planning-bidirectional-sync.md). It deliberately excludes mutable title/date merging.
+
 ## DSH runtime configuration
 
 ```yaml

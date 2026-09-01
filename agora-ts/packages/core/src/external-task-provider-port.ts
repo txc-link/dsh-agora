@@ -21,5 +21,7 @@ export interface ExternalPlanningTask {
 export interface ExternalTaskProviderPort {
   readonly providerId: string;
   createTask(input: CreateExternalTaskInput): Promise<ExternalPlanningTask>;
+  getTask?(input: { projectRef: string; taskRef: string }): Promise<ExternalPlanningTask | null>;
   completeTask?(input: { projectRef: string; taskRef: string }): Promise<void>;
+  deleteTask?(input: { projectRef: string; taskRef: string }): Promise<void>;
 }

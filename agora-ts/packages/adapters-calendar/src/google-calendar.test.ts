@@ -60,4 +60,35 @@ describe('GoogleCalendarAdapter', () => {
     expect(JSON.stringify(event)).not.toContain('secret-token');
     expect(event.uid).toBe('event-1');
   });
+
+  it('reads and cancels a bound event with conditional deletion', async () => {
+    const calls: Array<{ url: URL; init?: RequestInit }> = [];
+    const adapter = new GoogleCalendarAdapter({
+      accessToken: 'token',
+      calendarIds: { work: 'primary', life: 'life' },
+      fetchImpl: async (input, init) => {
+        const url = new URL(String(input));
+        calls.push({ url, ...(init === undefined ? {} : { init }) });
+        if (init?.method === 'DELETE') return new Response(null, { status: 204 });
+        return Response.json({ id: 'event-1', status: 'confirmed', etag: '"v3"' });
+      },
+    });
+
+    expect(await adapter.getEventState('work', 'event-1')).toEqual({ ref: 'event-1', state: 'scheduled', version: '"v3"' });
+    await adapter.cancelEvent('work', 'event-1', '"v3"');
+
+    expect(calls.map(call => call.init?.method)).toEqual(['GET', 'DELETE']);
+    expect(calls[1]?.init?.headers).toMatchObject({ 'if-match': '"v3"' });
+  });
+
+  it('maps a missing or cancelled bound event to cancelled state', async () => {
+    const responses = [Response.json({ id: 'event-1', status: 'cancelled', etag: '"v4"' }), new Response(null, { status: 404 })];
+    const adapter = new GoogleCalendarAdapter({
+      accessToken: 'token', calendarIds: { work: 'primary', life: 'life' },
+      fetchImpl: async () => responses.shift()!,
+    });
+
+    expect(await adapter.getEventState('life', 'event-1')).toMatchObject({ state: 'cancelled' });
+    expect(await adapter.getEventState('life', 'missing')).toEqual({ ref: 'missing', state: 'cancelled', version: null });
+  });
 });

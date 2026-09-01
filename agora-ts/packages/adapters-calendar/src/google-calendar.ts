@@ -1,4 +1,5 @@
 import type { CalendarDomainDto, CalendarEventDto } from '@agora-ts/contracts';
+import type { LinkedCalendarEventState } from '@agora-ts/core';
 
 type AccessTokenSource = string | (() => string | Promise<string>);
 
@@ -22,6 +23,7 @@ export interface GoogleCalendarCreateEventInput {
 
 interface GoogleEvent {
   id?: string;
+  etag?: string;
   status?: string;
   summary?: string;
   location?: string | null;
@@ -79,22 +81,62 @@ export class GoogleCalendarAdapter {
     return mapped;
   }
 
+  async getEventState(domain: CalendarDomainDto, eventRef: string): Promise<LinkedCalendarEventState> {
+    const ref = required(eventRef, 'eventRef');
+    const response = await this.request(this.eventUrl(domain, ref), { method: 'GET' });
+    if (response.status === 404 || response.status === 410) {
+      return { ref, state: 'cancelled', version: null };
+    }
+    await ensureOk(response, 'Google Calendar', 'GET', this.eventUrl(domain, ref).pathname);
+    const event = await response.json() as GoogleEvent;
+    return {
+      ref,
+      state: event.status === 'cancelled' ? 'cancelled' : 'scheduled',
+      version: event.etag?.trim() || null,
+    };
+  }
+
+  async cancelEvent(domain: CalendarDomainDto, eventRef: string, version?: string | null): Promise<void> {
+    const ref = required(eventRef, 'eventRef');
+    const url = this.eventUrl(domain, ref);
+    const response = await this.request(url, {
+      method: 'DELETE',
+      ...(version ? { headers: { 'if-match': version } } : {}),
+    });
+    if (response.status === 404 || response.status === 410) return;
+    await ensureOk(response, 'Google Calendar', 'DELETE', url.pathname);
+  }
+
   private eventsUrl(domain: CalendarDomainDto): URL {
     const calendarId = domain === 'work' ? this.options.calendarIds.work : this.options.calendarIds.life;
     return new URL(`/calendar/v3/calendars/${encodeURIComponent(required(calendarId, `${domain} calendarId`))}/events`, this.origin);
   }
 
+  private eventUrl(domain: CalendarDomainDto, eventRef: string): URL {
+    const url = this.eventsUrl(domain);
+    url.pathname += `/${encodeURIComponent(required(eventRef, 'eventRef'))}`;
+    return url;
+  }
+
   private async requestJson<T>(url: URL, init: RequestInit): Promise<T> {
+    const response = await this.request(url, init);
+    await ensureOk(response, 'Google Calendar', init.method ?? 'GET', url.pathname);
+    return await response.json() as T;
+  }
+
+  private async request(url: URL, init: RequestInit): Promise<Response> {
     const token = await resolveToken(this.options.accessToken);
     const timeout = AbortSignal.timeout(this.options.timeoutMs ?? 10_000);
-    const response = await this.fetchImpl(url, {
+    return await this.fetchImpl(url, {
       ...init,
       headers: { accept: 'application/json', authorization: `Bearer ${token}`, ...init.headers },
       signal: timeout,
     });
-    if (!response.ok) throw new Error(`Google Calendar returned HTTP ${response.status} for ${init.method ?? 'GET'} ${url.pathname}`);
-    return await response.json() as T;
   }
+}
+
+async function ensureOk(response: Response, provider: string, method: string, path: string): Promise<void> {
+  if (!response.ok) throw new Error(`${provider} returned HTTP ${response.status} for ${method} ${path}`);
 }
 
 function mapGoogleEvent(event: GoogleEvent): CalendarEventDto | null {

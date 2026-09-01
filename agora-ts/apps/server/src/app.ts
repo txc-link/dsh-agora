@@ -62,6 +62,7 @@ import {
   calendarQuerySchema,
   projectExternalTaskRequestSchema,
   projectCalendarEventRequestSchema,
+  configurePlanningSyncRequestSchema,
   submitMarkdownRequestSchema,
   archiveJobScanRequestSchema,
   archiveJobStatusUpdateRequestSchema,
@@ -225,6 +226,7 @@ import {
   type TaskContextBindingService,
   type CalendarService,
   type PlanningService,
+  type PlanningSyncService,
   type TaskService,
   type TemplateAuthoringService,
   type WorkspaceBootstrapService,
@@ -335,6 +337,7 @@ export interface BuildAppOptions {
   // Calendar/commitment projection through a provider-neutral port.
   calendarService?: CalendarService;
   planningService?: PlanningService;
+  planningSyncService?: PlanningSyncService;
   imProvisioningPort?: IMProvisioningPort;
   humanAccountService?: HumanAccountService;
   relationshipProfileService?: RelationshipProfileService;
@@ -1215,6 +1218,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   const taskService = options.taskService;
   const calendarService = options.calendarService;
   const planningService = options.planningService;
+  const planningSyncService = options.planningSyncService;
   const consentService = options.consentService ?? (options.db
     ? new ConsentService({ repository: new ConsentGrantRepository(options.db) })
     : undefined);
@@ -4604,6 +4608,9 @@ export function buildApp(options: BuildAppOptions = {}) {
       if (risk?.decision === 'require_human_gate' && !humanActor) {
         return reply.status(403).send({ message: 'An authenticated human Dashboard request is required for this external write', risk_assessment_id: risk.id });
       }
+      if (payload.syncMode === 'bidirectional' && !humanActor) {
+        return reply.status(403).send({ message: 'An authenticated human Dashboard request is required to enable bidirectional sync' });
+      }
       const binding = await planningService.projectExternalTask({ taskId: params.taskId, ...payload });
       return reply.status(201).send({ binding });
     } catch (error) {
@@ -4627,8 +4634,57 @@ export function buildApp(options: BuildAppOptions = {}) {
       if (risk?.decision === 'require_human_gate' && !humanActor) {
         return reply.status(403).send({ message: 'An authenticated human Dashboard request is required for this external write', risk_assessment_id: risk.id });
       }
+      if (payload.syncMode === 'bidirectional' && !humanActor) {
+        return reply.status(403).send({ message: 'An authenticated human Dashboard request is required to enable bidirectional sync' });
+      }
       const binding = await planningService.projectCalendarEvent({ taskId: params.taskId, ...payload });
       return reply.status(201).send({ binding });
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.put('/api/planning/tasks/:taskId/sync-mode', async (request, reply) => {
+    if (!planningService) return reply.status(503).send({ message: 'Planning service is not configured' });
+    try {
+      const params = request.params as { taskId: string };
+      const payload = configurePlanningSyncRequestSchema.parse(request.body);
+      const humanActor = resolveHumanActor(request, dashboardSessions, humanAccountService);
+      const risk = actionRiskService?.assess({
+        actor_ref: humanActor?.username ?? 'api:unattributed', subject_ref: `task:${params.taskId}`,
+        action_kind: 'external_side_effect', reversibility: 'reversible', recurrence: payload.mode === 'bidirectional' ? 'recurring' : 'one_off',
+        sensitive_disclosure: false, health_impact: false, third_party_effect: payload.mode === 'bidirectional', new_counterparty: false,
+        metadata: { capability: 'planning-state-sync', mode: payload.mode },
+      });
+      if (risk?.decision === 'require_human_gate' && !humanActor) {
+        return reply.status(403).send({ message: 'An authenticated human Dashboard request is required to change planning sync mode', risk_assessment_id: risk.id });
+      }
+      if (payload.mode === 'bidirectional' && !humanActor) {
+        return reply.status(403).send({ message: 'An authenticated human Dashboard request is required to enable bidirectional sync' });
+      }
+      return reply.send({ binding: planningService.configureSync(params.taskId, payload.mode) });
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/planning/tasks/:taskId/sync', async (request, reply) => {
+    if (!planningSyncService) return reply.status(503).send({ message: 'Planning sync service is not configured' });
+    try {
+      const params = request.params as { taskId: string };
+      return reply.send({ result: await planningSyncService.syncTask(params.taskId) });
+    } catch (error) {
+      const translated = translateError(error);
+      return reply.status(translated.statusCode).send(translated.body);
+    }
+  });
+
+  app.post('/api/planning/sync', async (_request, reply) => {
+    if (!planningSyncService) return reply.status(503).send({ message: 'Planning sync service is not configured' });
+    try {
+      return reply.send(await planningSyncService.syncAll());
     } catch (error) {
       const translated = translateError(error);
       return reply.status(translated.statusCode).send(translated.body);

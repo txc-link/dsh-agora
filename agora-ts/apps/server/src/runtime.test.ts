@@ -92,8 +92,10 @@ function mockRuntimeModules(existsSyncImpl: (path: string) => boolean) {
     ProjectBrainIndexJobRepository: class ProjectBrainIndexJobRepository {},
     CoordinationRepository: class CoordinationRepository {},
     FederationRepository: class FederationRepository {},
+    PlanningBindingRepository: class PlanningBindingRepository {},
     RuntimeTargetOverlayRepository: class RuntimeTargetOverlayRepository {},
     SubtaskRepository: class SubtaskRepository {},
+    TaskRepository: class TaskRepository {},
   }));
   vi.doMock('@agora-ts/core', () => ({
     CompositeAgentInventorySource: class CompositeAgentInventorySource {},
@@ -108,6 +110,8 @@ function mockRuntimeModules(existsSyncImpl: (path: string) => boolean) {
     },
     MemoryService: class MemoryService {},
     MergeCoordinatorService: class MergeCoordinatorService {},
+    PlanningService: class PlanningService {},
+    PlanningSyncService: class PlanningSyncService {},
     RuntimeNodeCredentialService: class RuntimeNodeCredentialService {},
     RuntimeTargetService: class RuntimeTargetService {},
     TaskService: class TaskService {

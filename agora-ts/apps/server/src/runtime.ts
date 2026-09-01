@@ -30,6 +30,7 @@ import {
   RuntimeTargetService,
   CalendarService,
   PlanningService,
+  PlanningSyncService,
 } from '@agora-ts/core';
 import { OpenAiCompatibleProjectBrainEmbeddingAdapter, QdrantProjectBrainVectorIndexAdapter } from '@agora-ts/adapters-brain';
 import { A2aGatewayService } from '@agora-ts/adapters-runtime';
@@ -298,8 +299,9 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
   }) : undefined;
   const tickTickEnv = readTickTickEnv(process.env);
   const externalTaskProvider = tickTickEnv ? createExternalTaskProviderFromEnv(tickTickEnv) : undefined;
+  const planningRepo = new PlanningBindingRepository(db);
   const planningService = new PlanningService({
-    repo: new PlanningBindingRepository(db),
+    repo: planningRepo,
     taskRepo: new TaskRepository(db),
     ...(calendarProvider ? { calendarProvider } : {}),
     ...(externalTaskProvider ? { taskProvider: externalTaskProvider } : {}),
@@ -317,6 +319,15 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
     ...(options.isCraftsmanSessionAlive ? { isCraftsmanSessionAlive: options.isCraftsmanSessionAlive } : {}),
   }, options.factories);
   const { taskService } = composition;
+  const planningSyncService = new PlanningSyncService({
+    repo: planningRepo,
+    taskPort: {
+      getTask: taskId => taskService.getTask(taskId),
+      transitionTask: (taskId, state, reason) => taskService.updateTaskState(taskId, state, { reason }),
+    },
+    ...(calendarProvider ? { calendarProvider } : {}),
+    ...(externalTaskProvider ? { taskProvider: externalTaskProvider } : {}),
+  });
   const runtimeTargetService = new RuntimeTargetService({
     agentInventory: composition.agentRegistry,
     overlayRepository: new RuntimeTargetOverlayRepository(db),
@@ -391,9 +402,28 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
       coordinationTimer = null;
     }
   };
+  const planningSyncIntervalMs = parseOptionalInt(process.env.PLANNING_SYNC_INTERVAL_MS);
+  let planningSyncRunning = false;
+  let planningSyncTimer: NodeJS.Timeout | null = planningSyncIntervalMs !== null && planningSyncIntervalMs > 0
+    ? setInterval(() => {
+        if (planningSyncRunning) return;
+        planningSyncRunning = true;
+        void planningSyncService.syncAll()
+          .catch((error: unknown) => console.error('[agora] planning sync tick failed', error))
+          .finally(() => { planningSyncRunning = false; });
+      }, planningSyncIntervalMs)
+    : null;
+  planningSyncTimer?.unref?.();
+  const stopPlanningSync = () => {
+    if (planningSyncTimer) {
+      clearInterval(planningSyncTimer);
+      planningSyncTimer = null;
+    }
+  };
   const closeDatabase = db.close;
   db.close = () => {
     stopCoordinationReconciliation();
+    stopPlanningSync();
     closeDatabase();
   };
   const dispose = () => {
@@ -403,6 +433,7 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
     composition.discordPresenceService?.stop();
     observationScheduler.stop();
     stopCoordinationReconciliation();
+    stopPlanningSync();
   };
 
   return {
@@ -411,6 +442,7 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
     ...composition,
     ...(calendarService ? { calendarService } : {}),
     planningService,
+    planningSyncService,
     runtimeTargetService,
     coordinationService,
     artifactService,

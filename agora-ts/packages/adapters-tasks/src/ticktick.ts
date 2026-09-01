@@ -64,21 +64,50 @@ export class TickTickTaskAdapter implements ExternalTaskProviderPort {
     await this.request(`project/${project}/task/${task}/complete`, { method: 'POST' });
   }
 
+  async getTask(input: { projectRef: string; taskRef: string }): Promise<ExternalPlanningTask | null> {
+    const project = encodeURIComponent(required(input.projectRef, 'projectRef'));
+    const task = encodeURIComponent(required(input.taskRef, 'taskRef'));
+    const response = await this.request(`project/${project}/task/${task}`, { method: 'GET' }, [404]);
+    if (response.status === 404) return null;
+    return mapTask(await response.json() as TickTickTaskResponse, input.projectRef);
+  }
+
+  async deleteTask(input: { projectRef: string; taskRef: string }): Promise<void> {
+    const project = encodeURIComponent(required(input.projectRef, 'projectRef'));
+    const task = encodeURIComponent(required(input.taskRef, 'taskRef'));
+    await this.request(`project/${project}/task/${task}`, { method: 'DELETE' }, [404]);
+  }
+
   private async requestJson<T>(path: string, init: RequestInit): Promise<T> {
     const response = await this.request(path, init);
     return await response.json() as T;
   }
 
-  private async request(path: string, init: RequestInit): Promise<Response> {
+  private async request(path: string, init: RequestInit, allowedStatuses: readonly number[] = []): Promise<Response> {
     const token = await resolveToken(this.options.accessToken);
     const response = await this.fetchImpl(new URL(path, this.baseUrl), {
       ...init,
       headers: { accept: 'application/json', authorization: `Bearer ${token}`, ...init.headers },
       signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000),
     });
-    if (!response.ok) throw new Error(`TickTick returned HTTP ${response.status} for ${init.method ?? 'GET'} /${path}`);
+    if (!response.ok && !allowedStatuses.includes(response.status)) {
+      throw new Error(`TickTick returned HTTP ${response.status} for ${init.method ?? 'GET'} /${path}`);
+    }
     return response;
   }
+}
+
+function mapTask(result: TickTickTaskResponse, fallbackProjectRef: string): ExternalPlanningTask {
+  return {
+    id: required(result.id ?? '', 'TickTick task id'),
+    projectRef: result.projectId?.trim() || fallbackProjectRef,
+    title: result.title?.trim() || '(untitled)',
+    content: result.content ?? null,
+    start: result.startDate ?? null,
+    due: result.dueDate ?? null,
+    timeZone: result.timeZone ?? null,
+    status: result.status === 2 ? 'completed' : 'open',
+  };
 }
 
 async function resolveToken(source: AccessTokenSource): Promise<string> {

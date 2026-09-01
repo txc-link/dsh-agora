@@ -118,7 +118,7 @@ import type {
   IOrganizationRepository,
   IExecutiveAssistantRepository,
 } from '@agora-ts/contracts';
-import { NotificationOutboxRepository, TaskRepository } from '@agora-ts/db';
+import { NotificationOutboxRepository, PlanningBindingRepository, TaskRepository } from '@agora-ts/db';
 import { ThreadTaskBindingRepository } from '@agora-ts/db';
 import { OpenAiCompatibleProjectBrainEmbeddingAdapter } from '@agora-ts/adapters-brain';
 import { buildCcConnectAgentId, CcConnectAgentRegistry, loadCcConnectProjectTargets } from '@agora-ts/adapters-cc-connect';
@@ -5632,6 +5632,70 @@ export function createCliProgram(deps: CliDependencies = {}) {
       const service = await calendarResolveService();
       const md = await service.eveningReport((options.domain as 'work' | 'life') ?? 'work');
       writeLine(stdout, md);
+    });
+
+  const planning = program
+    .command('planning')
+    .description('Google Calendar / TickTick consented state synchronization');
+
+  const planningResolveSyncService = async () => {
+    const { PlanningSyncService } = await import('@agora-ts/core');
+    const { GoogleCalendarAdapter } = await import('@agora-ts/adapters-calendar');
+    const { TickTickTaskAdapter } = await import('@agora-ts/adapters-tasks');
+    const tickTickToken = process.env.TICKTICK_ACCESS_TOKEN?.trim();
+    const googleToken = process.env.GOOGLE_CALENDAR_ACCESS_TOKEN?.trim();
+    const googleWork = process.env.GOOGLE_CALENDAR_WORK_ID?.trim();
+    const googleLife = process.env.GOOGLE_CALENDAR_LIFE_ID?.trim();
+    if (googleToken && (!googleWork || !googleLife)) {
+      throw new Error('Google calendar sync requires GOOGLE_CALENDAR_WORK_ID + GOOGLE_CALENDAR_LIFE_ID');
+    }
+    const taskProvider = tickTickToken
+      ? new TickTickTaskAdapter({
+          accessToken: tickTickToken,
+          ...(process.env.TICKTICK_API_BASE_URL ? { baseUrl: process.env.TICKTICK_API_BASE_URL } : {}),
+        })
+      : undefined;
+    const calendarProvider = googleToken && googleWork && googleLife
+      ? new GoogleCalendarAdapter({ accessToken: googleToken, calendarIds: { work: googleWork, life: googleLife } })
+      : undefined;
+    return new PlanningSyncService({
+      repo: new PlanningBindingRepository(resolveComposition().db),
+      taskPort: {
+        getTask: taskId => taskService.getTask(taskId),
+        transitionTask: (taskId, state, reason) => taskService.updateTaskState(taskId, state, { reason }),
+      },
+      ...(taskProvider ? { taskProvider } : {}),
+      ...(calendarProvider ? { calendarProvider } : {}),
+    });
+  };
+
+  planning
+    .command('sync')
+    .description('synchronize one previously-consented planning binding')
+    .argument('<taskId>', 'Agora task ID')
+    .option('--json', 'output JSON', false)
+    .action(async (taskId: string, options: { json?: boolean }) => {
+      const result = await (await planningResolveSyncService()).syncTask(taskId);
+      if (options.json) {
+        writeLine(stdout, JSON.stringify(result, null, 2));
+      } else {
+        writeLine(stdout, `${result.taskId}: ${result.status}${result.actions.length ? ` (${result.actions.join(', ')})` : ''}${result.error ? ` — ${result.error}` : ''}`);
+      }
+      if (result.status === 'failed' || result.status === 'conflict') process.exitCode = 1;
+    });
+
+  planning
+    .command('sync-all')
+    .description('synchronize all bindings; manual bindings are skipped')
+    .option('--json', 'output JSON', false)
+    .action(async (options: { json?: boolean }) => {
+      const summary = await (await planningResolveSyncService()).syncAll();
+      if (options.json) {
+        writeLine(stdout, JSON.stringify(summary, null, 2));
+      } else {
+        writeLine(stdout, `synced=${summary.synced} conflicts=${summary.conflicts} failed=${summary.failed} skipped=${summary.skipped}`);
+      }
+      if (summary.failed > 0 || summary.conflicts > 0) process.exitCode = 1;
     });
 
   const approvals = program

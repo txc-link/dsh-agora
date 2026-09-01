@@ -523,10 +523,16 @@ export {
 } from './governance-service.js';
 export { redactSecrets, redactSecretText } from './secret-redaction.js';
 export { CalendarService, isoDateInTz, type CalendarServiceOptions } from './calendar-service.js';
-export type { CalendarProviderPort, CreateCalendarEventInput } from './calendar-provider-port.js';
+export type { CalendarProviderPort, CreateCalendarEventInput, LinkedCalendarEventState } from './calendar-provider-port.js';
 export type {
   CreateExternalTaskInput,
   ExternalPlanningTask,
   ExternalTaskProviderPort,
 } from './external-task-provider-port.js';
 export { PlanningService, type PlanningServiceOptions } from './planning-service.js';
+export {
+  PlanningSyncService,
+  type PlanningSyncResult,
+  type PlanningSyncServiceOptions,
+  type PlanningTaskStatePort,
+} from './planning-sync-service.js';

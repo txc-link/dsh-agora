@@ -17,7 +17,12 @@ describe('PlanningBindingRepository', () => {
     repo.upsert({ taskId: 'task-1', domain: 'life', externalTask: { provider: 'ticktick', ref: 'tt-1', projectRef: 'p-1' } });
     const binding = repo.upsert({ taskId: 'task-1', domain: 'life', calendarEvent: { provider: 'google-calendar', ref: 'gc-1' } });
 
-    expect(binding).toMatchObject({ externalTaskRef: 'tt-1', calendarEventRef: 'gc-1', domain: 'life' });
+    expect(binding).toMatchObject({ externalTaskRef: 'tt-1', calendarEventRef: 'gc-1', domain: 'life', syncMode: 'manual', lastSyncStatus: 'pending' });
     expect(repo.list()).toHaveLength(1);
+
+    const configured = repo.setSyncMode('task-1', 'bidirectional');
+    expect(configured.syncMode).toBe('bidirectional');
+    const synced = repo.recordSyncResult('task-1', { status: 'conflict', syncedAt: '2026-09-01T01:00:00.000Z', error: 'terminal disagreement' });
+    expect(synced).toMatchObject({ lastSyncStatus: 'conflict', lastSyncAt: '2026-09-01T01:00:00.000Z', lastSyncError: 'terminal disagreement' });
   });
 });
