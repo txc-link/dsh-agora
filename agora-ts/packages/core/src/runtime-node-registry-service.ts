@@ -10,7 +10,12 @@ import type {
   RecordRuntimeNodeDispatchProgressRequestDto,
   RuntimeNodeDispatchProgressDto,
 } from '@agora-ts/contracts';
+import {
+  runtimeActionAuditContextSchema,
+  type RuntimeActionAuditContextDto,
+} from '@agora-ts/contracts';
 import { ConflictError, NotFoundError } from './errors.js';
+import type { ActionAuditService } from './action-audit-service.js';
 import type {
   AgentInventorySource,
   AgentPresenceSnapshot,
@@ -36,8 +41,19 @@ export interface RuntimeNodeRepositoryPort {
   completeDelivery(nodeId: string, deliveryId: string, input: CompleteRuntimeNodeDeliveryRequestDto, now?: Date): RuntimeNodeDeliveryDto | null;
 }
 
+export interface RuntimeNodeRegistryServiceOptions {
+  actionAuditService?: ActionAuditService;
+}
+
 export class RuntimeNodeRegistryService implements AgentInventorySource, PresenceSource {
-  constructor(private readonly repository: RuntimeNodeRepositoryPort) {}
+  private readonly actionAuditService: ActionAuditService | undefined;
+
+  constructor(
+    private readonly repository: RuntimeNodeRepositoryPort,
+    options: RuntimeNodeRegistryServiceOptions = {},
+  ) {
+    this.actionAuditService = options.actionAuditService;
+  }
 
   heartbeat(nodeId: string, input: RuntimeNodeHeartbeatRequestDto): RuntimeNodeDto {
     const current = this.repository.getNode(nodeId);
@@ -67,7 +83,42 @@ export class RuntimeNodeRegistryService implements AgentInventorySource, Presenc
     if (!input.runtime_target_ref.startsWith(expectedPrefix)) {
       throw new TypeError(`runtime_target_ref must start with ${expectedPrefix}`);
     }
-    return this.repository.createDispatch(nodeId, input);
+    const audit = this.readAuditContext(input.metadata);
+    if (!audit) return this.repository.createDispatch(nodeId, input);
+    if (!input.task_id) throw new ConflictError('audited runtime dispatch requires task_id');
+    if (!this.actionAuditService) throw new ConflictError('action audit service is not configured');
+    const attempt = this.actionAuditService.admit({
+      task_id: input.task_id,
+      collaboration_plan_id: audit.collaboration_plan_id ?? null,
+      execution_baseline_id: audit.execution_baseline_id ?? null,
+      delegation_authority_id: audit.delegation_authority_id,
+      subtask_spec_id: audit.subtask_spec_id ?? null,
+      actor_ref: audit.actor_ref,
+      action: audit.action,
+      subject_ref: audit.subject_ref,
+      idempotency_key: audit.idempotency_key,
+    });
+    if (attempt.decision === 'deny') {
+      throw new ConflictError(`ActionAttempt ${attempt.id} denied: ${attempt.decision_reason}`);
+    }
+    const auditedMetadata = {
+      ...(input.metadata ?? {}),
+      action_audit: { ...audit, attempt_id: attempt.id },
+    };
+    try {
+      return this.repository.createDispatch(nodeId, { ...input, metadata: auditedMetadata });
+    } catch (error) {
+      this.recordAuditReceipt(attempt.id, {
+        outcome: 'failed',
+        provider_ref: `runtime-dispatch:create:${input.idempotency_key}`,
+        evidence_refs: [],
+        error_code: 'RUNTIME_DISPATCH_CREATE_FAILED',
+        summary: error instanceof Error ? error.message : String(error),
+        created_by: `runtime-node:${nodeId}`,
+        idempotency_key: `runtime-dispatch:create:${input.idempotency_key}`,
+      });
+      throw error;
+    }
   }
 
   getDispatch(dispatchId: string): RuntimeNodeDispatchDto {
@@ -82,8 +133,16 @@ export class RuntimeNodeRegistryService implements AgentInventorySource, Presenc
   }
 
   cancelDispatch(dispatchId: string, reason: string): RuntimeNodeDispatchDto {
+    const previous = this.repository.getDispatch(dispatchId);
     const dispatch = this.repository.cancelDispatch(dispatchId, reason);
     if (!dispatch) throw new NotFoundError(`Runtime dispatch ${dispatchId} not found`);
+    if (previous?.status !== 'cancelled' && dispatch.status === 'cancelled') {
+      this.recordDispatchReceipt(dispatch, {
+        outcome: 'failed',
+        error_code: 'RUNTIME_DISPATCH_CANCELLED',
+        summary: reason,
+      });
+    }
     return dispatch;
   }
 
@@ -123,7 +182,64 @@ export class RuntimeNodeRegistryService implements AgentInventorySource, Presenc
     this.assertOwner(nodeId, input.instance_id);
     const dispatch = this.repository.completeDispatch(nodeId, dispatchId, input);
     if (!dispatch) throw new ConflictError(`Runtime dispatch ${dispatchId} lease is expired or fenced`);
+    if (dispatch.status === 'completed' || dispatch.status === 'failed') {
+      this.recordDispatchReceipt(dispatch, {
+        outcome: dispatch.status === 'completed' ? 'succeeded' : 'failed',
+        error_code: dispatch.status === 'failed' ? 'RUNTIME_DISPATCH_FAILED' : null,
+        summary: dispatch.error ?? `Runtime dispatch ${dispatch.status}`,
+      });
+    }
     return dispatch;
+  }
+
+  private readAuditContext(metadata: Record<string, unknown> | null | undefined): RuntimeActionAuditContextDto | null {
+    if (!metadata || !Object.prototype.hasOwnProperty.call(metadata, 'action_audit')) return null;
+    return runtimeActionAuditContextSchema.parse(metadata.action_audit);
+  }
+
+  private recordDispatchReceipt(
+    dispatch: RuntimeNodeDispatchDto,
+    result: {
+      outcome: 'succeeded' | 'failed';
+      error_code: string | null;
+      summary: string;
+    },
+  ): void {
+    const audit = this.readAuditContext(dispatch.metadata);
+    if (!audit?.attempt_id || !this.actionAuditService) return;
+    const evidenceRefs = [`runtime-dispatch:${dispatch.id}`];
+    for (const evidence of dispatch.result_envelope?.evidence ?? []) {
+      evidenceRefs.push(
+        evidence.uri
+        ?? evidence.revision
+        ?? evidence.content_hash
+        ?? `runtime-evidence:${dispatch.id}:${evidence.id}`,
+      );
+    }
+    if (!dispatch.task_id) return;
+    this.recordAuditReceipt(audit.attempt_id, {
+      ...result,
+      provider_ref: `runtime-dispatch:${dispatch.id}`,
+      evidence_refs: [...new Set(evidenceRefs)],
+      created_by: `runtime-node:${dispatch.node_id}`,
+      idempotency_key: `runtime-dispatch:${dispatch.id}:${result.outcome}`,
+    });
+  }
+
+  private recordAuditReceipt(
+    attemptId: string,
+    input: {
+      outcome: 'succeeded' | 'failed';
+      provider_ref: string;
+      evidence_refs: string[];
+      error_code: string | null;
+      summary: string;
+      created_by: string;
+      idempotency_key: string;
+    },
+  ): void {
+    if (!this.actionAuditService) return;
+    this.actionAuditService.recordReceipt({ attempt_id: attemptId, ...input });
   }
 
   claimDelivery(nodeId: string, instanceId: string, leaseSeconds: number): RuntimeNodeDeliveryDto | null {

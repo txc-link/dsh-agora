@@ -72,7 +72,7 @@ export type { DashboardQueryServiceOptions } from './dashboard-query-service.js'
 export { DashboardQueryService } from './dashboard-query-service.js';
 export type { RuntimeTargetServiceOptions } from './runtime-target-service.js';
 export { RuntimeTargetService } from './runtime-target-service.js';
-export type { RuntimeNodeRepositoryPort } from './runtime-node-registry-service.js';
+export type { RuntimeNodeRegistryServiceOptions, RuntimeNodeRepositoryPort } from './runtime-node-registry-service.js';
 export { RuntimeNodeRegistryService, runtimeTargetRefFor } from './runtime-node-registry-service.js';
 export type { CoordinationRepositoryPort, CoordinationMemoryReader, CoordinationServiceOptions } from './coordination-service.js';
 export { CoordinationService, synthesize } from './coordination-service.js';

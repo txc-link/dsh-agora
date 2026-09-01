@@ -63,3 +63,22 @@ export const actionReceiptSchema = z.object({
 }).strict();
 export type ActionReceiptDto = z.infer<typeof actionReceiptSchema>;
 export const actionReceiptListResponseSchema = z.object({ receipts: z.array(actionReceiptSchema) }).strict();
+
+/**
+ * Optional metadata carried by a runtime dispatch when its provider-neutral
+ * operation must pass the ActionAuditService admission boundary. The
+ * `attempt_id` field is written by the runtime after admission and is never
+ * accepted as an authorization substitute.
+ */
+export const runtimeActionAuditContextSchema = z.object({
+  collaboration_plan_id: z.string().min(1).nullable().optional(),
+  execution_baseline_id: z.string().min(1).nullable().optional(),
+  delegation_authority_id: z.string().min(1),
+  subtask_spec_id: z.string().min(1).nullable().optional(),
+  actor_ref: z.string().min(1).max(512),
+  action: delegationActionSchema,
+  subject_ref: z.string().min(1).max(2_000),
+  idempotency_key: z.string().min(1).max(256),
+  attempt_id: z.string().min(1).nullable().optional(),
+}).strict();
+export type RuntimeActionAuditContextDto = z.infer<typeof runtimeActionAuditContextSchema>;

@@ -8,6 +8,6 @@ This slice adds the runtime evidence boundary after collaboration planning:
 
 Admission is deterministic: task/plan/baseline references must line up, the authority must be active and unexpired, and the requested delegation action must be allowed. `request_approval` only records an approval request; Dashboard human approval remains the sole approval authority.
 
-The service is deliberately invoked at composition/runtime boundaries. Existing adapters can adopt it incrementally without moving provider semantics into Core.
+The service is deliberately invoked at composition/runtime boundaries. The DSH `RuntimeNodeRegistryService` now admits and receipts dispatches that carry `metadata.action_audit`; existing adapters can adopt the same context incrementally without moving provider semantics into Core.
 
-Deferred: automatic instrumentation of every existing adapter, provider readback, and richer evidence extraction.
+Deferred: instrumentation of non-DSH provider adapters, provider readback, and richer evidence extraction.

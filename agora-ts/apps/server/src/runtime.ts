@@ -1,5 +1,10 @@
 import {
+  ActionAttemptRepository,
+  ActionReceiptRepository,
+  CollaborationPlanRepository,
   CoordinationRepository,
+  DelegationAuthorityRepository,
+  ExecutionBaselineRepository,
   FederationRepository,
   ProjectBrainIndexJobRepository,
   RuntimeTargetOverlayRepository,
@@ -17,6 +22,7 @@ import {
   type AgoraConfig,
 } from '@agora-ts/config';
 import {
+  ActionAuditService,
   ProjectBrainChunkingPolicy,
   ProjectBrainDoctorService,
   ProjectBrainIndexQueueService,
@@ -291,6 +297,13 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
   });
   const db = createAgoraDatabase({ dbPath: config.db_path, busyTimeoutMs: config.db_busy_timeout_ms });
   runMigrations(db);
+  const actionAuditService = new ActionAuditService({
+    attempts: new ActionAttemptRepository(db),
+    receipts: new ActionReceiptRepository(db),
+    plans: new CollaborationPlanRepository(db),
+    authorities: new DelegationAuthorityRepository(db),
+    baselines: new ExecutionBaselineRepository(db),
+  });
   const calendarEnv = readCalendarEnv(process.env);
   const calendarProvider = calendarEnv ? createCalendarProviderFromEnv(calendarEnv) : undefined;
   const calendarService = calendarProvider ? new CalendarService({
@@ -316,6 +329,7 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
     templatesDir,
     rolePackDir,
     brainPackDir,
+    actionAuditService,
     ...(options.isCraftsmanSessionAlive ? { isCraftsmanSessionAlive: options.isCraftsmanSessionAlive } : {}),
   }, options.factories);
   const { taskService } = composition;
@@ -443,6 +457,7 @@ export function createServerRuntime(options: CreateServerRuntimeOptions = {}) {
     ...(calendarService ? { calendarService } : {}),
     planningService,
     planningSyncService,
+    actionAuditService,
     runtimeTargetService,
     coordinationService,
     artifactService,

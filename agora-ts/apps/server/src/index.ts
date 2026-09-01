@@ -57,6 +57,7 @@ export function createAppFromRuntime(runtime: ReturnType<typeof createServerRunt
     ...(runtime.calendarService ? { calendarService: runtime.calendarService } : {}),
     planningService: runtime.planningService,
     planningSyncService: runtime.planningSyncService,
+    actionAuditService: runtime.actionAuditService,
   });
   app.addHook('onClose', async () => {
     await runtime.dispose?.();

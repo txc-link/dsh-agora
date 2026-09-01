@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { dirname, join, resolve as resolvePath } from 'node:path';
 import {
+  type ActionAuditService,
   CitizenService,
   CcConnectManagementService,
   CompositeAgentInventorySource,
@@ -138,6 +139,7 @@ export interface ServerCompositionContext {
   templatesDir: string;
   rolePackDir: string;
   brainPackDir: string;
+  actionAuditService?: ActionAuditService;
   isCraftsmanSessionAlive?: (sessionId: string) => boolean;
 }
 
@@ -341,6 +343,7 @@ export function createDefaultServerCompositionFactories(): ServerCompositionFact
   return {
     createRuntimeNodeRegistryService: (context) => new RuntimeNodeRegistryService(
       new RuntimeNodeRepository(context.db),
+      context.actionAuditService ? { actionAuditService: context.actionAuditService } : undefined,
     ),
     createLiveSessionStore: () => new LiveSessionStore({
       staleAfterMs: Number(process.env.AGORA_LIVE_SESSION_TTL_MS ?? 15 * 60 * 1000),

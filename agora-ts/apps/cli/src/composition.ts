@@ -38,7 +38,10 @@ import {
   TodoRepository,
   ArchiveJobRepository,
   ApprovalRequestRepository,
+  ActionAttemptRepository,
+  ActionReceiptRepository,
   BorrowRequestRepository,
+  CollaborationPlanRepository,
   InboxRepository,
   NotificationOutboxRepository,
   TemplateRepository,
@@ -47,6 +50,8 @@ import {
   RuntimeSessionBindingRepository,
   RuntimeNodeRepository,
   CoordinationRepository,
+  DelegationAuthorityRepository,
+  ExecutionBaselineRepository,
   FederationRepository,
   TaskAuthorityRepository,
   ProjectWriteLockRepository,
@@ -57,6 +62,7 @@ import { dirname, join, resolve as resolvePath } from 'node:path';
 import { createDashboardSessionClient, type DashboardSessionClient } from './dashboard-session-client.js';
 import {
   CitizenService,
+  ActionAuditService,
   CompositeAgentInventorySource,
   CraftsmanCallbackService,
   CraftsmanDispatcher,
@@ -115,8 +121,6 @@ import {
   type AgentRuntimePort,
   type IMMessagingPort,
   type IMProvisioningPort,
-  type Permission,
-  type Posture,
   type ScopeAuthorization,
 } from '@agora-ts/core';
 import { FilesystemContextSourceRetrievalAdapter, FilesystemSkillCatalogAdapter, FilesystemProjectBrainQueryAdapter, FilesystemProjectKnowledgeAdapter, FilesystemTaskBrainWorkspaceAdapter, OpenAiCompatibleProjectBrainEmbeddingAdapter, QdrantProjectBrainVectorIndexAdapter } from '@agora-ts/adapters-brain';
@@ -286,6 +290,7 @@ export interface CliComposition {
   memoryService: MemoryService;
   runtimeNodeCredentialService: RuntimeNodeCredentialService;
   mergeCoordinatorService: MergeCoordinatorService;
+  actionAuditService: ActionAuditService;
 }
 
 function ensureRuntimeBrainPackRoot(projectRoot: string): string {
@@ -799,9 +804,16 @@ export function createCliComposition(
   );
   const memoryService = new MemoryService(federationRepository);
   const runtimeNodeCredentialService = new RuntimeNodeCredentialService(federationRepository);
+  const actionAuditService = new ActionAuditService({
+    attempts: new ActionAttemptRepository(db),
+    receipts: new ActionReceiptRepository(db),
+    plans: new CollaborationPlanRepository(db),
+    authorities: new DelegationAuthorityRepository(db),
+    baselines: new ExecutionBaselineRepository(db),
+  });
   const coordinationService = new CoordinationService({
     repository: new CoordinationRepository(db),
-    runtimeNodes: new RuntimeNodeRegistryService(new RuntimeNodeRepository(db)),
+    runtimeNodes: new RuntimeNodeRegistryService(new RuntimeNodeRepository(db), { actionAuditService }),
     memory: { query: input => memoryService.query({ ...input, limit: input.limit ?? 20 }) },
   });
   const mergeCoordinatorService = new MergeCoordinatorService(
@@ -839,6 +851,7 @@ export function createCliComposition(
     memoryService,
     runtimeNodeCredentialService,
     mergeCoordinatorService,
+    actionAuditService,
   };
 }
 
@@ -890,34 +903,6 @@ function createTransactionManager(db: AgoraDatabase): TransactionManager {
     commit: () => db.exec('COMMIT'),
     rollback: () => db.exec('ROLLBACK'),
   };
-}
-
-/**
- * Resolve scope authorization for the borrow service from environment.
- *
- * P3.5-2 stub: composition root reads AGORA_BORROW_SCOPE / _POSTURE / _PERMISSIONS.
- * P3.5-3 will replace this with a worksite-registry-backed resolver that reads
- * `scopeAuthorization` from the target WorkSite metadata. Until then, an
- * unset env returns `undefined` and the borrow service denies (fail-safe).
- */
-function scopeAuthorizationFromEnv(env: NodeJS.ProcessEnv): ScopeAuthorization | undefined {
-  const scope = env['AGORA_BORROW_SCOPE'];
-  const postureRaw = env['AGORA_BORROW_POSTURE'];
-  const permissionsRaw = env['AGORA_BORROW_PERMISSIONS'];
-  if (scope === undefined || scope === '' || postureRaw === undefined || permissionsRaw === undefined) {
-    return undefined;
-  }
-  if (postureRaw !== 'Strict' && postureRaw !== 'Auto' && postureRaw !== 'Dangerous') {
-    return undefined;
-  }
-  const permissions = permissionsRaw
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s): s is Permission => s === 'read' || s === 'write' || s === 'delete' || s === 'execute');
-  if (permissions.length === 0) {
-    return undefined;
-  }
-  return { scope, posture: postureRaw, permissions };
 }
 
 /**

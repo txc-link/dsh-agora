@@ -96,7 +96,7 @@ import {
   ExecutiveAssistantService,
   GovernedExecutionService,
   CollaborationGovernanceService,
-  ActionAuditService,
+  type ActionAuditService,
   type ExecutiveTaskPort,
   runTaskAskCommand,
   ThreadTaskBindingService,
@@ -148,8 +148,6 @@ import {
   SubTaskSpecRepository,
   DelegationAuthorityRepository,
   CollaborationPlanRepository,
-  ActionAttemptRepository,
-  ActionReceiptRepository,
   CoordinationRepository,
   type AgoraDatabase,
 } from '@agora-ts/db';
@@ -754,13 +752,7 @@ export function createCliProgram(deps: CliDependencies = {}) {
     authorities: new DelegationAuthorityRepository(resolveComposition().db),
     plans: new CollaborationPlanRepository(resolveComposition().db),
   }));
-  const actionAuditService = createLazyObject(() => deps.actionAuditService ?? new ActionAuditService({
-    attempts: new ActionAttemptRepository(resolveComposition().db),
-    receipts: new ActionReceiptRepository(resolveComposition().db),
-    plans: new CollaborationPlanRepository(resolveComposition().db),
-    authorities: new DelegationAuthorityRepository(resolveComposition().db),
-    baselines: new ExecutionBaselineRepository(resolveComposition().db),
-  }));
+  const actionAuditService = createLazyObject(() => deps.actionAuditService ?? resolveComposition().actionAuditService);
   const runtimeNodeCredentialService = createLazyObject(() => deps.runtimeNodeCredentialService ?? resolveComposition().runtimeNodeCredentialService);
   const mergeCoordinatorService = createLazyObject(() => deps.mergeCoordinatorService ?? resolveComposition().mergeCoordinatorService);
   const borrowService = createLazyObject(() => deps.borrowService ?? resolveComposition().borrowService);
