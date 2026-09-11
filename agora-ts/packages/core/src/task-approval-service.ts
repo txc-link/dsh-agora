@@ -90,6 +90,17 @@ export interface TaskApprovalServiceOptions {
    * backs the per-task `resolvePendingApprovalRequest` callback.
    */
   approvalRequestRepository?: Pick<IApprovalRequestRepository, 'getById' | 'listPending'>;
+  /**
+   * T_transfer hook: when an approval with gate_type='task_transfer' is
+   * decided, delegate to TaskTransferService so the pending transfer row is
+   * applied/rejected and the task team is rebound.
+   */
+  resolveTaskTransfer?: (input: {
+    transferId: string;
+    decision: 'approve' | 'reject';
+    reviewerId: string;
+    approvalId: string;
+  }) => TaskRecord;
 }
 
 export class TaskApprovalService {
@@ -399,6 +410,20 @@ export class TaskApprovalService {
               reviewerId: options.reviewerId,
               reason: options.comment,
             });
+      case 'task_transfer': {
+        const transferId = typeof row.metadata?.transfer_id === 'string'
+          ? row.metadata.transfer_id
+          : undefined;
+        if (!this.options.resolveTaskTransfer || !transferId) {
+          throw new Error(`approval request ${approvalId} references an invalid task_transfer row`);
+        }
+        return this.options.resolveTaskTransfer({
+          transferId,
+          decision: options.decision,
+          reviewerId: options.reviewerId,
+          approvalId,
+        });
+      }
       default:
         throw new Error(`approval request ${approvalId} has unsupported gate_type ${row.gate_type}`);
     }

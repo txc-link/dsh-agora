@@ -548,3 +548,4 @@ export {
   type PlanningSyncServiceOptions,
   type PlanningTaskStatePort,
 } from './planning-sync-service.js';
+export { TaskTransferService, type TaskTransferServiceOptions } from './task-transfer-service.js';
