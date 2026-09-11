@@ -63,7 +63,12 @@ function currentRuntime(task: TaskRecord): string {
 }
 
 export class TaskTransferService {
-  constructor(private readonly options: TaskTransferServiceOptions) {}
+  /** 解析后的必选时钟：`exactOptionalPropertyTypes` 下不允许把 `undefined` 显式传给可选参数。 */
+  private readonly now: () => string;
+
+  constructor(private readonly options: TaskTransferServiceOptions) {
+    this.now = options.now ?? (() => new Date().toISOString());
+  }
 
   /**
    * Dashboard-session path: validates then applies immediately (A4 satisfied).
@@ -100,7 +105,7 @@ export class TaskTransferService {
       decidedBy: null,
       status: 'pending',
       metadata: dto.comment ? { comment: dto.comment } : null,
-      now: this.options.now,
+      now: this.now,
     });
 
     let approvalId: string | null = null;
@@ -139,15 +144,10 @@ export class TaskTransferService {
     }
     const task = this.loadTask(transfer.taskId);
     this.assertTransferable(task);
-    const updated = this.applyTransferToTask(task, transfer.toRuntimeRef, {
-      decidedBy,
-      approvalId,
-      previousMembers: (transfer.metadata?.previous_members as TaskTeamMemberDto[] | undefined) ?? task.team.members,
-      comment: (transfer.metadata?.comment as string | undefined) ?? null,
-    });
+    const updated = this.applyTransferToTask(task, transfer.toRuntimeRef);
     this.options.transferRepository.applyTransfer(transferId, decidedBy, {
       approvalId,
-      now: this.options.now,
+      now: this.now,
     });
     return {
       task: { id: updated.id, state: updated.state, currentStage: updated.current_stage },
@@ -164,8 +164,8 @@ export class TaskTransferService {
       throw new Error(`task transfer ${transferId} not found`);
     }
     this.options.transferRepository.rejectTransfer(transferId, decidedBy, {
-      approvalId,
-      now: this.options.now,
+      approvalId: approvalId ?? null,
+      now: this.now,
     });
     return {
       task: { id: transfer.taskId, state: 'unknown', currentStage: null },
@@ -230,11 +230,7 @@ export class TaskTransferService {
     return target;
   }
 
-  private applyTransferToTask(
-    task: TaskRecord,
-    toRuntimeRef: string,
-    ctx: { decidedBy: string; approvalId?: string | null; previousMembers: TaskTeamMemberDto[]; comment?: string | null },
-  ): TaskRecord {
+  private applyTransferToTask(task: TaskRecord, toRuntimeRef: string): TaskRecord {
     const fromRef = currentRuntime(task);
     if (fromRef === toRuntimeRef) {
       throw new Error(`task ${task.id} is already bound to ${toRuntimeRef}`);
@@ -269,11 +265,7 @@ export class TaskTransferService {
     }
     this.resolveTarget(dto.toRuntimeRef);
     const fromRef = currentRuntime(task);
-    const updated = this.applyTransferToTask(task, dto.toRuntimeRef, {
-      decidedBy: ctx.decidedBy,
-      previousMembers: task.team.members,
-      comment: dto.comment ?? null,
-    });
+    const updated = this.applyTransferToTask(task, dto.toRuntimeRef);
     const transfer = this.options.transferRepository.insert({
       taskId,
       fromRuntimeRef: fromRef,
@@ -286,7 +278,7 @@ export class TaskTransferService {
         previous_members: task.team.members,
         ...(dto.comment ? { comment: dto.comment } : {}),
       },
-      now: this.options.now,
+      now: this.now,
     });
     return {
       task: { id: updated.id, state: updated.state, currentStage: updated.current_stage },

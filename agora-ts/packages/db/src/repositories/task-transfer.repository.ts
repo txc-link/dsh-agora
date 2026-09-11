@@ -124,7 +124,7 @@ export class TaskTransferRepository implements ITaskTransferRepository {
       appliedAt: row.applied_at == null ? null : String(row.applied_at),
       rejectedAt: row.rejected_at == null ? null : String(row.rejected_at),
       cancelledAt: row.cancelled_at == null ? null : String(row.cancelled_at),
-      metadata: parseJsonValue(row.metadata),
+      metadata: parseJsonValue<Record<string, unknown> | null>(row.metadata, null),
       createdAt: String(row.created_at),
     };
   }
