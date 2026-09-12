@@ -194,7 +194,7 @@ describe('TaskClaimService.expireStale', () => {
     );
     const expired = service.expireStale(NOW);
     expect(expired.map((c) => c.id)).toEqual(['c1']);
-    expect(expired[0].status).toBe('expired');
+    expect(expired[0]!.status).toBe('expired');
     expect(repo.getById('c2')?.status).toBe('claimed');
     expect(repo.getById('c3')?.status).toBe('claimed');
   });

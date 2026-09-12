@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createAgoraDatabase, runMigrations } from './database.js';
+import { createAgoraDatabase, runMigrations, type AgoraDatabase } from './database.js';
 import { ForumRepository } from './repositories/forum.repository.js';
 
 function makeRepo(): { repo: ForumRepository; db: AgoraDatabase } {

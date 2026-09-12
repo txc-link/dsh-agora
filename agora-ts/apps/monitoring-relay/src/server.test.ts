@@ -82,7 +82,7 @@ describe('monitoring-relay HTTP server', () => {
   });
 
   it('forwards a formatted alert to Matrix when authorised', async () => {
-    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
     const server = startServer({

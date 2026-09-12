@@ -10,9 +10,9 @@ import { describe, expect, it } from 'vitest';
 import {
   decideBorrow,
   type BorrowRequest,
-  type ScopeAuthorization,
 } from './borrow.js';
 import {
+  type ScopeAuthorization,
   type WorkSite,
   type WorksiteMetadata,
 } from './types.js';

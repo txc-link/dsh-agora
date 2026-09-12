@@ -57,7 +57,8 @@ describe('EvolutionService', () => {
     const evolution = new EvolutionService({ forumService: makeForum() });
     const result = evolution.proposeFromReport({ report, projectId: 'p-1' });
     expect(result.ok).toBe(true);
-    const post = result.post!;
+    if (!result.ok) throw new Error(result.error);
+    const post = result.post;
     expect(post.category).toBe('proposal');
     expect(post.author).toBe('agent:dev-1');
     expect(post.content).toContain('预装依赖缓存');
@@ -69,16 +70,20 @@ describe('EvolutionService', () => {
 
   it('apply: proposal → applied, 记录 applied_by; 重复 apply 被拒', () => {
     const evolution = new EvolutionService({ forumService: makeForum() });
-    const proposed = evolution.proposeFromReport({ report, projectId: 'p-1' }).post!;
+    const proposedResult = evolution.proposeFromReport({ report, projectId: 'p-1' });
+    if (!proposedResult.ok) throw new Error(proposedResult.error);
+    const proposed = proposedResult.post;
     const applied = evolution.apply({ postId: proposed.id, appliedBy: 'human:ceo' });
     expect(applied.ok).toBe(true);
-    expect((applied.post!.metadata as Record<string, unknown>).evolution).toMatchObject({
+    if (!applied.ok) throw new Error(applied.error);
+    expect((applied.post.metadata as Record<string, unknown>).evolution).toMatchObject({
       status: 'applied',
       applied_by: 'human:ceo',
     });
 
     const again = evolution.apply({ postId: proposed.id, appliedBy: 'human:ceo' });
     expect(again.ok).toBe(false);
+    if (again.ok) throw new Error('expected failure');
     expect(again.error).toContain('applied');
   });
 
@@ -92,9 +97,10 @@ describe('EvolutionService', () => {
       category: 'lesson',
       content: 'x',
     });
-    const lesson = forum.listPosts({}).find((p) => p.category === 'lesson')!;
+    const lesson = forum.listPosts({ project_id: 'p-1' }).find((p) => p.category === 'lesson')!;
     const wrongKind = evolution.apply({ postId: lesson.id, appliedBy: 'human:ceo' });
     expect(wrongKind.ok).toBe(false);
+    if (wrongKind.ok) throw new Error('expected failure');
     expect(wrongKind.error).toContain('proposal');
     const missing = evolution.apply({ postId: 'no-such', appliedBy: 'human:ceo' });
     expect(missing.ok).toBe(false);

@@ -6,10 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import {
-  ThreadTaskBindingService,
-  type ThreadTaskBindingServiceOptions,
-} from './thread-task-binding-service.js';
+import { ThreadTaskBindingService } from './thread-task-binding-service.js';
 import type {
   IThreadTaskBindingRepository,
   ThreadTaskBinding,
@@ -77,15 +74,15 @@ function makeService(opts?: { tasks?: TaskRecord[]; threadSource?: 'any' | 'mx' 
   const repo = new InMemoryBindingRepo();
   const taskRepo = new StubTaskRepo();
   for (const t of opts?.tasks ?? []) taskRepo.set(t);
-  const service = new ThreadTaskBindingService({
-    repo,
-    taskRepo,
-    ...(opts?.threadSource !== undefined ? { threadKeyPattern: sourcePattern(opts.threadSource) } : {}),
-  });
+  const service = new ThreadTaskBindingService(
+    opts?.threadSource === undefined
+      ? { repo, taskRepo }
+      : { repo, taskRepo, threadKeyPattern: sourcePattern(opts.threadSource) },
+  );
   return { service, repo, taskRepo };
 }
 
-function sourcePattern(kind: 'any' | 'mx' | 'sha'): ThreadTaskBindingServiceOptions['threadKeyPattern'] {
+function sourcePattern(kind: 'any' | 'mx' | 'sha'): RegExp {
   if (kind === 'any') return /^.+$/;
   if (kind === 'mx') return /^mx_[0-9a-f]{16}$/;
   return /^[0-9a-f]{64}$/; // sha256 hex
@@ -106,7 +103,7 @@ const SAMPLE_TASK: TaskRecord = {
   current_stage: null,
   skill_policy: null,
   team: { members: [] },
-  workflow: { stages: [], graph: { nodes: [], edges: [] } },
+  workflow: { stages: [], graph: { graph_version: 1, entry_nodes: [], nodes: [], edges: [] } },
   control: null,
   scheduler: null,
   scheduler_snapshot: null,

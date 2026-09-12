@@ -33,6 +33,13 @@ function makeForumRepo(): IForumRepository {
       return rec;
     },
     getPost: (id) => posts.get(id) ?? null,
+    updatePost: (id, patch) => {
+      const current = posts.get(id);
+      if (!current) return null;
+      const next: ForumPostRecord = { ...current, ...patch };
+      posts.set(id, next);
+      return next;
+    },
     listPosts: (query: ForumPostQuery) =>
       [...posts.values()]
         .filter((p) => p.project_id === query.project_id)
@@ -59,13 +66,16 @@ describe('ForumService', () => {
     expect(ok.ok).toBe(true);
     const bad = service.createPost({ projectId: 'p1', author: 'agent:a1', title: 'T', category: 'rant' as never, content: 'body' });
     expect(bad.ok).toBe(false);
+    if (bad.ok) throw new Error('expected failure');
     expect(bad.error).toContain('category');
   });
 
   it('comment: 帖子必须存在', () => {
     const service = new ForumService({ forumRepo: makeForumRepo() });
     expect(service.comment('nope', 'agent:a', 'x').ok).toBe(false);
-    const post = (service.createPost({ projectId: 'p1', author: 'agent:a1', title: 'T', category: 'question', content: 'q' }).data) as ForumPostRecord;
+    const created = service.createPost({ projectId: 'p1', author: 'agent:a1', title: 'T', category: 'question', content: 'q' });
+    if (!created.ok) throw new Error(created.error);
+    const post = created.data;
     const added = service.comment(post.id, 'agent:a2', 'answer');
     expect(added.ok).toBe(true);
     expect(service.listComments(post.id)).toHaveLength(1);
@@ -102,6 +112,7 @@ describe('ReflectionService', () => {
     const service = new ReflectionService({ listScorecards: () => [strong, weak], now: () => '2026-08-30T00:00:00.000Z' });
     const result = service.reflect({ agentRef: 'agent:a1' });
     expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
     const report = result.data as { summary: string; strengths: string[]; weaknesses: string[]; suggestions: string[]; observations: number };
     expect(report.strengths.join(' ')).toContain('impl');
     expect(report.weaknesses.join(' ')).toContain('review');
@@ -117,6 +128,7 @@ describe('ReflectionService', () => {
     const normal = new ReflectionService({ listScorecards: () => [strong] });
     const result = normal.reflect({ agentRef: 'agent:a1' });
     expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
     expect((result.data as { suggestions: string[] }).suggestions.length).toBeGreaterThan(0);
   });
 });

@@ -84,8 +84,11 @@ function assistantRepository(): IExecutiveAssistantRepository & { requests: Exec
     listCommitments: (organizationId, status) => commitments.filter((item) => item.organizationId === organizationId && (!status || item.status === status)),
     updateCommitmentStatus(id, status, expectedVersion, evidenceRefs, fulfilledAt) {
       const index = commitments.findIndex((item) => item.id === id && item.version === expectedVersion); if (index < 0) return null;
-      commitments[index] = { ...commitments[index], status, evidenceRefs, fulfilledAt: fulfilledAt ?? null, version: expectedVersion + 1 };
-      return commitments[index];
+      const next: CommitmentRecord = {
+        ...commitments[index]!, status, evidenceRefs, fulfilledAt: fulfilledAt ?? null, version: expectedVersion + 1,
+      };
+      commitments[index] = next;
+      return next;
     },
   };
 }

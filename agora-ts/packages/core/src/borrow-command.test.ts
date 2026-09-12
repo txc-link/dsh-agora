@@ -5,7 +5,7 @@
  * → result. Pure data, no commander, no I/O.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, type Mock } from 'vitest';
 import type { IBorrowRequestRepository } from '@agora-ts/contracts';
 import { BorrowService } from './borrow-service.js';
 import { runBorrowCommand } from './borrow-command.js';
@@ -19,14 +19,14 @@ const scopeAuth: ScopeAuthorization = {
 };
 
 function makeDeps(opts: {
-  insert?: ReturnType<typeof vi.fn>;
-  recordDecision?: ReturnType<typeof vi.fn>;
-  listByActor?: ReturnType<typeof vi.fn>;
-  listPending?: ReturnType<typeof vi.fn>;
-  getById?: ReturnType<typeof vi.fn>;
+  insert?: Mock<IBorrowRequestRepository['insert']>;
+  recordDecision?: Mock<IBorrowRequestRepository['recordDecision']>;
+  listByActor?: Mock<IBorrowRequestRepository['listByActor']>;
+  listPending?: Mock<IBorrowRequestRepository['listPending']>;
+  getById?: Mock<IBorrowRequestRepository['getById']>;
   scopeAuth?: ScopeAuthorization | undefined;
 } = {}) {
-  const insert = opts.insert ?? vi.fn().mockReturnValue({
+  const insert = opts.insert ?? vi.fn<IBorrowRequestRepository['insert']>().mockReturnValue({
     id: 'borrow-1',
     status: 'pending',
     createdAt: '2026-08-30T00:00:00Z',
@@ -41,7 +41,7 @@ function makeDeps(opts: {
     decidedAt: null,
     metadata: null,
   } satisfies BorrowRequestRecord);
-  const recordDecision = opts.recordDecision ?? vi.fn().mockImplementation((id, outcome, decidedAt) => ({
+  const recordDecision = opts.recordDecision ?? vi.fn<IBorrowRequestRepository['recordDecision']>().mockImplementation((id, outcome, decidedAt) => ({
     id,
     status: 'granted',
     outcome,
@@ -56,9 +56,9 @@ function makeDeps(opts: {
     reason: 'mirror thread',
     metadata: null,
   } satisfies BorrowRequestRecord));
-  const listByActor = opts.listByActor ?? vi.fn().mockReturnValue([]);
-  const listPending = opts.listPending ?? vi.fn().mockReturnValue([]);
-  const getById = opts.getById ?? vi.fn().mockReturnValue(null);
+  const listByActor = opts.listByActor ?? vi.fn<IBorrowRequestRepository['listByActor']>().mockReturnValue([]);
+  const listPending = opts.listPending ?? vi.fn<IBorrowRequestRepository['listPending']>().mockReturnValue([]);
+  const getById = opts.getById ?? vi.fn<IBorrowRequestRepository['getById']>().mockReturnValue(null);
 
   const repo: IBorrowRequestRepository = { insert, getById, listByActor, listPending, recordDecision };
   const borrowService = new BorrowService({
@@ -165,7 +165,7 @@ describe('runBorrowCommand list', () => {
 describe('runBorrowCommand show', () => {
   it('returns the row when found', async () => {
     const row = { id: 'borrow-1' } as unknown as BorrowRequestRecord;
-    const { deps, getById } = makeDeps({ getById: vi.fn().mockReturnValue(row) });
+    const { deps, getById } = makeDeps({ getById: vi.fn<IBorrowRequestRepository['getById']>().mockReturnValue(row) });
     const result = await runBorrowCommand(deps, { subcommand: 'show', requestId: 'borrow-1' });
     expect(result.ok).toBe(true);
     expect(result.data).toEqual(row);
@@ -173,7 +173,7 @@ describe('runBorrowCommand show', () => {
   });
 
   it('returns ok=false when not found', async () => {
-    const { deps } = makeDeps({ getById: vi.fn().mockReturnValue(null) });
+    const { deps } = makeDeps({ getById: vi.fn<IBorrowRequestRepository['getById']>().mockReturnValue(null) });
     const result = await runBorrowCommand(deps, { subcommand: 'show', requestId: 'missing' });
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/not found/);

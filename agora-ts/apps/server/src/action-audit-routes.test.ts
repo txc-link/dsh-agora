@@ -54,8 +54,8 @@ const baseline: ExecutionBaselineRecord = {
 function makeService() {
   let id = 0;
   return new ActionAuditService({
-    attempts: new AttemptRepository(), receipts: new ReceiptRepository(), plans: new One(plan) as ICollaborationPlanRepository,
-    authorities: new One(authority) as IDelegationAuthorityRepository, baselines: new One(baseline) as IExecutionBaselineRepository,
+    attempts: new AttemptRepository(), receipts: new ReceiptRepository(), plans: new One(plan) as unknown as ICollaborationPlanRepository,
+    authorities: new One(authority) as unknown as IDelegationAuthorityRepository, baselines: new One(baseline) as unknown as IExecutionBaselineRepository,
     idGenerator: () => `route-audit-${++id}`, now: () => new Date('2026-09-01T10:00:00.000Z'),
   });
 }

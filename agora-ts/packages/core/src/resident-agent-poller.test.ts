@@ -67,8 +67,8 @@ describe('ResidentAgentPoller.pollOnce', () => {
     const result = poller.pollOnce();
     expect(result.scanned).toBe(1);
     expect(result.claims.length).toBe(1);
-    expect(result.claims[0].taskId).toBe('task-1');
-    expect(result.claims[0].agentRef).toBe('agent:dev-1');
+    expect(result.claims[0]!.taskId).toBe('task-1');
+    expect(result.claims[0]!.agentRef).toBe('agent:dev-1');
   });
 
   it('不匹配 (缺技能) → 不 claim', () => {
@@ -98,7 +98,7 @@ describe('ResidentAgentPoller.pollOnce', () => {
   });
 
   it('多 agent + 多任务 → 各自认领匹配的', () => {
-    const devTask = makeTask({ id: 'task-1', type: 'dev' });
+    const devTask = makeTask({ taskId: 'task-1', taskType: 'dev' });
     const opsTask = makeTask({ taskId: 'task-2', taskType: 'ops', skillPolicy: { global_refs: ['docker'], role_refs: {}, enforcement: 'required' } as TaskSkillPolicyDto });
     const deps = makeDeps({ listClaimableTasks: vi.fn(() => [devTask, opsTask]) });
     const poller = new ResidentAgentPoller(

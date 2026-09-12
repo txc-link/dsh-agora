@@ -18,12 +18,31 @@ describe('TaskMemorySummaryService', () => {
     const memories: GroupMemoryEntry[] = [];
     const service = new TaskMemorySummaryService({
       taskRepository: { getTask: () => task(), listTasks: () => [task()] },
-      conversationRepository: { listByTask: () => [{ body: 'Use Mem0 for episodic recall', occurred_at: '2026-09-01T01:00:00.000Z', author_ref: 'agent:research' }] },
-      progressRepository: { listByTask: () => [{ content: 'Compared three options', created_at: '2026-09-01T01:00:00.000Z' }] },
+      conversationRepository: {
+        listByTask: () => [{
+          id: 'conv-1', task_id: 'T-1', binding_id: null, thread_task_binding_id: null, provider: 'discord',
+          provider_message_ref: null, parent_message_ref: null, direction: 'inbound', author_kind: 'agent',
+          author_ref: 'agent:research', display_name: null, body: 'Use Mem0 for episodic recall',
+          body_format: 'plain_text', occurred_at: '2026-09-01T01:00:00.000Z',
+          ingested_at: '2026-09-01T01:00:00.000Z', dedupe_key: null, metadata: null,
+        }],
+      },
+      progressRepository: {
+        listByTask: () => [{
+          id: 1, task_id: 'T-1', kind: 'note', stage_id: null, subtask_id: null,
+          content: 'Compared three options', artifacts: null, actor: 'agent:research',
+          created_at: '2026-09-01T01:00:00.000Z',
+        }],
+      },
       summaryRepository: {
         getByTaskFingerprint: (_taskId: string, fingerprint: string) => records.find((r) => r.fingerprint === fingerprint) ?? null,
         insert: (r: TaskMemorySummaryDto) => { records.push(r); return r; },
-        markSucceeded: (id: string, memoryId: string, updatedAt: string) => { const r = records.find((x) => x.id === id); r.status = 'succeeded'; r.memory_id = memoryId; r.updated_at = updatedAt; return r; },
+        markSucceeded: (id: string, memoryId: string, updatedAt: string) => {
+          const r = records.find((x) => x.id === id);
+          if (!r) return null;
+          r.status = 'succeeded'; r.memory_id = memoryId; r.updated_at = updatedAt;
+          return r;
+        },
         markFailed: () => null, listByTask: () => records,
       },
       memoryPort: { add: async (input: GroupMemoryAddInput) => { const memory: GroupMemoryEntry = { id: `m-${memories.length + 1}`, scopeRef: input.scopeRef, agentRef: input.agentRef, kind: input.kind, text: input.text, createdAt: '2026-09-01T01:00:00.000Z', metadata: input.metadata ?? null }; memories.push(memory); return memory; }, search: async () => [], list: async () => memories } satisfies GroupMemoryPort,
@@ -35,7 +54,7 @@ describe('TaskMemorySummaryService', () => {
     expect(first.status).toBe('created');
     expect(second.status).toBe('already_summarized');
     expect(memories).toHaveLength(1);
-    expect(memories[0].metadata.summary_kind).toBe('task_terminal');
+    expect(memories[0]!.metadata!.summary_kind).toBe('task_terminal');
   });
 
   it('does not summarize a non-terminal task', async () => {

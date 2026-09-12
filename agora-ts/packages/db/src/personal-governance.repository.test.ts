@@ -8,6 +8,7 @@ import type {
   InformationPolicyRecord,
   RelationshipProfileRecord,
   RelationshipProfileVersionRecord,
+  RelationshipProfileVersionPayloadDto,
 } from '@agora-ts/contracts';
 import { createAgoraDatabase, runMigrations, type AgoraDatabase } from './database.js';
 import { ActionRiskAssessmentRepository } from './repositories/action-risk-assessment.repository.js';
@@ -15,7 +16,7 @@ import { ConsentGrantRepository } from './repositories/consent-grant.repository.
 import { InformationPolicyRepository } from './repositories/information-policy.repository.js';
 import { RelationshipProfileRepository } from './repositories/relationship-profile.repository.js';
 
-const PAYLOAD = {
+const PAYLOAD: RelationshipProfileVersionPayloadDto = {
   persona_canon: {
     summary: '长期私人伴侣', traits: ['温柔'], background: ['喜欢文学'], values: ['诚实'], speaking_style: ['自然中文'],
   },
@@ -29,7 +30,7 @@ const PAYLOAD = {
   voice_preference: {
     locale: 'zh-CN', timbre: '温柔', pace: 1, pitch: 0, expressiveness: 'medium', style_tags: [],
   },
-} as const;
+};
 
 function makeDb(): { db: AgoraDatabase; path: string } {
   const path = join(mkdtempSync(join(tmpdir(), 'agora-personal-governance-')), 'test.db');

@@ -36,9 +36,9 @@ describe('action audit CLI', () => {
     let output = '';
     const service = new ActionAuditService({
       attempts: new EmptyAttempts(), receipts: new EmptyReceipts(),
-      plans: new EmptyReference<CollaborationPlanRecord>() as ICollaborationPlanRepository,
-      authorities: new EmptyReference<DelegationAuthorityRecord>() as IDelegationAuthorityRepository,
-      baselines: new EmptyReference<ExecutionBaselineRecord>() as IExecutionBaselineRepository,
+      plans: new EmptyReference<CollaborationPlanRecord>() as unknown as ICollaborationPlanRepository,
+      authorities: new EmptyReference<DelegationAuthorityRecord>() as unknown as IDelegationAuthorityRepository,
+      baselines: new EmptyReference<ExecutionBaselineRecord>() as unknown as IExecutionBaselineRepository,
     });
     const program = createCliProgram({
       actionAuditService: service,

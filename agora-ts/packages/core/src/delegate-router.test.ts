@@ -55,11 +55,12 @@ describe('DelegateRouter.delegateSubtree', () => {
     });
     const result = router.delegateSubtree({ teamId: dev.id, taskId: 'OC-1', fromRef: 'agent:w1' });
     expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
     expect(result.data?.recipients).toEqual(['agent:dl', 'agent:il']);
     expect(result.data?.notified).toBe(2);
     expect(result.data?.depth).toBe(2);
     expect(notifications[0]).toMatchObject({ targetRef: 'agent:dl', event: 'task_delegated' });
-    expect(notifications[0].data.task_id).toBe('OC-1');
+    expect(notifications[0]!.data.task_id).toBe('OC-1');
   });
 
   it('深度超限被拒 (maxDepth=2, 链长 3)', () => {
@@ -67,6 +68,7 @@ describe('DelegateRouter.delegateSubtree', () => {
     const router = new DelegateRouter({ teamRepo: repo, resolver, maxDepth: 2 });
     const result = router.delegateSubtree({ teamId: 't-impl', taskId: 'OC-1' });
     expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected failure');
     expect(result.error).toContain('exceeds limit 2');
   });
 
@@ -77,6 +79,7 @@ describe('DelegateRouter.delegateSubtree', () => {
     const router = new DelegateRouter({ teamRepo: repo, resolver });
     const result = router.delegateSubtree({ teamId: dev.id, taskId: 'OC-1' });
     expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected failure');
     expect(result.error).toContain('cycle');
   });
 
@@ -91,6 +94,7 @@ describe('DelegateRouter.delegateSubtree', () => {
     const router = new DelegateRouter({ teamRepo: repo, resolver });
     const result = router.delegateSubtree({ teamId: dev.id, taskId: 'OC-2' });
     expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
     expect(result.data?.notified).toBe(0);
   });
 });
@@ -106,10 +110,11 @@ describe('DelegateRouter.escalateUp', () => {
     });
     const result = router.escalateUp({ agentRef: 'agent:w1', taskId: 'OC-3' });
     expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
     expect(result.data?.routedTo).toBe('agent:dl');
     expect(result.data?.chain).toEqual(['agent:dl', 'agent:root']);
     expect(notifications).toHaveLength(1);
-    expect(notifications[0]).toMatchObject({ targetRef: 'agent:dl', event: 'task_escalated' });
+    expect(notifications[0]!).toMatchObject({ targetRef: 'agent:dl', event: 'task_escalated' });
   });
 
   it('无 team 归属 → 拒绝', () => {
@@ -117,6 +122,7 @@ describe('DelegateRouter.escalateUp', () => {
     const router = new DelegateRouter({ teamRepo: repo, resolver });
     const result = router.escalateUp({ agentRef: 'agent:lonely' });
     expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected failure');
     expect(result.error).toContain('no lead above');
   });
 });

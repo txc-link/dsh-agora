@@ -59,6 +59,7 @@ describe('TeamService.createTeam', () => {
     const service = new TeamService({ teamRepo: repo });
     const result = service.createTeam({ projectId: 'p1', name: 'dev', lead: 'agent:l1' });
     expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
     expect(result.data?.members).toEqual(['agent:l1']);
   });
 
@@ -66,6 +67,7 @@ describe('TeamService.createTeam', () => {
     const service = new TeamService({ teamRepo: makeRepo() });
     const result = service.createTeam({ projectId: 'p1', name: 'dev', lead: 'agent:l1', members: ['agent:x'] });
     expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected failure');
     expect(result.error).toContain('must be a member');
   });
 
@@ -81,11 +83,13 @@ describe('TeamService.createTeam', () => {
     const repo = makeRepo();
     const service = new TeamService({ teamRepo: repo });
     const other = service.createTeam({ projectId: 'p2', name: 'org', lead: 'agent:x' });
+    if (!other.ok) throw new Error(other.error);
     const result = service.createTeam({
       projectId: 'p1', name: 'dev', lead: 'agent:a',
       parentId: other.data?.id,
     });
     expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected failure');
     expect(result.error).toContain("belongs to project 'p2'");
   });
 });
@@ -94,26 +98,36 @@ describe('TeamService membership + parent cycle', () => {
   it('addMember/removeMember; lead 不可移除', () => {
     const repo = makeRepo();
     const service = new TeamService({ teamRepo: repo });
-    const team = (service.createTeam({ projectId: 'p1', name: 'dev', lead: 'agent:l1' }).data) as TeamRecord;
+    const created = service.createTeam({ projectId: 'p1', name: 'dev', lead: 'agent:l1' });
+    if (!created.ok) throw new Error(created.error);
+    const team = created.data;
     service.addMember(team.id, 'agent:w1');
     expect(service.get(team.id)?.members).toEqual(['agent:l1', 'agent:w1']);
     const removed = service.removeMember(team.id, 'agent:w1');
     expect(removed.ok).toBe(true);
     const leadRemove = service.removeMember(team.id, 'agent:l1');
     expect(leadRemove.ok).toBe(false);
+    if (leadRemove.ok) throw new Error('expected failure');
     expect(leadRemove.error).toContain('cannot remove lead');
   });
 
   it('setLead 自动补成员; setParent 环被拒', () => {
     const repo = makeRepo();
     const service = new TeamService({ teamRepo: repo });
-    const root = (service.createTeam({ projectId: 'p1', name: 'org', lead: 'agent:root' }).data) as TeamRecord;
-    const dev = (service.createTeam({ projectId: 'p1', name: 'dev', lead: 'agent:dl', parentId: root.id }).data) as TeamRecord;
-    const worker = (service.createTeam({ projectId: 'p1', name: 'impl', lead: 'agent:wl', parentId: dev.id }).data) as TeamRecord;
+    const createdRoot = service.createTeam({ projectId: 'p1', name: 'org', lead: 'agent:root' });
+    if (!createdRoot.ok) throw new Error(createdRoot.error);
+    const root = createdRoot.data;
+    const createdDev = service.createTeam({ projectId: 'p1', name: 'dev', lead: 'agent:dl', parentId: root.id });
+    if (!createdDev.ok) throw new Error(createdDev.error);
+    const dev = createdDev.data;
+    const createdWorker = service.createTeam({ projectId: 'p1', name: 'impl', lead: 'agent:wl', parentId: dev.id });
+    if (!createdWorker.ok) throw new Error(createdWorker.error);
+    const worker = createdWorker.data;
 
     // root 挂到 impl 之下 → 环
     const cycle = service.setParent(root.id, worker.id);
     expect(cycle.ok).toBe(false);
+    if (cycle.ok) throw new Error('expected failure');
     expect(cycle.error).toContain('cycle');
 
     // dev 挂到自己子树 (worker) → 成环被拒
@@ -126,16 +140,22 @@ describe('TeamService membership + parent cycle', () => {
     // setLead 自动补成员
     const newLead = service.setLead(dev.id, 'agent:newbie');
     expect(newLead.ok).toBe(true);
+    if (!newLead.ok) throw new Error(newLead.error);
     expect(newLead.data?.members).toContain('agent:newbie');
   });
 
   it('deleteTeam: 有子团队被拒; 无子团队可删', () => {
     const repo = makeRepo();
     const service = new TeamService({ teamRepo: repo });
-    const root = (service.createTeam({ projectId: 'p1', name: 'org', lead: 'agent:root' }).data) as TeamRecord;
-    const dev = (service.createTeam({ projectId: 'p1', name: 'dev', lead: 'agent:dl', parentId: root.id }).data) as TeamRecord;
+    const createdRoot = service.createTeam({ projectId: 'p1', name: 'org', lead: 'agent:root' });
+    if (!createdRoot.ok) throw new Error(createdRoot.error);
+    const root = createdRoot.data;
+    const createdDev = service.createTeam({ projectId: 'p1', name: 'dev', lead: 'agent:dl', parentId: root.id });
+    if (!createdDev.ok) throw new Error(createdDev.error);
+    const dev = createdDev.data;
     const blocked = service.deleteTeam(root.id);
     expect(blocked.ok).toBe(false);
+    if (blocked.ok) throw new Error('expected failure');
     expect(blocked.error).toContain('child team');
     expect(service.deleteTeam(dev.id).ok).toBe(true);
     expect(service.deleteTeam(root.id).ok).toBe(true);
@@ -146,9 +166,15 @@ describe('OrgHierarchyResolver', () => {
   it('chainToRoot / leadsAbove / subtreeAgents / orgTree', () => {
     const repo = makeRepo();
     const service = new TeamService({ teamRepo: repo });
-    const root = (service.createTeam({ projectId: 'p1', name: 'org', lead: 'agent:root', members: ['agent:root'] }).data) as TeamRecord;
-    const dev = (service.createTeam({ projectId: 'p1', name: 'dev', lead: 'agent:dl', parentId: root.id, members: ['agent:dl', 'agent:w1'] }).data) as TeamRecord;
-    const impl = (service.createTeam({ projectId: 'p1', name: 'impl', lead: 'agent:il', parentId: dev.id, members: ['agent:il'] }).data) as TeamRecord;
+    const createdRoot = service.createTeam({ projectId: 'p1', name: 'org', lead: 'agent:root', members: ['agent:root'] });
+    if (!createdRoot.ok) throw new Error(createdRoot.error);
+    const root = createdRoot.data;
+    const createdDev = service.createTeam({ projectId: 'p1', name: 'dev', lead: 'agent:dl', parentId: root.id, members: ['agent:dl', 'agent:w1'] });
+    if (!createdDev.ok) throw new Error(createdDev.error);
+    const dev = createdDev.data;
+    const createdImpl = service.createTeam({ projectId: 'p1', name: 'impl', lead: 'agent:il', parentId: dev.id, members: ['agent:il'] });
+    if (!createdImpl.ok) throw new Error(createdImpl.error);
+    const impl = createdImpl.data;
 
     const resolver = new OrgHierarchyResolver({ teamRepo: repo });
     // worker 在 dev: 链 = dev → org
@@ -161,8 +187,8 @@ describe('OrgHierarchyResolver', () => {
     // 树: root → dev → impl
     const tree = resolver.orgTree('p1');
     expect(tree).toHaveLength(1);
-    expect(tree[0].team.id).toBe(root.id);
-    expect(tree[0].children[0].team.id).toBe(dev.id);
-    expect(tree[0].children[0].children[0].team.id).toBe(impl.id);
+    expect(tree[0]!.team.id).toBe(root.id);
+    expect(tree[0]!.children[0]!.team.id).toBe(dev.id);
+    expect(tree[0]!.children[0]!.children[0]!.team.id).toBe(impl.id);
   });
 });

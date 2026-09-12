@@ -192,7 +192,7 @@ describe('InboxReplyService', () => {
         bound.push(input);
         return { thread_key: input.threadKey, task_id: input.taskId, created_at: '', updated_at: '' };
       },
-    } as unknown as ConstructorParameters<typeof InboxReplyService>[0]['threadTaskBindingService'];
+    } as unknown as NonNullable<ConstructorParameters<typeof InboxReplyService>[0]['threadTaskBindingService']>;
 
     const conversationRepo = new StubConversationRepo();
     const service = new InboxReplyService({
@@ -227,7 +227,7 @@ describe('InboxReplyService', () => {
         bound.push(input);
         return { thread_key: input.threadKey, task_id: input.taskId, created_at: '', updated_at: '' };
       },
-    } as unknown as ConstructorParameters<typeof InboxReplyService>[0]['threadTaskBindingService'];
+    } as unknown as NonNullable<ConstructorParameters<typeof InboxReplyService>[0]['threadTaskBindingService']>;
 
     const conversationRepo = new StubConversationRepo();
     const service = new InboxReplyService({

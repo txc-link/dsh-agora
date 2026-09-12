@@ -41,6 +41,7 @@ describe('GroupMemoryService.record', () => {
       text: 'migrate 前先备份 db',
     });
     expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
     expect(result.data?.id).toBe('mem-1');
     expect(port.addCalls[0]).toMatchObject({ scopeRef: 'project:OC-1', kind: 'lesson' });
   });
@@ -51,6 +52,7 @@ describe('GroupMemoryService.record', () => {
       scopeRef: 'g', agentRef: 'a', kind: 'bogus', text: 'x',
     });
     expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected failure');
     expect(result.error).toContain('invalid kind');
   });
 
@@ -60,6 +62,7 @@ describe('GroupMemoryService.record', () => {
       scopeRef: 'g', agentRef: 'a', kind: 'fact', text: ' ',
     });
     expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected failure');
     expect(result.error).toContain('text');
   });
 
@@ -71,6 +74,7 @@ describe('GroupMemoryService.record', () => {
       scopeRef: 'g', agentRef: 'a', kind: 'fact', text: 'x',
     });
     expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected failure');
     expect(result.error).toBe('boom');
   });
 });
@@ -81,7 +85,8 @@ describe('GroupMemoryService.recall / list', () => {
     const service = new GroupMemoryService({ memoryPort: port });
     const result = await service.recall({ scopeRef: 'group:dev', query: '迁移备份', limit: 3 });
     expect(result.ok).toBe(true);
-    expect(result.data?.[0].score).toBe(0.87);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.data?.[0]?.score).toBe(0.87);
     expect(port.searchCalls[0]).toMatchObject({ scopeRef: 'group:dev', query: '迁移备份', limit: 3 });
   });
 
@@ -96,6 +101,7 @@ describe('GroupMemoryService.recall / list', () => {
     const service = new GroupMemoryService({ memoryPort: port });
     const result = await service.list({ scopeRef: 'project:OC-1' });
     expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
     expect(result.data).toEqual([]);
   });
 });

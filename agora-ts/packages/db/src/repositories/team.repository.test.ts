@@ -60,7 +60,7 @@ describe('TeamRepository', () => {
     repo.insert({ project_id: 'p2', name: 'ops', lead: 'agent:b', members: ['agent:b'] });
     const mine = repo.listByMember('agent:w1');
     expect(mine).toHaveLength(1);
-    expect(mine[0].name).toBe('dev');
+    expect(mine[0]!.name).toBe('dev');
     cleanup();
   });
 

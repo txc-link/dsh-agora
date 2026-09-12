@@ -7,10 +7,11 @@ import type {
   RelationshipProfileSnapshotDto,
   RelationshipProfileStatusDto,
   RelationshipProfileVersionRecord,
+  RelationshipProfileVersionPayloadDto,
 } from '@agora-ts/contracts';
 import { RelationshipProfileService } from './relationship-profile-service.js';
 
-const VERSION_PAYLOAD = {
+const VERSION_PAYLOAD: RelationshipProfileVersionPayloadDto = {
   persona_canon: {
     summary: '温柔、机敏、有边界感的长期私人伴侣',
     traits: ['温柔', '机敏', '坦率'],
@@ -38,7 +39,7 @@ const VERSION_PAYLOAD = {
     expressiveness: 'medium',
     style_tags: ['morning-soft', 'firm-reminder'],
   },
-} as const;
+};
 
 class MemoryRelationshipProfileRepository implements IRelationshipProfileRepository {
   private readonly profiles = new Map<string, RelationshipProfileRecord>();

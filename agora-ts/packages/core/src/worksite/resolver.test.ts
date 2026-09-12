@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { ITaskRepository, TaskRecord } from '@agora-ts/contracts';
 import {
   TaskWorksiteResolver,
   ThreadWorksiteResolver,
@@ -145,12 +146,11 @@ describe('worksite/resolver', () => {
   });
 
   describe('TaskWorksiteResolver', () => {
-    function fakeRepo(records: Array<{ id: string }>) {
+    function fakeRepo(records: Array<{ id: string }>): Pick<ITaskRepository, 'getTask'> {
       const map = new Map(records.map((r) => [r.id, r]));
       return {
-        getTask(id: string): { id: string } | null {
-          return map.get(id) ?? null;
-        },
+        // 夹具只提供 resolver 需要的最小子集 (id)；完整 TaskRecord 由生产仓储构造。
+        getTask: (id) => (map.get(id) ?? null) as unknown as TaskRecord | null,
       };
     }
 

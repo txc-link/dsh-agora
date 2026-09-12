@@ -13,7 +13,7 @@ describe('RoutineService', () => {
       markSucceeded: (id: string) => runs.find((r) => r.id === id) ?? null, markFailed: () => null, listRuns: () => runs,
     };
     const service = new RoutineService({ repository, now: () => new Date('2026-09-01T00:00:00.000Z'), leaseTokenGenerator: () => 'lease-1' });
-    const routine = service.create({ routine_id: 'routine:morning', owner_ref: 'human:ceo', agent_ref: 'agent:assistant', role_ref: 'assistant', name: '晨报', prompt: '生成晨报', schedule: { kind: 'interval', interval_seconds: 3600 }, first_run_at: '2026-09-01T00:00:00.000Z', target_domain: 'domain:company', delivery_binding_ref: 'room:briefing' });
+    const routine = service.create({ routine_id: 'routine:morning', owner_ref: 'human:ceo', agent_ref: 'agent:assistant', role_ref: 'assistant', name: '晨报', prompt: '生成晨报', schedule: { kind: 'interval', interval_seconds: 3600 }, first_run_at: '2026-09-01T00:00:00.000Z', target_domain: 'domain:company', delivery_binding_ref: 'room:briefing', metadata: {} });
     expect(routine.status).toBe('active');
     expect(service.claimDue({ consumer_ref: 'matrix:node-home-linux' })[0]?.routine_id).toBe('routine:morning');
   });

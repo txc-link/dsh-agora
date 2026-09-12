@@ -65,9 +65,9 @@ function makeService() {
   const service = new ActionAuditService({
     attempts,
     receipts,
-    plans: new SingleRecordRepository(plan) as ICollaborationPlanRepository,
-    authorities: new SingleRecordRepository(authority) as IDelegationAuthorityRepository,
-    baselines: new SingleRecordRepository(baseline) as IExecutionBaselineRepository,
+    plans: new SingleRecordRepository(plan) as unknown as ICollaborationPlanRepository,
+    authorities: new SingleRecordRepository(authority) as unknown as IDelegationAuthorityRepository,
+    baselines: new SingleRecordRepository(baseline) as unknown as IExecutionBaselineRepository,
     idGenerator: () => `audit-${++id}`,
     now: () => new Date('2026-09-01T10:00:00.000Z'),
   });

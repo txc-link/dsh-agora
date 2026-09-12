@@ -40,8 +40,8 @@ describe('OrganizationRepository', () => {
     runMigrations(database);
     repository = new OrganizationRepository(database);
     expect(repository.getOrganizationBySlug('my-company')?.informationDomain).toBe('work');
-    expect(repository.listUnits('org-1')[0].responsibilities).toEqual(['intake']);
-    expect(repository.listPositions('org-1')[0].skills).toEqual(['research']);
+    expect(repository.listUnits('org-1')[0]!.responsibilities).toEqual(['intake']);
+    expect(repository.listPositions('org-1')[0]!.skills).toEqual(['research']);
     expect(repository.listEmployments('org-1', true)[0]).toMatchObject({
       subjectRef: 'agent:ea', status: 'ended', endedReason: 'transfer', version: 2,
     });

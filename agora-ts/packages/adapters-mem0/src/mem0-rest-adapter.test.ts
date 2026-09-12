@@ -23,7 +23,7 @@ describe('Mem0RestAdapter.add', () => {
       scopeRef: 'project:OC-1', agentRef: 'agent:dev-1', kind: 'lesson', text: '先备份 db',
     });
     expect(entry.id).toBe('m1');
-    const { url, init } = calls[0];
+    const { url, init } = calls[0]!;
     expect(url).toBe('http://x:8888/memories');
     const payload = JSON.parse(String(init.body));
     expect(payload.messages[0].content).toBe('先备份 db');
@@ -45,7 +45,7 @@ describe('Mem0RestAdapter.add', () => {
     const { impl, calls } = makeFetch({ body: { results: [{ id: 'm2' }] } });
     const adapter = new Mem0RestAdapter({ baseUrl: 'http://x:8888', token: 'm0sk_abc123def456', fetchImpl: impl });
     await adapter.add({ scopeRef: 'g', agentRef: 'a', kind: 'fact', text: 'x' });
-    const headers = calls[0].init.headers as Record<string, string>;
+    const headers = calls[0]!.init.headers as Record<string, string>;
     expect(headers['X-API-Key']).toBe('m0sk_abc123def456');
     expect(headers.Authorization).toBeUndefined();
   });
@@ -59,7 +59,7 @@ describe('Mem0RestAdapter.search / list', () => {
     const adapter = new Mem0RestAdapter({ baseUrl: 'http://x:8888', fetchImpl: impl });
     const hits = await adapter.search({ scopeRef: 'group:dev', query: '迁移', limit: 5 });
     expect(hits[0]).toMatchObject({ id: 'm1', text: '备份 db', score: 0.9 });
-    const payload = JSON.parse(String(calls[0].init.body));
+    const payload = JSON.parse(String(calls[0]!.init.body));
     expect(payload).toMatchObject({ query: '迁移', user_id: 'group:dev', top_k: 5 });
   });
 
@@ -70,6 +70,6 @@ describe('Mem0RestAdapter.search / list', () => {
     const adapter = new Mem0RestAdapter({ baseUrl: 'http://x:8888', fetchImpl: impl });
     const entries = await adapter.list({ scopeRef: 'group:dev', limit: 10 });
     expect(entries[0]).toMatchObject({ id: 'm1', scopeRef: 'group:dev', agentRef: 'a', kind: 'fact' });
-    expect(calls[0].url).toContain('/memories?user_id=group%3Adev');
+    expect(calls[0]!.url).toContain('/memories?user_id=group%3Adev');
   });
 });

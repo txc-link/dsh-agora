@@ -78,7 +78,7 @@ describe('worksite scopeAuthResolver integration', () => {
       project_id: null,
       skill_policy: null,
       team: { members: [] },
-      workflow: { stages: [], graph: { nodes: [], edges: [] } },
+      workflow: { stages: [], graph: { graph_version: 1, entry_nodes: [], nodes: [], edges: [] } },
       control: null,
     });
 

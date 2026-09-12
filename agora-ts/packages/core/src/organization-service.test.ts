@@ -127,8 +127,8 @@ function makeRepository(): IOrganizationRepository {
       const next: EmploymentRecord = {
         ...current,
         status,
-        endedAt: status === 'ended' ? endedAt : null,
-        endedReason: status === 'ended' ? endedReason : null,
+        endedAt: status === 'ended' ? (endedAt ?? null) : null,
+        endedReason: status === 'ended' ? (endedReason ?? null) : null,
         version: current.version + 1,
       };
       employments.set(employmentId, next);
@@ -168,7 +168,9 @@ describe('OrganizationService', () => {
       employmentKind: 'resident',
     });
     expect(employment.ok).toBe(true);
-    expect(service.snapshot(organization.data.id).data?.employments).toHaveLength(1);
+    const snapshot = service.snapshot(organization.data.id);
+    if (!snapshot.ok) throw new Error(snapshot.error);
+    expect(snapshot.data?.employments).toHaveLength(1);
   });
 
   it('rejects cross-organization parents and hierarchy cycles', () => {
@@ -177,11 +179,16 @@ describe('OrganizationService', () => {
     const second = service.createOrganization({ slug: 'two', name: 'Two', ownerRef: 'human:two', informationDomain: 'work' });
     if (!first.ok || !second.ok) throw new Error('setup failed');
     const root = service.createUnit({ organizationId: first.data.id, name: 'Root', kind: 'department' });
+    if (!root.ok) throw new Error(root.error);
     const child = service.createUnit({ organizationId: first.data.id, name: 'Child', kind: 'team', parentUnitId: root.data?.id });
     const foreign = service.createUnit({ organizationId: second.data.id, name: 'Foreign', kind: 'department' });
-    if (!root.ok || !child.ok || !foreign.ok) throw new Error('setup failed');
-    expect(service.setUnitParent(root.data.id, child.data.id).error).toContain('cycle');
-    expect(service.setUnitParent(root.data.id, foreign.data.id).error).toContain('same organization');
+    if (!child.ok || !foreign.ok) throw new Error('setup failed');
+    const cyclic = service.setUnitParent(root.data.id, child.data.id);
+    if (cyclic.ok) throw new Error('expected failure');
+    expect(cyclic.error).toContain('cycle');
+    const crossOrganization = service.setUnitParent(root.data.id, foreign.data.id);
+    if (crossOrganization.ok) throw new Error('expected failure');
+    expect(crossOrganization.error).toContain('same organization');
   });
 
   it('rejects reporting cycles and cross-organization managers', () => {
@@ -193,11 +200,16 @@ describe('OrganizationService', () => {
     const unitTwo = service.createUnit({ organizationId: two.data.id, name: 'Two Unit', kind: 'department' });
     if (!unitOne.ok || !unitTwo.ok) throw new Error('setup failed');
     const lead = service.createPosition({ organizationId: one.data.id, unitId: unitOne.data.id, title: 'Lead', kind: 'lead' });
+    if (!lead.ok) throw new Error(lead.error);
     const worker = service.createPosition({ organizationId: one.data.id, unitId: unitOne.data.id, title: 'Worker', kind: 'worker', reportsToPositionId: lead.data?.id });
     const foreign = service.createPosition({ organizationId: two.data.id, unitId: unitTwo.data.id, title: 'Foreign', kind: 'lead' });
-    if (!lead.ok || !worker.ok || !foreign.ok) throw new Error('setup failed');
-    expect(service.setPositionManager(lead.data.id, worker.data.id).error).toContain('cycle');
-    expect(service.setPositionManager(lead.data.id, foreign.data.id).error).toContain('same organization');
+    if (!worker.ok || !foreign.ok) throw new Error('setup failed');
+    const cyclic = service.setPositionManager(lead.data.id, worker.data.id);
+    if (cyclic.ok) throw new Error('expected failure');
+    expect(cyclic.error).toContain('cycle');
+    const crossOrganization = service.setPositionManager(lead.data.id, foreign.data.id);
+    if (crossOrganization.ok) throw new Error('expected failure');
+    expect(crossOrganization.error).toContain('same organization');
   });
 
   it('keeps employment history when a resident transfers positions', () => {
@@ -214,7 +226,9 @@ describe('OrganizationService', () => {
     expect(service.employ({ organizationId: organization.data.id, positionId: researcher.data.id, subjectKind: 'agent', subjectRef: 'agent:r2', employmentKind: 'resident' }).ok).toBe(false);
     const transferred = service.transferEmployment(original.data.id, lead.data.id, 'promotion');
     expect(transferred.ok).toBe(true);
-    const history = service.snapshot(organization.data.id).data?.employments ?? [];
+    const snapshot = service.snapshot(organization.data.id);
+    if (!snapshot.ok) throw new Error(snapshot.error);
+    const history = snapshot.data?.employments ?? [];
     expect(history).toHaveLength(2);
     expect(history.find((item) => item.id === original.data.id)?.status).toBe('ended');
     expect(history.find((item) => item.positionId === lead.data.id)?.subjectRef).toBe('agent:r1');

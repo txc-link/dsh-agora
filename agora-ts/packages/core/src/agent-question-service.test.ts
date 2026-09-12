@@ -48,7 +48,7 @@ function makeRepo(seed: AgentQuestionRecord[] = []): IAgentQuestionRepository & 
         escalatedAt: null,
         closedAt: null,
         createdAt: now,
-        metadata: input.metadata ? JSON.stringify(input.metadata) : null,
+        metadata: input.metadata ?? null,
       };
       store.push(record);
       return clone(record);
@@ -118,12 +118,13 @@ describe('AgentQuestionService', () => {
       taskId: 'T-1',
     });
     expect(result.ok).toBe(true);
-    const record = result.question!;
+    if (!result.ok) throw new Error(result.error);
+    const record = result.question;
     expect(record.status).toBe('pending');
     expect(record.target).toBe('assistant');
     expect(im.sent).toHaveLength(1);
-    expect(im.sent[0].targetRef).toBe('agent:assistant');
-    expect(im.sent[0].payload.event_type).toBe('agent_question_created');
+    expect(im.sent[0]!.targetRef).toBe('agent:assistant');
+    expect(im.sent[0]!.payload.event_type).toBe('agent_question_created');
   });
 
   it('create: 无助手 → target=ceo, 推送通知给 ceo ref', async () => {
@@ -141,28 +142,30 @@ describe('AgentQuestionService', () => {
       question: '需要 qdrant 凭据',
     });
     expect(result.ok).toBe(true);
-    expect(result.question!.target).toBe('ceo');
-    expect(im.sent[0].targetRef).toBe('human:ceo');
+    if (!result.ok) throw new Error(result.error);
+    expect(result.question.target).toBe('ceo');
+    expect(im.sent[0]!.targetRef).toBe('human:ceo');
   });
 
   it('answer: pending → answered, 记录 answer/answeredBy/answeredAt', async () => {
     const repo = makeRepo([makeQuestion()]);
-    const service = new AgentQuestionService({ questionRepo: repo });
+    const service = new AgentQuestionService({ questionRepo: repo, ceoRef: 'human:ceo' });
     const result = await service.answer({
       questionId: 'q-1',
       answeredBy: 'agent:assistant',
       answer: '用方案 B',
     });
     expect(result.ok).toBe(true);
-    expect(result.question!.status).toBe('answered');
-    expect(result.question!.answer).toBe('用方案 B');
-    expect(result.question!.answeredBy).toBe('agent:assistant');
-    expect(result.question!.answeredAt).not.toBeNull();
+    if (!result.ok) throw new Error(result.error);
+    expect(result.question.status).toBe('answered');
+    expect(result.question.answer).toBe('用方案 B');
+    expect(result.question.answeredBy).toBe('agent:assistant');
+    expect(result.question.answeredAt).not.toBeNull();
   });
 
   it('answer: closed 问题被拒', async () => {
     const repo = makeRepo([makeQuestion({ status: 'closed' })]);
-    const service = new AgentQuestionService({ questionRepo: repo });
+    const service = new AgentQuestionService({ questionRepo: repo, ceoRef: 'human:ceo' });
     const result = await service.answer({ questionId: 'q-1', answeredBy: 'x', answer: 'y' });
     expect(result.ok).toBe(false);
   });
@@ -178,35 +181,38 @@ describe('AgentQuestionService', () => {
     });
     const result = await service.escalate({ questionId: 'q-1' });
     expect(result.ok).toBe(true);
-    expect(result.question!.status).toBe('escalated');
-    expect(result.question!.target).toBe('ceo');
-    expect(result.question!.escalatedAt).not.toBeNull();
-    expect(im.sent[0].targetRef).toBe('human:ceo');
-    expect(im.sent[0].payload.event_type).toBe('agent_question_escalated');
+    if (!result.ok) throw new Error(result.error);
+    expect(result.question.status).toBe('escalated');
+    expect(result.question.target).toBe('ceo');
+    expect(result.question.escalatedAt).not.toBeNull();
+    expect(im.sent[0]!.targetRef).toBe('human:ceo');
+    expect(im.sent[0]!.payload.event_type).toBe('agent_question_escalated');
   });
 
   it('escalate: 已 answered 被拒', async () => {
     const repo = makeRepo([makeQuestion({ status: 'answered' })]);
-    const service = new AgentQuestionService({ questionRepo: repo });
+    const service = new AgentQuestionService({ questionRepo: repo, ceoRef: 'human:ceo' });
     const result = await service.escalate({ questionId: 'q-1' });
     expect(result.ok).toBe(false);
   });
 
   it('close: answered → closed', async () => {
     const repo = makeRepo([makeQuestion({ status: 'answered' })]);
-    const service = new AgentQuestionService({ questionRepo: repo });
+    const service = new AgentQuestionService({ questionRepo: repo, ceoRef: 'human:ceo' });
     const result = await service.close({ questionId: 'q-1' });
     expect(result.ok).toBe(true);
-    expect(result.question!.status).toBe('closed');
-    expect(result.question!.closedAt).not.toBeNull();
+    if (!result.ok) throw new Error(result.error);
+    expect(result.question.status).toBe('closed');
+    expect(result.question.closedAt).not.toBeNull();
   });
 
   it('close: pending 也可撤回关闭', async () => {
     const repo = makeRepo([makeQuestion()]);
-    const service = new AgentQuestionService({ questionRepo: repo });
+    const service = new AgentQuestionService({ questionRepo: repo, ceoRef: 'human:ceo' });
     const result = await service.close({ questionId: 'q-1' });
     expect(result.ok).toBe(true);
-    expect(result.question!.status).toBe('closed');
+    if (!result.ok) throw new Error(result.error);
+    expect(result.question.status).toBe('closed');
   });
 
   it('list: open 只含 pending+escalated', async () => {
@@ -216,10 +222,11 @@ describe('AgentQuestionService', () => {
       makeQuestion({ id: 'q-3', status: 'answered' }),
       makeQuestion({ id: 'q-4', status: 'closed' }),
     ]);
-    const service = new AgentQuestionService({ questionRepo: repo });
+    const service = new AgentQuestionService({ questionRepo: repo, ceoRef: 'human:ceo' });
     const result = await service.list({ openOnly: true });
     expect(result.ok).toBe(true);
-    expect(result.questions!.map((q) => q.id).sort()).toEqual(['q-1', 'q-2']);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.questions.map((q) => q.id).sort()).toEqual(['q-1', 'q-2']);
   });
 
   it('answer: kind=research 时自动写回共享记忆', async () => {

@@ -23,7 +23,7 @@ describe('MatrixIMMessagingAdapter', () => {
     }, { now: () => 1_700_000_000_000 });
     await adapter.sendNotification('agent:w1', payload);
     expect(calls).toHaveLength(1);
-    const { url, init } = calls[0];
+    const { url, init } = calls[0]!;
     expect(url).toContain('http://localhost:8008/_matrix/client/v3/rooms/');
     expect(url).toContain(encodeURIComponent('!room:hs'));
     expect(url).toContain('/send/m.room.message/');
@@ -44,7 +44,7 @@ describe('MatrixIMMessagingAdapter', () => {
       fetchImpl,
     });
     await adapter.sendNotification('!conv-room:hs', payload);
-    expect(calls[0].url).toContain(encodeURIComponent('!conv-room:hs'));
+    expect(calls[0]!.url).toContain(encodeURIComponent('!conv-room:hs'));
     expect(adapter.resolveRoom('!x:y')).toBe('!x:y');
   });
 
@@ -58,7 +58,7 @@ describe('MatrixIMMessagingAdapter', () => {
       fetchImpl,
     });
     await adapter.sendNotification('agent:dl', payload);
-    expect(calls[0].url).toContain(encodeURIComponent('!dev-room:hs'));
+    expect(calls[0]!.url).toContain(encodeURIComponent('!dev-room:hs'));
   });
 
   it('formatNotification: 带输出摘要截断', () => {

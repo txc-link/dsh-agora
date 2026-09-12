@@ -104,6 +104,6 @@ describe('ThreadWorksiteResolver', () => {
     source.set({ roomId: 'mx_b' });
     const resolver = new ThreadWorksiteResolver({ threadSource: source });
     const rooms = await resolver['threadSource'].listRooms();
-    expect(rooms.sort()).toEqual(['mx_a', 'mx_b']);
+    expect([...rooms].sort()).toEqual(['mx_a', 'mx_b']);
   });
 });

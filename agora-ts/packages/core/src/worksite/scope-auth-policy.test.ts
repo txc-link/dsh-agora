@@ -26,7 +26,7 @@ function makeTask(overrides: Partial<TaskRecord> = {}): TaskRecord {
     current_stage: null,
     skill_policy: null,
     team: { members: [] },
-    workflow: { stages: [], graph: { nodes: [], edges: [] } },
+    workflow: { stages: [], graph: { graph_version: 1, entry_nodes: [], nodes: [], edges: [] } },
     control: null,
     scheduler: null,
     scheduler_snapshot: null,
