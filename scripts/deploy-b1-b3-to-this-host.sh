@@ -48,12 +48,13 @@ echo "  RADICALE env -> [Service]"
 add_service_env RADICALE_URL "http://127.0.0.1:5232"
 add_service_env RADICALE_USER "tester"
 add_service_env RADICALE_PASSWORD "${RADICALE_PASSWORD}"
+add_service_env CALENDAR_TIMEZONE_OFFSET_MINUTES "${CALENDAR_TIMEZONE_OFFSET_MINUTES:-480}"
 
 echo ""
 echo "=== 4. daemon-reload + restart ==="
 systemctl daemon-reload
 [ -n "${SYSTEMD_UNIT:-}" ] || SYSTEMD_UNIT=/etc/systemd/system/agora.service
-for key in RADICALE_URL RADICALE_USER RADICALE_PASSWORD; do
+for key in RADICALE_URL RADICALE_USER RADICALE_PASSWORD CALENDAR_TIMEZONE_OFFSET_MINUTES; do
   systemctl show agora -p Environment --value | grep -q "${key}=" \
     || { echo "FATAL: ${key} 没进 systemd Environment — 检查 [Service] 段"; exit 1; }
 done

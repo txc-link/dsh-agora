@@ -39,12 +39,38 @@ function parseLine(raw: string): RawLine | null {
   return { key: key.toUpperCase(), params, value };
 }
 
+/**
+ * Normalise a RFC 5545 DATE / DATE-TIME value into ISO 8601 so downstream
+ * consumers (CalendarService bucketing, conflict detection, report
+ * formatting) can compare and parse it with `Date`.
+ *
+ * The DTO contract (`calendarEventSchema`) declares `start`/`end` as
+ * "ISO 8601"; RFC 5545's compact form (`20260831T090000Z`) is NOT valid
+ * ISO 8601 — `Date.parse` returns NaN for it, which silently emptied
+ * every "today" bucket and made conflict detection throw.
+ *
+ *   DATE       20260831           -> 2026-08-31
+ *   DATE-TIME  20260831T090000Z   -> 2026-08-31T09:00:00Z
+ *   floating   20260831T090000    -> 2026-08-31T09:00:00
+ *
+ * Floating values (no UTC suffix, including `TZID=`-qualified wall times)
+ * are emitted without an offset: they denote a wall-clock time in an
+ * unspecified zone, so inventing "Z" would shift the event by hours.
+ * Deployment timezone interpretation is therefore the caller's job.
+ * Unrecognised values pass through untouched rather than being dropped.
+ */
 function parseDateTime(value: string, params: Map<string, string>): string {
-  // Floating (no TZID, no Z) → treat as UTC at face value; emit as-is so the
-  // caller can interpret in the deployment timezone. Production deployments
-  // should prefer UTC ("Z") events.
+  const raw = value.trim();
+  if (raw.length === 0) return value;
+  // TZID-qualified wall time: keep the wall clock, drop nothing.
   void params;
-  return value;
+  if (/^\d{4}-\d{2}-\d{2}/u.test(raw)) return raw; // already ISO 8601
+  const dateOnly = /^(\d{4})(\d{2})(\d{2})$/u.exec(raw);
+  if (dateOnly) return `${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}`;
+  const dateTime = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/u.exec(raw);
+  if (!dateTime) return raw;
+  const [, year, month, day, hour, minute, second, utc] = dateTime;
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}${utc === 'Z' ? 'Z' : ''}`;
 }
 
 function unescapeText(value: string): string {
