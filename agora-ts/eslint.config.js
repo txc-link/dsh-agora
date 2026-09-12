@@ -8,6 +8,13 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    // FR-071 reviewer artifact: an independent, byte-frozen adversarial suite
+    // (sha256 d7776d3a...). It ships one unused import and by contract must not
+    // be edited, so it is exempted from lint only — every rule below still
+    // applies to the rest of the repository.
+    ignores: ['**/radicale-calendar.fr071-adversarial.test.ts'],
+  },
+  {
     files: ['**/*.ts'],
     languageOptions: {
       parserOptions: {

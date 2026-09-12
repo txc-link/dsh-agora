@@ -3,6 +3,7 @@ import type { CalendarDomainDto, CalendarEventDto } from '@agora-ts/contracts';
 import type { CreateCalendarEventInput } from '@agora-ts/core';
 import { parseICalEvents } from './ical.js';
 import { serializeICalEvent } from './ical-serialize.js';
+import { assertPathContained, assertSafeCollectionPath } from './path-safety.js';
 import type { RadicaleClient } from './radicale-client.js';
 
 export interface RadicaleCalendarAdapterOptions {
@@ -54,16 +55,33 @@ export class RadicaleCalendarAdapter {
     return parsed;
   }
 
+  /**
+   * Resolve a run-time domain to its declared collection and refuse anything
+   * else. `CalendarDomainDto` is `'work' | 'life'` at compile time, but callers
+   * reach this through untyped JSON, so an unknown domain must fail closed
+   * instead of silently falling back to the life collection.
+   */
   private collectionFor(domain: CalendarDomainDto): string {
-    return domain === 'work' ? this.options.collections.work : this.options.collections.life;
+    const declared: string | undefined = Object.prototype.hasOwnProperty.call(this.options.collections, domain)
+      ? this.options.collections[domain as 'work' | 'life']
+      : undefined;
+    if (declared === undefined) {
+      throw new TypeError(`unsupported calendar domain: ${String(domain)}`);
+    }
+    return declared;
   }
 
+  /**
+   * Build the resource path for one event and prove it stays inside the
+   * collection it was derived from. The collection itself is re-validated on
+   * every write: a protocol-relative or traversing collection root is refused
+   * before any network call, and the constructed path is confined to it.
+   */
   private eventPath(domain: CalendarDomainDto, uid: string): string {
-    const collection = this.collectionFor(domain).replace(/\/+$/u, '');
-    if (!collection.startsWith('/')) {
-      throw new TypeError(`radicale collection for ${domain} must be an absolute path: ${collection}`);
-    }
-    return `${collection}/${uid}.ics`;
+    const collection = assertSafeCollectionPath(this.collectionFor(domain), `radicale ${String(domain)}`);
+    const path = `${collection}/${uid}.ics`;
+    assertPathContained(collection, path);
+    return path;
   }
 }
 

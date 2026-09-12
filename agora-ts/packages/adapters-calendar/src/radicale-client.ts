@@ -15,6 +15,7 @@
  */
 import type { CalendarEventDto } from '@agora-ts/contracts';
 import { parseICalEvents } from './ical.js';
+import { assertCalDavPath } from './path-safety.js';
 
 export interface RadicaleClientOptions {
   baseUrl: string;
@@ -49,7 +50,7 @@ export class RadicaleClient {
   }
 
   private async fetchIcs(path: string): Promise<string> {
-    const url = new URL(path, this.options.baseUrl).toString();
+    const url = this.resolveCalDavUrl(path);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 8000);
     try {
@@ -89,7 +90,7 @@ export class RadicaleClient {
     } else if (options.ifMatch) {
       headers['if-match'] = options.ifMatch;
     }
-    const url = new URL(path, this.options.baseUrl).toString();
+    const url = this.resolveCalDavUrl(path);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 8000);
     try {
@@ -115,21 +116,28 @@ export class RadicaleClient {
     const ics = await this.fetchIcs(collectionPath.replace(/\/$/u, '') + '/');
     return parseICalEvents(ics);
   }
-}
 
-function assertCalDavPath(path: string): string {
-  const value = path.trim();
-  if (!value.startsWith('/')) throw new TypeError('CalDAV path must be absolute (start with "/")');
-  if (value.includes('..')) throw new TypeError('CalDAV path must not traverse collections');
-  if (hasControlCharacter(value)) throw new TypeError('CalDAV path must not contain control characters');
-  return value;
-}
-
-/** True when any code point is a C0 control (includes CR/LF/NUL) or DEL. */
-function hasControlCharacter(value: string): boolean {
-  for (const character of value) {
-    const code = character.codePointAt(0) ?? 0;
-    if (code < 0x20 || code === 0x7f) return true;
+  /**
+   * Resolve `path` against `baseUrl` and refuse to leave the configured origin.
+   *
+   * The path guard runs first (host-switch / traversal / injection), then the
+   * *resolved* URL's origin is compared with the base origin. The second check
+   * is the backstop for any protocol-relative spelling the guard might miss:
+   * the Basic `authorization` header must never be attached to a request whose
+   * origin differs from the configured Radicale host.
+   */
+  private resolveCalDavUrl(path: string): string {
+    const guarded = assertCalDavPath(path);
+    let base: URL;
+    try {
+      base = new URL(this.options.baseUrl);
+    } catch {
+      throw new TypeError(`radicale baseUrl must be an absolute URL: ${this.options.baseUrl}`);
+    }
+    const resolved = new URL(guarded, base);
+    if (resolved.origin !== base.origin) {
+      throw new TypeError(`CalDAV path must resolve within the configured Radicale origin (${base.origin}): ${guarded}`);
+    }
+    return resolved.toString();
   }
-  return false;
 }

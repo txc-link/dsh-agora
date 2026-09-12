@@ -62,58 +62,138 @@ interface ICalValue {
  */
 function toICalValue(raw: string, label: string): ICalValue {
   const value = required(raw, label);
-  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(value);
-  if (dateOnly) {
-    assertRealDate(value, label);
-    return { params: ';VALUE=DATE', value: `${dateOnly[1]}${dateOnly[2]}${dateOnly[3]}`, key: value, kind: 'date' };
+  const isoDate = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(value);
+  if (isoDate) {
+    const compact = `${isoDate[1]}${isoDate[2]}${isoDate[3]}`;
+    return dateValue(isoDate, compact, ';VALUE=DATE', value, label);
   }
   const compactDate = /^(\d{4})(\d{2})(\d{2})$/u.exec(value);
   if (compactDate) {
     const iso = `${compactDate[1]}-${compactDate[2]}-${compactDate[3]}`;
-    assertRealDate(iso, label);
-    return { params: ';VALUE=DATE', value, key: iso, kind: 'date' };
+    return dateValue(compactDate, value, ';VALUE=DATE', iso, label);
   }
-  const floating = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/u.exec(value);
-  if (floating) {
-    const year = floating[1] ?? '';
-    const month = floating[2] ?? '';
-    const day = floating[3] ?? '';
-    const hour = floating[4] ?? '';
-    const minute = floating[5] ?? '';
-    const second = floating[6] ?? '00';
-    assertRealDate(`${year}-${month}-${day}`, label);
-    assertRealTime(hour, minute, second, label);
-    const wall = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
-    return { params: '', value: `${year}${month}${day}T${hour}${minute}${second}`, key: `floating:${wall}`, kind: 'floating' };
+  if (/^\d{8}T\d{6}Z?$/u.test(value)) {
+    const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/u.exec(value);
+    /* istanbul ignore if -- guarded by the shape test above */
+    if (!match) throw new TypeError(`${label} must be a compact RFC 5545 date-time: ${value}`);
+    return zonedOrFloating(match, value, label);
   }
-  const compact = /^(\d{8}T\d{6})(Z?)$/u.exec(value);
-  if (compact) {
-    return { params: '', value, key: compact[2] === 'Z' ? `zoned:${value}` : `floating:${value}`, kind: compact[2] === 'Z' ? 'zoned' : 'floating' };
+  if (/^\d{4}-\d{2}-\d{2}T/u.test(value)) {
+    const iso = parseIsoDateTime(value, label);
+    return iso.kind === 'zoned'
+      ? { params: '', value: compactZoned(iso.epochMs), key: zonedKey(iso.epochMs), kind: 'zoned' }
+      : { params: '', value: `${iso.compactYear}${iso.compactMonth}${iso.compactDay}T${iso.compactTime}`, key: iso.key, kind: 'floating' };
   }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) throw new TypeError(`${label} must be an ISO 8601 date or date-time: ${value}`);
-  if (/(?:Z|[+-]\d{2}:?\d{2})$/u.test(value)) {
-    // Zone-qualified instants are stored in UTC (RFC 5545 §3.3.5).
-    const utc = parsed.toISOString();
-    return { params: '', value: `${utc.slice(0, 19).replace(/[-:]/gu, '')}Z`, key: `zoned:${utc}`, kind: 'zoned' };
-  }
-  // Floating wall-clock (e.g. fractional seconds, or any ISO form without a
-  // zone): `Date` parsed it in the process's local zone, so reading the local
-  // components back reproduces the same wall clock without inventing a zone.
-  const year = String(parsed.getFullYear());
-  const month = pad(parsed.getMonth() + 1);
-  const day = pad(parsed.getDate());
-  const hour = pad(parsed.getHours());
-  const minute = pad(parsed.getMinutes());
-  const second = pad(parsed.getSeconds());
-  const wall = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
-  return { params: '', value: `${year}${month}${day}T${hour}${minute}${second}`, key: `floating:${wall}`, kind: 'floating' };
+  throw new TypeError(`${label} must be an ISO 8601 date or date-time: ${value}`);
 }
 
-function assertRealDate(iso: string, label: string): void {
-  const parsed = new Date(`${iso}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== iso) {
-    throw new TypeError(`${label} is not a real calendar date: ${iso}`);
+/** Convert a ${year,month,day} match into a DATE value with a normalised key. */
+function dateValue(match: RegExpExecArray, compactValue: string, params: string, key: string, label: string): ICalValue {
+  const year = match[1] ?? '';
+  const month = match[2] ?? '';
+  const day = match[3] ?? '';
+  assertRealDate(year, month, day, label);
+  return { params, value: compactValue, key, kind: 'date' };
+}
+
+/** Shared handling for the compact RFC 5545 date-time form (with or without Z). */
+function zonedOrFloating(match: RegExpExecArray, value: string, label: string): ICalValue {
+  const [, y, mo, d, h, mi, s, utc] = match;
+  assertRealDate(y ?? '', mo ?? '', d ?? '', label);
+  assertRealTime(h ?? '', mi ?? '', s ?? '', label);
+  if (utc === 'Z') {
+    const epochMs = epochMsFromFields(y ?? '', mo ?? '', d ?? '', h ?? '', mi ?? '', s ?? '', 0, 0);
+    return { params: '', value, key: zonedKey(epochMs), kind: 'zoned' };
+  }
+  const wall = `${y}-${mo}-${d}T${h}:${mi}:${s}`;
+  return { params: '', value, key: `floating:${wall}`, kind: 'floating' };
+}
+
+interface ParsedIsoDateTime {
+  readonly kind: 'zoned' | 'floating';
+  readonly key: string;
+  readonly epochMs: number;
+  readonly compactYear: string;
+  readonly compactMonth: string;
+  readonly compactDay: string;
+  readonly compactTime: string;
+}
+
+/**
+ * Strict ISO 8601 date-time parser. The shape is pinned by regex and every
+ * field is range-checked against real calendar rules (including leap years)
+ * before any arithmetic: `Date.parse` is never consulted, so impossible inputs
+ * such as `2026-02-30` or `2026-13-99T99:99:99` are refused instead of being
+ * silently rolled over into a different instant.
+ */
+function parseIsoDateTime(value: string, label: string): ParsedIsoDateTime {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(Z|[+-]\d{2}:?\d{2})?$/u.exec(value);
+  if (!match) throw new TypeError(`${label} must be an ISO 8601 date or date-time: ${value}`);
+  const [, y, mo, d, h, mi, sRaw, fraction, zone] = match;
+  const second = sRaw ?? '00';
+  const millis = fraction === undefined ? 0 : Number(`0.${fraction}`) * 1000;
+  assertRealDate(y ?? '', mo ?? '', d ?? '', label);
+  assertRealTime(h ?? '', mi ?? '', second, label);
+  const zoned = zone !== undefined;
+  const offsetMinutes = zoned ? offsetMinutesOf(zone === 'Z' ? '+00:00' : zone, label) : 0;
+  const epochMs = epochMsFromFields(y ?? '', mo ?? '', d ?? '', h ?? '', mi ?? '', second, millis, offsetMinutes);
+  if (zoned) {
+    return { kind: 'zoned', key: zonedKey(epochMs), epochMs, compactYear: y ?? '', compactMonth: mo ?? '', compactDay: d ?? '', compactTime: `${h}${mi}${second}` };
+  }
+  const fractionKey = millis === 0 ? '' : `.${String(millis).padStart(3, '0')}`;
+  const wall = `${y}-${mo}-${d}T${h}:${mi}:${second}${fractionKey}`;
+  return { kind: 'floating', key: `floating:${wall}`, epochMs, compactYear: y ?? '', compactMonth: mo ?? '', compactDay: d ?? '', compactTime: `${h}${mi}${second}` };
+}
+
+/** Parse a `Z`/`±HH:MM`/`±HHMM` offset, refusing out-of-range hours or minutes. */
+function offsetMinutesOf(zone: string, label: string): number {
+  const match = /^([+-])(\d{2}):?(\d{2})$/u.exec(zone);
+  if (!match) throw new TypeError(`${label} has an invalid UTC offset: ${zone}`);
+  const hours = Number(match[2]);
+  const minutes = Number(match[3]);
+  if (hours > 23 || minutes > 59) throw new TypeError(`${label} has an out-of-range UTC offset: ${zone}`);
+  const magnitude = hours * 60 + minutes;
+  return match[1] === '-' ? -magnitude : magnitude;
+}
+
+function compactZoned(epochMs: number): string {
+  const date = new Date(epochMs);
+  return `${String(date.getUTCFullYear()).padStart(4, '0')}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`;
+}
+
+/** Zero-padded epoch key so lexicographic and chronological order coincide. */
+function zonedKey(epochMs: number): string {
+  return `zoned:${String(Math.round(epochMs)).padStart(17, '0')}`;
+}
+
+/** Days since 1970-01-01 (proleptic Gregorian), cycle-safe for all 4-digit years. */
+function daysFromCivil(year: number, month: number, day: number): number {
+  const y = month <= 2 ? year - 1 : year;
+  const era = Math.floor(y / 400);
+  const yoe = y - era * 400;
+  const doy = Math.floor((153 * (month + (month > 2 ? -3 : 9)) + 2) / 5) + day - 1;
+  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
+  return era * 146097 + doe - 719468;
+}
+
+function epochMsFromFields(
+  year: string, month: string, day: string,
+  hour: string, minute: string, second: string,
+  millisecond: number, offsetMinutes: number,
+): number {
+  return ((daysFromCivil(Number(year), Number(month), Number(day)) * 86400
+    + Number(hour) * 3600 + Number(minute) * 60 + Number(second)) * 1000 + millisecond)
+    - offsetMinutes * 60000;
+}
+
+function assertRealDate(year: string, month: string, day: string, label: string): void {
+  const numericYear = Number(year);
+  const numericMonth = Number(month);
+  const numericDay = Number(day);
+  const daysInMonth = [31, ((numericYear % 4 === 0 && numericYear % 100 !== 0) || numericYear % 400 === 0) ? 29 : 28,
+    31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (numericMonth < 1 || numericMonth > 12 || numericDay < 1 || numericDay > (daysInMonth[numericMonth - 1] ?? 0)) {
+    throw new TypeError(`${label} is not a real calendar date: ${year}-${month}-${day}`);
   }
 }
 
@@ -122,7 +202,7 @@ function assertRealTime(hour: string, minute: string, second: string, label: str
   const minuteValue = Number(minute);
   const secondValue = Number(second);
   const leapSecond = secondValue === 60;
-  if (numeric > 23 || minuteValue > 59 || (secondValue > 59 && !leapSecond)) {
+  if (numeric < 0 || numeric > 23 || minuteValue < 0 || minuteValue > 59 || secondValue < 0 || (secondValue > 59 && !leapSecond)) {
     throw new TypeError(`${label} is not a real wall-clock time: ${hour}:${minute}:${second}`);
   }
 }
