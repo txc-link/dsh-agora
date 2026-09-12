@@ -15,7 +15,8 @@
  *     `ical.ts`, so a written event reads back unchanged.
  *  2. **Transport hygiene**: TEXT escaping and 75-octet line folding with
  *     CRLF endings, folding on UTF-8 code point boundaries (never inside a
- *     multi-byte character).
+ *     multi-byte character). Control characters (C0 and DEL) are refused in
+ *     UID/SUMMARY/LOCATION rather than written into the resource.
  */
 
 export interface SerializeICalEventInput {
@@ -197,12 +198,16 @@ function assertRealDate(year: string, month: string, day: string, label: string)
   }
 }
 
+/**
+ * Wall-clock field ranges. Leap seconds (`:60`) are refused rather than
+ * accepted and silently rolled into the next minute: this path must fail
+ * closed on a value the rest of the stack cannot represent faithfully.
+ */
 function assertRealTime(hour: string, minute: string, second: string, label: string): void {
   const numeric = Number(hour);
   const minuteValue = Number(minute);
   const secondValue = Number(second);
-  const leapSecond = secondValue === 60;
-  if (numeric < 0 || numeric > 23 || minuteValue < 0 || minuteValue > 59 || secondValue < 0 || (secondValue > 59 && !leapSecond)) {
+  if (numeric < 0 || numeric > 23 || minuteValue < 0 || minuteValue > 59 || secondValue < 0 || secondValue > 59) {
     throw new TypeError(`${label} is not a real wall-clock time: ${hour}:${minute}:${second}`);
   }
 }
@@ -215,11 +220,13 @@ export function serializeICalEvent(input: SerializeICalEventInput): string {
   const uid = required(input.uid, 'uid');
   if (hasControlCharacter(uid)) throw new TypeError('uid must not contain control characters');
   const summary = required(input.summary, 'summary');
+  if (hasControlCharacter(summary)) throw new TypeError('summary must not contain control characters');
   const start = toICalValue(input.start, 'start');
   const end = toICalValue(input.end, 'end');
   assertOrdered(start, end);
   const stamp = (input.now?.() ?? new Date()).toISOString().replace(/[-:]/gu, '').replace(/\.\d{3}/u, '');
   const location = input.location?.trim();
+  if (location && hasControlCharacter(location)) throw new TypeError('location must not contain control characters');
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',

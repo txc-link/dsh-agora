@@ -108,4 +108,33 @@ describe('serializeICalEvent', () => {
     expect(ics.endsWith('END:VCALENDAR\r\n')).toBe(true);
     expect(ics).toContain('PRODID:-//agora-ts//adapters-calendar//EN\r\n');
   });
+
+  it('refuses leap seconds and control characters instead of writing them through', () => {
+    const base = { uid: 'x', summary: 'y', now: NOW };
+    const timed = { start: '2026-09-01T09:00:00Z', end: '2026-09-01T10:00:00Z' };
+    // Leap seconds are refused in both the ISO and the compact RFC 5545 form
+    // (fail-closed: never silently rolled into the next minute).
+    expect(() => serializeICalEvent({ ...base, start: '2026-09-01T09:00:60Z', end: '2026-09-01T10:00:00Z' }))
+      .toThrow(/not a real wall-clock time/u);
+    expect(() => serializeICalEvent({ ...base, start: '2026-12-31T23:59:60Z', end: '2027-01-01T00:00:30Z' }))
+      .toThrow(/not a real wall-clock time/u);
+    expect(() => serializeICalEvent({ ...base, start: '2026-09-01T09:00:00Z', end: '2026-09-01T10:00:60Z' }))
+      .toThrow(/not a real wall-clock time/u);
+    expect(() => serializeICalEvent({ ...base, start: '20260901T090060Z', end: '20260901T100000Z' }))
+      .toThrow(/not a real wall-clock time/u);
+    expect(() => serializeICalEvent({ ...base, start: '20261231T235960Z', end: '20270101T000030Z' }))
+      .toThrow(/not a real wall-clock time/u);
+    // SUMMARY and LOCATION carry the same control-character bar as UID, so no
+    // NUL/DEL (or any other C0) can reach the stored resource.
+    expect(() => serializeICalEvent({ ...base, ...timed, summary: 'a\u0000b' }))
+      .toThrow(/summary must not contain control characters/u);
+    expect(() => serializeICalEvent({ ...base, ...timed, summary: 'a\u007fb' }))
+      .toThrow(/summary must not contain control characters/u);
+    expect(() => serializeICalEvent({ ...base, ...timed, summary: 'a\u0001b' }))
+      .toThrow(/summary must not contain control characters/u);
+    expect(() => serializeICalEvent({ ...base, ...timed, location: 'a\u0000b' }))
+      .toThrow(/location must not contain control characters/u);
+    expect(() => serializeICalEvent({ ...base, ...timed, location: 'a\u007fb' }))
+      .toThrow(/location must not contain control characters/u);
+  });
 });
