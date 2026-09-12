@@ -107,6 +107,14 @@ export function apply(ctx, config = {}) {
             baseUrl: `http://127.0.0.1:${webServer.port}`,
             agents: config.runtimeAgents ?? [{ id: 'default', displayName: 'DeepSeek Harness', workspace: process.cwd() }],
             ...(config.runtimeReplyTimeoutMs === undefined ? {} : { replyTimeoutMs: config.runtimeReplyTimeoutMs }),
+            // dsh web authenticates /api with a cookie minted from a per-process
+            // launch token that never leaves the host process, so hand the local
+            // Connection service's authenticated URL down to the adapter instead of
+            // letting it guess at credentials.
+            launchUrl: baseUrl => {
+                const connection = ctx.get?.('connection');
+                return connection?.authenticatedUrl?.(baseUrl);
+            },
         });
         const unregisterRuntime = service.registerExtension({
             protocol: DSH_AGORA_EXTENSION_PROTOCOL,

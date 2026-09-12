@@ -6,7 +6,7 @@ export class HarnessRuntimeAdapter {
     agents;
     replyTimeoutMs;
     constructor(options) {
-        this.client = new HarnessRpcClient(options.baseUrl, options.fetch);
+        this.client = new HarnessRpcClient(options.baseUrl, options.fetch, options.launchUrl, options.socketFactory);
         this.agents = normalizeAgents(options.agents);
         this.replyTimeoutMs = normalizeReplyTimeout(options.replyTimeoutMs);
     }
@@ -94,78 +94,261 @@ export class HarnessRuntimeAdapter {
         }
     }
     async cancel(sessionId, signal) {
-        await this.client.rpc('session.cancel', { sessionId, keepInbox: true }, 30_000, signal);
+        await this.client.rpc('session/cancel', { request: { sessionId } }, 30_000, signal);
         return true;
+    }
+}
+/**
+ * Default socket factory over the runtime's global WebSocket. Node's undici
+ * implementation accepts the extra `headers` option, which is the only way to
+ * carry the browser-session cookie the API gateway's upgrade fence wants.
+ */
+function defaultWebSocketFactory(url, options) {
+    const ctor = globalThis.WebSocket;
+    if (ctor === undefined)
+        throw new Error('DSH Remote streams need a WebSocket implementation in this runtime');
+    return new ctor(url, options);
+}
+/** FIFO of stream items with promise-based consumers and terminal states. */
+class StreamQueue {
+    items = [];
+    waiters = [];
+    terminal;
+    failure;
+    push(value) {
+        const waiter = this.waiters.shift();
+        if (waiter !== undefined) {
+            waiter.resolve({ done: false, value });
+            return;
+        }
+        if (this.terminal === undefined && this.failure === undefined)
+            this.items.push(value);
+    }
+    end() {
+        if (this.terminal !== undefined || this.failure !== undefined)
+            return;
+        this.terminal = { done: true, value: undefined };
+        for (const waiter of this.waiters.splice(0))
+            waiter.resolve(this.terminal);
+    }
+    fail(error) {
+        if (this.terminal !== undefined || this.failure !== undefined)
+            return;
+        this.failure = error;
+        for (const waiter of this.waiters.splice(0))
+            waiter.reject(error);
+    }
+    next() {
+        const item = this.items.shift();
+        if (item !== undefined)
+            return Promise.resolve({ done: false, value: item });
+        if (this.failure !== undefined)
+            return Promise.reject(this.failure);
+        if (this.terminal !== undefined)
+            return Promise.resolve(this.terminal);
+        return new Promise((resolve, reject) => this.waiters.push({ resolve, reject }));
     }
 }
 class HarnessRpcClient {
     origin;
     fetchImpl;
-    constructor(baseUrl, fetchImpl = globalThis.fetch) {
+    launchUrl;
+    socketFactory;
+    cookie;
+    constructor(baseUrl, fetchImpl = globalThis.fetch, launchUrl, socketFactory = defaultWebSocketFactory) {
         this.origin = new URL(baseUrl);
         this.fetchImpl = fetchImpl;
+        this.launchUrl = launchUrl;
+        this.socketFactory = socketFactory;
     }
-    async rpc(method, payload, timeoutMs, signal, rpcId) {
+    /**
+     * Resolve one browser-session cookie through the process launch-token
+     * exchange. dsh web authenticates every /api request with a signed cookie
+     * bound to the request authority; the launch token is minted per process and
+     * held in memory only, so only an in-process caller can hand it over.
+     */
+    async sessionCookie() {
+        if (this.cookie !== undefined)
+            return this.cookie;
+        const launchUrl = this.launchUrl?.(this.origin.origin);
+        if (launchUrl === undefined) {
+            throw new Error('DSH web launch token is unavailable to this runtime adapter');
+        }
+        const response = await this.fetchImpl(launchUrl, { method: 'GET', redirect: 'manual' });
+        const headers = response.headers;
+        const raw = headers.getSetCookie?.()[0] ?? response.headers.get('set-cookie') ?? undefined;
+        if (raw === undefined || raw === '') {
+            throw new Error(`DSH web token exchange returned HTTP ${response.status} without a session cookie`);
+        }
+        const pair = raw.split(';')[0]?.trim() ?? '';
+        if (pair === '')
+            throw new Error('DSH web token exchange returned an empty session cookie');
+        this.cookie = pair;
+        return pair;
+    }
+    async rpc(method, args, timeoutMs, signal, rpcId) {
         const requestId = rpcId ?? `agora-${randomUUID()}`;
         const timeout = AbortSignal.timeout(timeoutMs);
         const combined = signal === undefined ? timeout : AbortSignal.any([signal, timeout]);
-        const response = await this.fetchImpl(new URL(`/api/${method}`, this.origin), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify({ type: 'client-request', rpcId: requestId, method, payload }),
-            signal: combined,
+        for (let attempt = 0;; attempt += 1) {
+            const cookie = await this.sessionCookie();
+            const response = await this.fetchImpl(new URL(`/api/${method}`, this.origin), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Accept: 'application/json', Cookie: cookie },
+                body: JSON.stringify({ type: 'client-request', rpcId: requestId, method, payload: { args } }),
+                signal: combined,
+            });
+            // The cookie outlives one process only while its signing secret is
+            // unchanged; a 401 means the authority's session was rotated, so drop the
+            // cached pair and exchange the launch token once more.
+            if (response.status === 401 && attempt === 0) {
+                this.cookie = undefined;
+                continue;
+            }
+            if (!response.ok)
+                throw new Error(`DSH ${method} returned HTTP ${response.status}`);
+            const body = await response.json();
+            if (body.type !== 'server-response' || body.rpcId !== requestId || typeof body.result?.ok !== 'boolean') {
+                throw new Error(`DSH ${method} returned an invalid RPC envelope`);
+            }
+            if (!body.result.ok) {
+                const error = new Error(body.result.error?.message ?? `DSH ${method} failed`);
+                error.name = body.result.error?.code ?? 'HarnessRpcError';
+                throw error;
+            }
+            return body.result.value;
+        }
+    }
+    /**
+     * Open one Remote stream on the gateway's multiplexed socket. The first item
+     * is the endpoint's opening snapshot; later items are its live frames.
+     */
+    async openStream(endpoint, args, signal) {
+        const cookie = await this.sessionCookie();
+        const url = new URL('/api/remote.mux', this.origin);
+        url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+        const socket = this.socketFactory(url.href, { headers: { Cookie: cookie } });
+        const queue = new StreamQueue();
+        const streamId = `agora-${randomUUID()}`;
+        let closed = false;
+        socket.addEventListener('message', event => {
+            const text = typeof event.data === 'string' ? event.data : String(event.data ?? '');
+            let frame;
+            try {
+                frame = JSON.parse(text);
+            }
+            catch {
+                return;
+            }
+            if (frame.streamId !== streamId)
+                return;
+            if (frame.type === 'item') {
+                queue.push(frame.value);
+                return;
+            }
+            if (frame.type === 'error') {
+                queue.fail(new Error(frame.error?.message ?? `DSH ${endpoint} stream failed`));
+                return;
+            }
+            if (frame.type === 'end')
+                queue.end();
         });
-        if (!response.ok)
-            throw new Error(`DSH ${method} returned HTTP ${response.status}`);
-        const body = await response.json();
-        if (body.type !== 'server-response' || body.rpcId !== requestId || typeof body.result?.ok !== 'boolean') {
-            throw new Error(`DSH ${method} returned an invalid RPC envelope`);
-        }
-        if (!body.result.ok) {
-            const error = new Error(body.result.error?.message ?? `DSH ${method} failed`);
-            error.name = body.result.error?.code ?? 'HarnessRpcError';
-            throw error;
-        }
-        return body.result.value;
+        socket.addEventListener('close', () => queue.end());
+        socket.addEventListener('error', () => queue.fail(new Error(`DSH ${endpoint} stream socket failed`)));
+        const abort = new Promise((_resolve, reject) => {
+            if (signal.aborted)
+                reject(signal.reason);
+            else
+                signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        });
+        await Promise.race([
+            new Promise((resolve, reject) => {
+                socket.addEventListener('open', () => resolve());
+                socket.addEventListener('error', () => reject(new Error(`DSH ${endpoint} stream socket refused`)));
+            }),
+            abort,
+        ]);
+        socket.send(JSON.stringify({ type: 'open', streamId, endpoint, payload: { args } }));
+        const opening = await Promise.race([queue.next(), abort]);
+        if (opening.done === true)
+            throw new Error(`DSH ${endpoint} stream ended before its opening snapshot`);
+        return {
+            snapshot: opening.value,
+            next: () => Promise.race([queue.next(), abort]),
+            close: () => {
+                if (closed)
+                    return;
+                closed = true;
+                try {
+                    socket.send(JSON.stringify({ type: 'cancel', streamId }));
+                }
+                catch {
+                    // The socket is already gone; nothing left to cancel.
+                }
+                try {
+                    socket.close();
+                }
+                catch {
+                    // Closing an already-closed socket is not an error worth reporting.
+                }
+                queue.end();
+            },
+        };
     }
     async createSession(options) {
-        const workspaces = await this.rpc('workspace.list', {}, 30_000, options.signal);
-        let workspaceId = workspaces.items?.find(item => item.path === options.workspace)?.workspaceId;
-        if (!workspaceId) {
-            const created = await this.rpc('workspace.create', { path: options.workspace }, 30_000, options.signal);
-            workspaceId = created.workspace?.workspaceId;
-        }
-        if (!workspaceId)
+        // The current Remote surface has no workspace enumeration: `workspace/create`
+        // resolves an existing directory idempotently, which is exactly the
+        // addressable identity a Session needs.
+        const workspace = await this.rpc('workspace/create', { request: { path: options.workspace } }, 30_000, options.signal);
+        const workspaceId = workspace.workspace?.workspaceId;
+        if (workspaceId === undefined)
             throw new Error(`DSH could not resolve workspace ${options.workspace}`);
-        const created = await this.rpc('session.create', { workspaceId, ...(options.agentPreset ? { agentPreset: options.agentPreset } : {}) }, 30_000, options.signal);
-        if (!created.sessionId)
+        const created = await this.rpc('session/create', {
+            request: {
+                workspaceId,
+                ...(options.agentPreset ? { agentPreset: options.agentPreset } : {}),
+            },
+        }, 30_000, options.signal);
+        if (created.sessionId === undefined)
             throw new Error('DSH session.create returned no sessionId');
         return created.sessionId;
     }
     async runPrompt(sessionId, prompt, timeoutMs, signal, promptRpcId = `agora-dispatch-${randomUUID()}`, callbacks = {}) {
         const timeout = AbortSignal.timeout(timeoutMs);
         const combined = AbortSignal.any([signal, timeout]);
-        const initial = await this.rpc('session.history', { sessionId, maxMessages: 50 }, 30_000, combined);
-        const tracker = new ReplyTracker(maxSeq(initial.events ?? []));
-        tracker.promptRpcId = promptRpcId;
-        await this.rpc('session.prompt', {
-            sessionId,
-            mode: 'queue',
-            content: [{ type: 'text', text: prompt }],
-            clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        }, 30_000, combined, promptRpcId);
-        await callbacks.onPromptAccepted?.();
-        let responseStarted = false;
-        while (!tracker.finished) {
-            await sleep(350, combined);
-            const history = await this.rpc('session.history', { sessionId, maxMessages: 50 }, 30_000, combined);
-            tracker.consume(history.events ?? []);
-            if (!responseStarted && tracker.answer !== '') {
-                responseStarted = true;
-                await callbacks.onResponseStarted?.();
+        // One live follow stream replaces the retired history poll: its opening
+        // snapshot carries the durable cursor and its frames carry every later
+        // turn event, so the reply is read without racing the transcript.
+        const stream = await this.openStream('session/follow', { request: { address: { kind: 'session', sessionId }, maxMessages: 50 } }, combined);
+        try {
+            const tracker = new ReplyTracker(maxSeq(stream.snapshot.records ?? []));
+            tracker.promptRpcId = promptRpcId;
+            await this.rpc('session/prompt', {
+                request: {
+                    requestId: promptRpcId,
+                    sessionId,
+                    mode: 'queue',
+                    content: [{ type: 'text', text: prompt }],
+                    clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                },
+            }, 30_000, combined, promptRpcId);
+            await callbacks.onPromptAccepted?.();
+            let responseStarted = false;
+            while (!tracker.finished) {
+                const item = await stream.next();
+                if (item.done === true)
+                    break;
+                tracker.consume([item.value]);
+                if (!responseStarted && tracker.answer !== '') {
+                    responseStarted = true;
+                    await callbacks.onResponseStarted?.();
+                }
             }
+            return { answer: tracker.answer, reason: tracker.reason };
         }
-        return { answer: tracker.answer, reason: tracker.reason };
+        finally {
+            stream.close();
+        }
     }
 }
 class ReplyTracker {

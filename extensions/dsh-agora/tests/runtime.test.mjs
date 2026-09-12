@@ -105,33 +105,67 @@ test('third-party extensions require trusted Ed25519 manifests under strict poli
 test('Harness runtime creates a Session and tracks the exact dispatched turn', async () => {
   const calls = []
   const progress = []
-  let historyCount = 0
-  const fetch = async (_url, options) => {
+  let socketHeaders
+  // A follow stream opens with one snapshot frame (the durable cursor plus any
+  // pre-existing records) and only then carries this turn's live frames.
+  const snapshotFrame = {
+    type: 'snapshot',
+    header: { version: 2, id: 'session-1', createdAt: 0, isSeeded: false },
+    cursor: 0,
+    records: [],
+    hasMore: false,
+    projections: {},
+  }
+  const turnEvents = [
+    { type: 'event', event: { seq: 1, type: 'turn/start', data: { turn: 9 } } },
+    { type: 'event', event: { seq: 2, type: 'user/message', data: { turn: 9, source: { rpcId: 'agora-dispatch-dispatch-1' } } } },
+    { type: 'event', event: { seq: 3, type: 'assistant/message', data: { turn: 9, message: { content: [{ type: 'text', text: 'remote result\n\n<agora-evidence>{"claims":[{"id":"claim-1","statement":"Tests passed","evidence_ids":["evidence-1"],"confidence":0.95}],"evidence":[{"id":"evidence-1","kind":"measurement","label":"test suite","metadata":{"passed":42}}],"confidence":0.95,"revision":"abc123"}</agora-evidence>' }] } } } },
+    { type: 'event', event: { seq: 4, type: 'turn/end', data: { turn: 9, reason: 'completed' } } },
+  ]
+  const fetch = async (url, options) => {
+    // The launch-token exchange mints the browser-session cookie every /api
+    // request carries afterwards.
+    if ((options?.method ?? 'GET') === 'GET') {
+      return new Response(null, {
+        status: 303,
+        headers: { 'set-cookie': 'dsh-auth-test=v1.payload.signature; Max-Age=100; Path=/; HttpOnly' },
+      })
+    }
     const request = JSON.parse(options.body)
     calls.push(request)
     let value
-    if (request.method === 'workspace.list') value = { items: [{ workspaceId: 'w-1', path: '/repo' }] }
-    else if (request.method === 'session.create') value = { sessionId: 'session-1' }
-    else if (request.method === 'session.prompt') value = { accepted: true }
-    else if (request.method === 'session.history') {
-      historyCount += 1
-      value = historyCount === 1 ? { events: [] } : {
-        events: [
-          { event: { seq: 1, type: 'turn/start', data: { turn: 9 } } },
-          { event: { seq: 2, type: 'user/message', data: { turn: 9, source: { rpcId: 'agora-dispatch-dispatch-1' } } } },
-          { event: { seq: 3, type: 'assistant/message', data: { turn: 9, message: { content: [{ type: 'text', text: 'remote result\n\n<agora-evidence>{"claims":[{"id":"claim-1","statement":"Tests passed","evidence_ids":["evidence-1"],"confidence":0.95}],"evidence":[{"id":"evidence-1","kind":"measurement","label":"test suite","metadata":{"passed":42}}],"confidence":0.95,"revision":"abc123"}</agora-evidence>' }] } } } },
-          { event: { seq: 4, type: 'turn/end', data: { turn: 9, reason: 'completed' } } },
-        ],
-      }
-    } else throw new Error(`unexpected ${request.method}`)
+    if (request.method === 'workspace/create') value = { workspace: { workspaceId: 'w-1', path: '/repo' } }
+    else if (request.method === 'session/create') value = { sessionId: 'session-1' }
+    else if (request.method === 'session/prompt') value = { accepted: true }
+    else throw new Error(`unexpected ${request.method}`)
     return new Response(JSON.stringify({ type: 'server-response', rpcId: request.rpcId, result: { ok: true, value } }), {
       status: 200, headers: { 'content-type': 'application/json' },
     })
+  }
+  const socketFactory = (_url, options) => {
+    socketHeaders = options.headers
+    const handlers = new Map()
+    const emit = (type, event) => { for (const listener of handlers.get(type) ?? []) listener(event) }
+    queueMicrotask(() => emit('open', {}))
+    return {
+      send: (data) => {
+        const message = JSON.parse(data)
+        if (message.type !== 'open') return
+        assert.equal(message.endpoint, 'session/follow')
+        for (const frame of [snapshotFrame, ...turnEvents]) {
+          emit('message', { data: JSON.stringify({ type: 'item', streamId: message.streamId, value: frame }) })
+        }
+      },
+      close: () => { emit('close', {}) },
+      addEventListener: (type, listener) => { handlers.set(type, [...(handlers.get(type) ?? []), listener]) },
+    }
   }
   const runtime = new HarnessRuntimeAdapter({
     baseUrl: 'http://127.0.0.1:3999',
     agents: [{ id: 'developer', workspace: '/repo', preset: 'coding' }],
     fetch,
+    launchUrl: baseUrl => `${baseUrl}/?token=test-launch-token`,
+    socketFactory,
   })
   const result = await runtime.execute({
     id: 'dispatch-1', node_id: 'node-b', status: 'claimed', claimed_by: 'instance-b', claim_token: 'claim-1', claim_expires_at: null,
@@ -151,6 +185,11 @@ test('Harness runtime creates a Session and tracks the exact dispatched turn', a
     dispatch_id: 'dispatch-1',
   })
   assert.deepEqual(progress.map(event => event.phase), ['session_ready', 'prompt_accepted', 'response_started', 'response_completed'])
+  // The Remote surface resolves one Workspace idempotently instead of listing
+  // the registry, and every payload is a named-argument envelope.
+  assert.deepEqual(calls.find(call => call.method === 'workspace/create').payload.args, { request: { path: '/repo' } })
+  assert.deepEqual(calls.find(call => call.method === 'session/create').payload.args, { request: { workspaceId: 'w-1', agentPreset: 'coding' } })
+  assert.deepEqual(socketHeaders, { Cookie: 'dsh-auth-test=v1.payload.signature' })
   assert.equal(result.resultEnvelope.schema, 'agora.runtime-result/v1')
   assert.equal(result.resultEnvelope.claims[0].statement, 'Tests passed')
   assert.equal(result.resultEnvelope.evidence[0].metadata.passed, 42)
@@ -162,9 +201,10 @@ test('Harness runtime creates a Session and tracks the exact dispatched turn', a
     dispatch_id: 'dispatch-1',
   })
   assert.equal(typeof result.resultEnvelope.usage.duration_ms, 'number')
-  const promptCall = calls.find(call => call.method === 'session.prompt')
+  const promptCall = calls.find(call => call.method === 'session/prompt')
   assert.equal(promptCall.rpcId, 'agora-dispatch-dispatch-1')
-  const prompt = promptCall.payload.content[0].text
+  assert.equal(promptCall.payload.args.request.requestId, 'agora-dispatch-dispatch-1')
+  const prompt = promptCall.payload.args.request.content[0].text
   assert.match(prompt, /Authoritative runtime context/)
   assert.match(prompt, /Runtime node: node-b/)
   assert.match(prompt, /Runtime target: dsh:node-b:developer/)
