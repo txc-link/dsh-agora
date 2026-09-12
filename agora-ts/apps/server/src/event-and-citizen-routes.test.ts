@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -58,7 +58,6 @@ afterEach(() => {
     const dir = tempPaths.pop();
     if (!dir) continue;
     try {
-      const { rmSync } = require('node:fs') as typeof import('node:fs');
       rmSync(dir, { recursive: true, force: true });
     } catch {
       /* ignore */

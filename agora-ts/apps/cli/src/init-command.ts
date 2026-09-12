@@ -301,8 +301,6 @@ export async function runNonInteractiveInit(options: RunInitCommandOptions): Pro
   }
 
   const existing = loadGlobalConfig();
-  const runtimeEnvironment = options.runtimeEnvironment ?? resolveAgoraRuntimeEnvironmentFromConfigPackage();
-  const existingIm = (existing.im as Record<string, unknown> | undefined) ?? {};
   const existingDashboardAuth = (existing.dashboard_auth as Record<string, unknown> | undefined) ?? {};
   const existingPermissions = (existing.permissions as Record<string, unknown> | undefined) ?? {};
   const existingArchonUsers = Array.isArray(existingPermissions.archonUsers)

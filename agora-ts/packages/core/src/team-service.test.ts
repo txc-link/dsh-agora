@@ -53,10 +53,6 @@ function makeRepo(): ITeamRepository & { _rows: Map<string, TeamRecord> } {
   };
 }
 
-function makeTeam(repo: ITeamRepository, name: string, opts: Partial<TeamInsertInput> = {}): TeamRecord {
-  return repo.insert({ project_id: 'p1', name, lead: `agent:lead-${name}`, ...opts });
-}
-
 describe('TeamService.createTeam', () => {
   it('合法创建: lead 默认入 members', () => {
     const repo = makeRepo();

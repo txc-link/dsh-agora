@@ -4,7 +4,7 @@ import type {
   AgentQuestionTarget,
   IAgentQuestionRepository,
 } from '@agora-ts/contracts';
-import { NotificationPayload } from './im-ports.js';
+import type { NotificationPayload } from './im-ports.js';
 
 export type { AgentQuestionKind, AgentQuestionRecord, AgentQuestionTarget };
 

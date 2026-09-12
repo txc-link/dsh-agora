@@ -8,11 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import {
-  decideReassign,
-  type ReassignDecision,
-  type StuckSignal,
-} from './stuck.js';
+import { decideReassign, type StuckSignal } from './stuck.js';
 import type { ScopeAuthorization } from './types.js';
 
 const scopeAuth: ScopeAuthorization = {

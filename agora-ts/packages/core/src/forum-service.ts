@@ -8,7 +8,6 @@
 import type {
   ForumCategory,
   ForumCommentRecord,
-  ForumPostInsertInput,
   ForumPostQuery,
   ForumPostRecord,
   IForumRepository,

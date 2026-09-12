@@ -21,7 +21,8 @@
  *                             (required).
  *   PORT                   — listen port (default 8089).
  */
-import { createServer, IncomingMessage, ServerResponse } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { createServer } from 'node:http';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 interface GrafanaWebhookPayload {
@@ -167,11 +168,9 @@ if (process.env.MONITORING_RELAY_AUTOSTART !== 'false') {
   try {
     const config = readConfig();
     startServer(config);
-    // eslint-disable-next-line no-console
     console.log(`monitoring-relay listening on :${config.port}`);
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : 'unknown error';
-    // eslint-disable-next-line no-console
     console.error(`monitoring-relay failed to start: ${reason}`);
     process.exitCode = 1;
   }

@@ -6,7 +6,7 @@
  */
 
 import type { IBorrowRequestRepository } from '@agora-ts/contracts';
-import { BorrowService } from './borrow-service.js';
+import type { BorrowService } from './borrow-service.js';
 import type { Permission, Posture } from './worksite/types.js';
 
 export interface BorrowCommandDeps {

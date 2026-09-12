@@ -6,10 +6,8 @@ import type { ReflectionReport } from './reflection-service.js';
 
 function makeForum(): ForumService {
   const posts: ForumPostRecord[] = [];
-  let seq = 0;
   const repo = {
     insertPost(input: Omit<ForumPostRecord, 'created_at' | 'metadata'> & { metadata?: Record<string, unknown> | null }) {
-      seq += 1;
       const record: ForumPostRecord = {
         ...input,
         metadata: input.metadata ?? null,

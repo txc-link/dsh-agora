@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { DelegateRouter } from './delegate-router.js';
 import { OrgHierarchyResolver } from './org-hierarchy-resolver.js';
 import type { ITeamRepository, TeamInsertInput, TeamRecord } from '@agora-ts/contracts';

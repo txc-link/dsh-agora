@@ -99,7 +99,7 @@ describe('approval request repository', () => {
     }
     const repository = new ApprovalRequestRepository(db);
     const r1 = repository.insert({ id: 'p-1', task_id: 'OC-P-1', stage_id: 's', gate_type: 'approval', requested_by: 'a' });
-    const r2 = repository.insert({ id: 'p-2', task_id: 'OC-P-2', stage_id: 's', gate_type: 'archon_review', requested_by: 'b' });
+    repository.insert({ id: 'p-2', task_id: 'OC-P-2', stage_id: 's', gate_type: 'archon_review', requested_by: 'b' });
     const r3 = repository.insert({ id: 'p-3', task_id: 'OC-P-1', stage_id: 's2', gate_type: 'approval', requested_by: 'c' });
     // resolve one
     repository.resolve('p-2', { status: 'approved', resolved_by: 'human', resolution_comment: 'ok' });

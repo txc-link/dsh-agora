@@ -8,7 +8,7 @@
 
 import type { IAgentQuestionRepository } from '@agora-ts/contracts';
 import type { AgentQuestionKind } from '@agora-ts/contracts';
-import { AgentQuestionService } from './agent-question-service.js';
+import type { AgentQuestionService } from './agent-question-service.js';
 
 export interface TaskAskCommandDeps {
   questionService: AgentQuestionService;
