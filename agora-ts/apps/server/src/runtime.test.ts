@@ -96,6 +96,15 @@ function mockRuntimeModules(existsSyncImpl: (path: string) => boolean) {
     RuntimeTargetOverlayRepository: class RuntimeTargetOverlayRepository {},
     SubtaskRepository: class SubtaskRepository {},
     TaskRepository: class TaskRepository {},
+    ActionAttemptRepository: class ActionAttemptRepository {},
+    ActionReceiptRepository: class ActionReceiptRepository {},
+    CollaborationPlanRepository: class CollaborationPlanRepository {},
+    DelegationAuthorityRepository: class DelegationAuthorityRepository {},
+    ExecutionBaselineRepository: class ExecutionBaselineRepository {},
+    ProgressLogRepository: class ProgressLogRepository {},
+    RoutineRepository: class RoutineRepository {},
+    TaskConversationRepository: class TaskConversationRepository {},
+    TaskMemorySummaryRepository: class TaskMemorySummaryRepository {},
   }));
   vi.doMock('@agora-ts/core', () => ({
     CompositeAgentInventorySource: class CompositeAgentInventorySource {},
@@ -122,6 +131,14 @@ function mockRuntimeModules(existsSyncImpl: (path: string) => boolean) {
     TaskParticipationService: class TaskParticipationService {},
     NotificationDispatcher: class NotificationDispatcher {},
     HumanAccountService: class HumanAccountService {},
+    ActionAuditService: class ActionAuditService {},
+    GovernedDispatchService: class GovernedDispatchService {},
+    CalendarService: class CalendarService {},
+    ProjectBrainChunkingPolicy: class ProjectBrainChunkingPolicy {},
+    ProjectBrainIndexService: class ProjectBrainIndexService {},
+    ProjectBrainIndexWorkerService: class ProjectBrainIndexWorkerService {},
+    RoutineService: class RoutineService {},
+    TaskMemorySummaryService: class TaskMemorySummaryService {},
   }));
   vi.doMock('./composition.js', async (importOriginal) => {
     const actual = await importOriginal() as Record<string, unknown>;
