@@ -1,6 +1,50 @@
 import { timingSafeEqual } from 'node:crypto';
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { homedir } from 'node:os';
 export const API_PREFIX = '/dsh-agora/api';
 const MAX_BODY_BYTES = 1_048_576;
+/**
+ * Conversation → DSH session bindings.
+ *
+ * A Matrix room sends a room-scoped `idempotencyKey` (constant for the whole
+ * room) plus a per-message `eventId`. Agora dedupes dispatches on the
+ * idempotency key, so forwarding the room-scoped value verbatim makes every
+ * message in that room replay the room's FIRST dispatch forever. We therefore
+ * derive a per-message dispatch key and keep conversation continuity by
+ * resuming the room's DSH session instead of by replaying a dispatch.
+ *
+ * The binding outlives the process so a facade restart does not silently drop
+ * every room's conversation history.
+ */
+export const conversationSessionsPath = process.env.DSH_AGORA_CHAT_SESSIONS_PATH
+    ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'state', 'dsh-agora-chat-sessions.json');
+export function loadConversationSessions(file) {
+    try {
+        const parsed = JSON.parse(readFileSync(file, 'utf8'));
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))
+            return new Map();
+        return new Map(Object.entries(parsed)
+            .filter((entry) => typeof entry[1] === 'string' && entry[1].length > 0));
+    }
+    catch {
+        // Missing or corrupt state degrades to "start a fresh session"; a chat
+        // reply must never fail because continuity bookkeeping is unreadable.
+        return new Map();
+    }
+}
+export function saveConversationSessions(file, sessions) {
+    try {
+        mkdirSync(dirname(file), { recursive: true });
+        const temporary = `${file}.${process.pid}.tmp`;
+        writeFileSync(temporary, JSON.stringify(Object.fromEntries(sessions)), { mode: 0o600 });
+        renameSync(temporary, file);
+    }
+    catch {
+        // Best-effort: failing to persist only costs session continuity.
+    }
+}
+const conversationSessions = loadConversationSessions(conversationSessionsPath);
 export function registerHttpApi(webServer, service, options) {
     return webServer.register({
         kind: 'prefix',
@@ -82,7 +126,10 @@ export async function handleHttpRequest(request, response, service, options) {
             case 'dispatch': {
                 const taskId = optionalString(payload.taskId);
                 const participantBindingId = optionalString(payload.participantBindingId);
-                const sessionId = optionalString(payload.sessionId);
+                const idempotencyKey = requiredString(payload.idempotencyKey, 'idempotencyKey');
+                const eventId = optionalString(payload.eventId);
+                const conversationSessionId = eventId === undefined ? undefined : conversationSessions.get(idempotencyKey);
+                const sessionId = optionalString(payload.sessionId) ?? conversationSessionId;
                 const workspaceAlias = optionalString(payload.workspaceAlias);
                 const agentPreset = optionalString(payload.agentPreset);
                 const sourceSessionId = optionalString(payload.sourceSessionId);
@@ -91,10 +138,10 @@ export async function handleHttpRequest(request, response, service, options) {
                 if (presentationMode !== undefined && !['source_bot', 'destination_bot', 'silent'].includes(presentationMode)) {
                     throw new HttpApiError(400, 'bad-request', 'presentationMode is invalid');
                 }
-                value = await service.dispatchAgent({
+                const dispatchValue = await service.dispatchAgent({
                     runtime_target_ref: requiredString(payload.runtimeTargetRef, 'runtimeTargetRef'),
                     prompt: requiredString(payload.prompt, 'prompt'),
-                    idempotency_key: requiredString(payload.idempotencyKey, 'idempotencyKey'),
+                    idempotency_key: eventId === undefined ? idempotencyKey : `${idempotencyKey}#${eventId}`,
                     ...(taskId === undefined ? {} : { task_id: taskId }),
                     ...(participantBindingId === undefined ? {} : { participant_binding_id: participantBindingId }),
                     ...(sessionId === undefined ? {} : { session_id: sessionId }),
@@ -105,7 +152,12 @@ export async function handleHttpRequest(request, response, service, options) {
                     ...(presentationMode === undefined ? {} : {
                         presentation_mode: presentationMode,
                     }),
-                }, signal);
+                });
+                if (eventId !== undefined && dispatchValue.session_id) {
+                    conversationSessions.set(idempotencyKey, dispatchValue.session_id);
+                    saveConversationSessions(conversationSessionsPath, conversationSessions);
+                }
+                value = dispatchValue;
                 break;
             }
             case 'attach-session':
