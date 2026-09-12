@@ -29,6 +29,46 @@ test('host API rejects invalid coordination strategies before reaching the serve
   assert.equal(result.body.error.code, 'bad-request')
 })
 
+test('dispatch derives a per-message Agora key and resumes the room session', async () => {
+  const calls = []
+  const service = {
+    dispatchAgent: async input => {
+      calls.push(input)
+      return { id: `d-${calls.length}`, status: 'completed', session_id: input.session_id ?? 'session-1' }
+    },
+  }
+
+  // First message of the conversation: room-scoped key + eventId, no session yet.
+  const first = await request('dispatch', {
+    runtimeTargetRef: 'dsh:node-a:default', prompt: 'hi',
+    idempotencyKey: 'matrix-mx_room', eventId: '$evt-1', waitTimeoutMs: 0,
+  }, service)
+  assert.equal(first.status, 200)
+  assert.equal(calls[0].idempotency_key, 'matrix-mx_room#$evt-1',
+    'the room-scoped key alone would make Agora replay this dispatch forever')
+  assert.equal(calls[0].session_id, undefined)
+
+  // Second message of the same conversation: fresh dispatch key, same session.
+  await request('dispatch', {
+    runtimeTargetRef: 'dsh:node-a:default', prompt: 'again',
+    idempotencyKey: 'matrix-mx_room', eventId: '$evt-2', waitTimeoutMs: 0,
+  }, service)
+  assert.equal(calls[1].idempotency_key, 'matrix-mx_room#$evt-2')
+  assert.equal(calls[1].session_id, 'session-1', 'the room must keep one DSH session')
+})
+
+test('dispatch without an eventId keeps the caller-supplied idempotency key verbatim', async () => {
+  let seen
+  const service = { dispatchAgent: async input => { seen = input; return { id: 'd-1', status: 'completed' } } }
+
+  await request('dispatch', {
+    runtimeTargetRef: 'dsh:node-a:default', prompt: 'task', idempotencyKey: 'task-abc', waitTimeoutMs: 0,
+  }, service)
+
+  assert.equal(seen.idempotency_key, 'task-abc')
+  assert.equal(seen.session_id, undefined)
+})
+
 async function request(method, payload, service) {
   const input = Readable.from([Buffer.from(JSON.stringify(payload))])
   input.method = 'POST'
