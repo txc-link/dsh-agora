@@ -18,7 +18,13 @@ function freshRepo(): { repo: TeamRepository; cleanup: () => void } {
   tempPaths.push(dir);
   const db = createAgoraDatabase({ dbPath: join(dir, 'teams.db') });
   runMigrations(db);
-  return { repo: new TeamRepository(db), cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  return {
+    repo: new TeamRepository(db),
+    cleanup: () => {
+      db.close();
+      rmSync(dir, { recursive: true, force: true });
+    },
+  };
 }
 
 afterEach(() => {

@@ -22,8 +22,9 @@ function createBuffer() {
 describe('IM context CLI', () => {
   it('resolves a managed project-space context through the cli', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agora-ts-cli-im-context-'));
+    let db: ReturnType<typeof createAgoraDatabase> | undefined;
     try {
-      const db = createAgoraDatabase({ dbPath: join(dir, 'agora.db') });
+      db = createAgoraDatabase({ dbPath: join(dir, 'agora.db') });
       runMigrations(db);
       const projectService = createProjectServiceFromDb(db);
       projectService.createProject({
@@ -55,14 +56,16 @@ describe('IM context CLI', () => {
       expect(stdout.value).toContain('project_id: proj-space');
       expect(stdout.value).toContain('project_space: forum-space');
     } finally {
+      db?.close();
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it('resolves a managed task-thread context through the cli', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agora-ts-cli-im-task-context-'));
+    let db: ReturnType<typeof createAgoraDatabase> | undefined;
     try {
-      const db = createAgoraDatabase({ dbPath: join(dir, 'agora.db') });
+      db = createAgoraDatabase({ dbPath: join(dir, 'agora.db') });
       runMigrations(db);
       const projectService = createProjectServiceFromDb(db);
       projectService.createProject({
@@ -113,6 +116,7 @@ describe('IM context CLI', () => {
       expect(stdout.value).toContain('task_id: OC-CLI-CTX-1');
       expect(stdout.value).toContain('project_id: proj-thread');
     } finally {
+      db?.close();
       rmSync(dir, { recursive: true, force: true });
     }
   });

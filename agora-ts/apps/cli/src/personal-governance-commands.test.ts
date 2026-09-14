@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Writable } from 'node:stream';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   ActionRiskService,
   ConsentService,
@@ -19,11 +19,31 @@ import {
 } from '@agora-ts/db';
 import { createCliProgram } from './index.js';
 
-const dir = mkdtempSync(join(tmpdir(), 'agora-personal-cli-'));
-const db = createAgoraDatabase({ dbPath: join(dir, 'agora.db') });
-runMigrations(db);
+let dir: string;
+let db: ReturnType<typeof createAgoraDatabase>;
+let relationshipProfileService: RelationshipProfileService;
+let consentService: ConsentService;
+let informationGovernanceService: InformationGovernanceService;
+let actionRiskService: ActionRiskService;
 
-afterAll(() => {
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'agora-personal-cli-'));
+  db = createAgoraDatabase({ dbPath: join(dir, 'agora.db') });
+  runMigrations(db);
+  relationshipProfileService = new RelationshipProfileService({
+    repository: new RelationshipProfileRepository(db),
+  });
+  consentService = new ConsentService({ repository: new ConsentGrantRepository(db) });
+  informationGovernanceService = new InformationGovernanceService({
+    repository: new InformationPolicyRepository(db),
+    consent: consentService,
+  });
+  actionRiskService = new ActionRiskService({
+    repository: new ActionRiskAssessmentRepository(db),
+  });
+});
+
+afterEach(() => {
   db.close();
   rmSync(dir, { recursive: true, force: true });
 });
@@ -35,16 +55,6 @@ function buffer() {
     read: () => value,
   };
 }
-
-const relationshipProfileService = new RelationshipProfileService({
-  repository: new RelationshipProfileRepository(db),
-});
-const consentService = new ConsentService({ repository: new ConsentGrantRepository(db) });
-const informationGovernanceService = new InformationGovernanceService({
-  repository: new InformationPolicyRepository(db),
-  consent: consentService,
-});
-const actionRiskService = new ActionRiskService({ repository: new ActionRiskAssessmentRepository(db) });
 
 async function run(args: string[]) {
   const stdout = buffer();
