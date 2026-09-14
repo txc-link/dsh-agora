@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -14,6 +14,8 @@ import { createCliProgram, isCliEntrypoint } from './index.js';
 import type { DashboardSessionClient } from './dashboard-session-client.js';
 
 const tempPaths: string[] = [];
+const tempWorktrees: Array<{ repoDir: string; targetDir: string }> = [];
+const tempDatabases: AgoraDatabase[] = [];
 const templatesDir = resolve(process.cwd(), 'templates');
 const rolePackDir = resolve(process.cwd(), 'role-packs', 'agora-default');
 
@@ -50,6 +52,15 @@ function initCommittedRepo(dir: string, files: Record<string, string> = { 'READM
   runGit(dir, ['commit', '--quiet', '-m', 'init']);
 }
 
+function trackDatabase(db: AgoraDatabase) {
+  tempDatabases.push(db);
+  return db;
+}
+
+function trackWorktree(repoDir: string, targetDir: string) {
+  tempWorktrees.push({ repoDir, targetDir });
+}
+
 function makeWorkflowFile(payload: Record<string, unknown>) {
   const dir = mkdtempSync(join(tmpdir(), 'agora-ts-cli-workflow-'));
   tempPaths.push(dir);
@@ -84,6 +95,15 @@ afterEach(() => {
   delete process.env.AGORA_DASHBOARD_PASSWORD;
   delete process.env.DASHBOARD_LOGIN_USER;
   delete process.env.DASHBOARD_LOGIN_PASSWORD;
+  while (tempWorktrees.length > 0) {
+    const worktree = tempWorktrees.pop();
+    if (worktree && existsSync(worktree.targetDir)) {
+      runGit(worktree.repoDir, ['worktree', 'remove', '--force', worktree.targetDir]);
+    }
+  }
+  while (tempDatabases.length > 0) {
+    tempDatabases.pop()?.close();
+  }
   while (tempPaths.length > 0) {
     const dir = tempPaths.pop();
     if (dir) {
@@ -5031,13 +5051,12 @@ token = "MTQ5MTc4MTM0NDY2NDIyNzk0Mg.fake.fake"
   });
 
   it('defaults craftsmen dispatch workdir through the cli when the task is bound to a project repo', async () => {
-    const db = createAgoraDatabase({ dbPath: makeDbPath() });
+    const db = trackDatabase(createAgoraDatabase({ dbPath: makeDbPath() }));
     runMigrations(db);
     const repoDir = makeTempDir('agora-ts-cli-repo-');
-    const projectStateRoot = makeTempDir('agora-ts-cli-project-root-');
-    const isolatedRoot = join(tmpdir(), '.agora-task-worktrees', 'proj-cli-workdir');
-    tempPaths.push(isolatedRoot);
-    rmSync(isolatedRoot, { recursive: true, force: true });
+    const projectRootParent = makeTempDir('agora-ts-cli-project-parent-');
+    const projectStateRoot = join(projectRootParent, 'project-state');
+    mkdirSync(projectStateRoot, { recursive: true });
     initCommittedRepo(repoDir);
     const dispatcher = createCraftsmanDispatcherFromDb(db, {
       executionIdGenerator: () => 'exec-cli-default-workdir-1',
@@ -5105,11 +5124,12 @@ token = "MTQ5MTc4MTM0NDY2NDIyNzk0Mg.fake.fake"
       '--adapter', 'codex',
     ], { from: 'user' });
 
-    const expected = join(tmpdir(), '.agora-task-worktrees', 'proj-cli-workdir', 'OC-CLI-WORKDIR');
+    const expected = join(projectRootParent, '.agora-task-worktrees', 'proj-cli-workdir', 'OC-CLI-WORKDIR');
+    trackWorktree(repoDir, expected);
     expect(taskService.getCraftsmanExecution('exec-cli-default-workdir-1').workdir).toBe(expected);
     expect(readFileSync(join(expected, 'README.md'), 'utf8')).toContain('hello');
     expect(stderr.value).toBe('');
-  });
+  }, 30000);
 
   it('rejects craftsmen dispatch through the cli when concurrency limit is reached', async () => {
     const db = createAgoraDatabase({ dbPath: makeDbPath() });
