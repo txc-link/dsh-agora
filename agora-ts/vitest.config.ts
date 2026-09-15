@@ -23,6 +23,8 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    setupFiles: ['./scripts/vitest-database-lifecycle.ts'],
+    sequence: { hooks: 'list' },
     include: ['apps/**/*.test.ts', 'packages/**/*.test.ts', 'scripts/**/*.test.ts'],
     maxWorkers: 2,
     coverage: {

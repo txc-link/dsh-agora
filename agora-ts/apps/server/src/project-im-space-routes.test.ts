@@ -10,8 +10,9 @@ import { tmpdir } from 'node:os';
 describe('project IM space routes', () => {
   it('ensures and persists a discord project forum binding', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agora-ts-project-im-space-route-'));
+    let db: ReturnType<typeof createAgoraDatabase> | undefined;
     try {
-      const db = createAgoraDatabase({ dbPath: join(dir, 'agora.db') });
+      db = createAgoraDatabase({ dbPath: join(dir, 'agora.db') });
       runMigrations(db);
       const projectService = createProjectServiceFromDb(db);
       projectService.createProject({
@@ -59,6 +60,7 @@ describe('project IM space routes', () => {
         managed_by: 'agora',
       });
     } finally {
+      db?.close();
       rmSync(dir, { recursive: true, force: true });
     }
   });

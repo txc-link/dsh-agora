@@ -10,8 +10,9 @@ import { StubIMProvisioningPort } from '@agora-ts/core';
 describe('IM context resolve routes', () => {
   it('resolves a task-thread context when thread binding exists', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agora-ts-im-context-route-'));
+    let db: ReturnType<typeof createAgoraDatabase> | undefined;
     try {
-      const db = createAgoraDatabase({ dbPath: join(dir, 'agora.db') });
+      db = createAgoraDatabase({ dbPath: join(dir, 'agora.db') });
       runMigrations(db);
       const projectService = createProjectServiceFromDb(db);
       projectService.createProject({
@@ -84,14 +85,16 @@ describe('IM context resolve routes', () => {
         },
       });
     } finally {
+      db?.close();
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it('resolves a managed project space when only the forum binding exists', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agora-ts-im-context-project-route-'));
+    let db: ReturnType<typeof createAgoraDatabase> | undefined;
     try {
-      const db = createAgoraDatabase({ dbPath: join(dir, 'agora.db') });
+      db = createAgoraDatabase({ dbPath: join(dir, 'agora.db') });
       runMigrations(db);
       const projectService = createProjectServiceFromDb(db);
       projectService.createProject({
@@ -137,6 +140,7 @@ describe('IM context resolve routes', () => {
         task: null,
       });
     } finally {
+      db?.close();
       rmSync(dir, { recursive: true, force: true });
     }
   });

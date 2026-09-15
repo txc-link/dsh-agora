@@ -15,6 +15,22 @@ export interface CreateAgoraDatabaseOptions {
   busyTimeoutMs?: number;
 }
 
+type AgoraDatabaseObserver = (database: AgoraDatabase) => void;
+
+const databaseObservers = new Set<AgoraDatabaseObserver>();
+
+/**
+ * Observe newly opened database handles without taking ownership of them.
+ *
+ * This seam is used by the cross-platform test harness to close leaked fixture
+ * handles before Windows removes their temporary directories. Production code
+ * installs no observer, so the application composition root remains the owner.
+ */
+export function observeAgoraDatabases(observer: AgoraDatabaseObserver): () => void {
+  databaseObservers.add(observer);
+  return () => databaseObservers.delete(observer);
+}
+
 function resolveMigrationsDir() {
   const compiledDir = fileURLToPath(new URL('./migrations', import.meta.url));
   if (existsSync(join(compiledDir, '001_initial.sql'))) {
@@ -39,12 +55,14 @@ export function createAgoraDatabase(options: CreateAgoraDatabaseOptions): AgoraD
     );
   `);
 
-  return {
+  const database: AgoraDatabase = {
     raw,
     close: () => raw.close(),
     prepare: raw.prepare.bind(raw),
     exec: raw.exec.bind(raw),
   };
+  for (const observer of databaseObservers) observer(database);
+  return database;
 }
 
 export function listAppliedMigrations(db: AgoraDatabase): string[] {

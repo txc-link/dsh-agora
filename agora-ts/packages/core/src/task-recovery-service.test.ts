@@ -14,6 +14,7 @@ function makeDb() {
     dir,
     db,
     cleanup() {
+      db.close();
       rmSync(dir, { recursive: true, force: true });
     },
   };
