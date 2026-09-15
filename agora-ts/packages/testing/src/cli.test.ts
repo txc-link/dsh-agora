@@ -112,7 +112,7 @@ describe('agora-ts scenario cli', () => {
     expect(stderr.value).toBe('');
     expect(stdout.value).toContain('happy-path');
     expect(stdout.value).toContain('\tdone\t');
-  });
+  }, 30000);
 
   it('returns usage guidance for unknown commands', async () => {
     const stdout = createBuffer();

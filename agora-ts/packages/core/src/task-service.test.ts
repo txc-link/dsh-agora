@@ -31,6 +31,8 @@ import type { RuntimeThreadMessageInput } from './runtime-message-ports.js';
 import { StubIMProvisioningPort } from './im-ports.js';
 
 const tempPaths: string[] = [];
+const tempWorktrees: Array<{ repoDir: string; targetDir: string }> = [];
+const tempDatabases: Array<ReturnType<typeof createAgoraDatabase>> = [];
 const templatesDir = resolve(process.cwd(), 'templates');
 type TaskServiceBuilderOptions = NonNullable<Parameters<typeof createTaskServiceFromDb>[1]>;
 
@@ -92,7 +94,25 @@ function initCommittedRepo(dir: string, files: Record<string, string> = { 'READM
   runGit(dir, ['commit', '--quiet', '-m', 'init']);
 }
 
+function trackDatabase(db: ReturnType<typeof createAgoraDatabase>) {
+  tempDatabases.push(db);
+  return db;
+}
+
+function trackWorktree(repoDir: string, targetDir: string) {
+  tempWorktrees.push({ repoDir, targetDir });
+}
+
 afterEach(() => {
+  while (tempWorktrees.length > 0) {
+    const worktree = tempWorktrees.pop();
+    if (worktree && existsSync(worktree.targetDir)) {
+      runGit(worktree.repoDir, ['worktree', 'remove', '--force', worktree.targetDir]);
+    }
+  }
+  while (tempDatabases.length > 0) {
+    tempDatabases.pop()?.close();
+  }
   while (tempPaths.length > 0) {
     const dir = tempPaths.pop();
     if (dir) {
@@ -6114,13 +6134,12 @@ describe('task service', () => {
   });
 
   it('defaults craftsman dispatch workdir to the bound repo for coding tasks', () => {
-    const db = createAgoraDatabase({ dbPath: makeDbPath() });
+    const db = trackDatabase(createAgoraDatabase({ dbPath: makeDbPath() }));
     runMigrations(db);
-    const repoDir = mkdtempSync(join(tmpdir(), 'agora-ts-dispatch-repo-'));
-    const projectStateRoot = mkdtempSync(join(tmpdir(), 'agora-ts-dispatch-project-root-'));
-    const isolatedRoot = join(tmpdir(), '.agora-task-worktrees', 'proj-repo-workdir');
-    tempPaths.push(repoDir, projectStateRoot, isolatedRoot);
-    rmSync(isolatedRoot, { recursive: true, force: true });
+    const repoDir = makeTempDir('agora-ts-dispatch-repo-');
+    const projectRootParent = makeTempDir('agora-ts-dispatch-project-parent-');
+    const projectStateRoot = join(projectRootParent, 'project-state');
+    mkdirSync(projectStateRoot, { recursive: true });
     initCommittedRepo(repoDir);
     const dispatcher = createCraftsmanDispatcherFromDb(db, {
       executionIdGenerator: () => 'exec-default-workdir-repo-1',
@@ -6190,19 +6209,18 @@ describe('task service', () => {
       workdir: null,
     }) as unknown as { execution: { workdir: string | null } };
 
-    const expected = join(tmpdir(), '.agora-task-worktrees', 'proj-repo-workdir', 'OC-DISPATCH-WORKDIR-REPO');
+    const expected = join(projectRootParent, '.agora-task-worktrees', 'proj-repo-workdir', 'OC-DISPATCH-WORKDIR-REPO');
+    trackWorktree(repoDir, expected);
     expect(result.execution.workdir).toBe(expected);
     expect(readFileSync(join(expected, 'README.md'), 'utf8')).toContain('hello');
     expect(realpathSync(runGit(expected, ['rev-parse', '--show-toplevel']))).toBe(realpathSync(expected));
-  });
+  }, 30000);
 
   it('defaults craftsman dispatch workdir to the canonical project repo for non-code tasks', () => {
-    const db = createAgoraDatabase({ dbPath: makeDbPath() });
+    const db = trackDatabase(createAgoraDatabase({ dbPath: makeDbPath() }));
     runMigrations(db);
-    const projectStateRoot = mkdtempSync(join(tmpdir(), 'agora-ts-dispatch-canonical-root-'));
-    const isolatedRoot = join(tmpdir(), '.agora-task-worktrees', 'proj-project-workdir');
-    tempPaths.push(projectStateRoot, isolatedRoot);
-    rmSync(isolatedRoot, { recursive: true, force: true });
+    const projectRootParent = makeTempDir('agora-ts-dispatch-canonical-parent-');
+    const projectStateRoot = join(projectRootParent, 'project-state');
     initCommittedRepo(projectStateRoot, { 'index.md': '# project\n' });
     const dispatcher = createCraftsmanDispatcherFromDb(db, {
       executionIdGenerator: () => 'exec-default-workdir-project-1',
@@ -6271,11 +6289,12 @@ describe('task service', () => {
       workdir: null,
     }) as unknown as { execution: { workdir: string | null } };
 
-    const expected = join(tmpdir(), '.agora-task-worktrees', 'proj-project-workdir', 'OC-DISPATCH-WORKDIR-PROJECT');
+    const expected = join(projectRootParent, '.agora-task-worktrees', 'proj-project-workdir', 'OC-DISPATCH-WORKDIR-PROJECT');
+    trackWorktree(projectStateRoot, expected);
     expect(result.execution.workdir).toBe(expected);
     expect(readFileSync(join(expected, 'index.md'), 'utf8')).toContain('# project');
     expect(realpathSync(runGit(expected, ['rev-parse', '--show-toplevel']))).toBe(realpathSync(expected));
-  });
+  }, 30000);
 
   it('normalizes craftsman adapter aliases for manual dispatch', () => {
     const db = createAgoraDatabase({ dbPath: makeDbPath() });

@@ -1,6 +1,26 @@
-import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CodexCraftsmanAdapter } from '@agora-ts/adapters-craftsman';
 import { TmuxCraftsmanAdapter } from './tmux-craftsman-adapter.js';
+
+const tempDirs: string[] = [];
+
+function makeRegistryDir() {
+  const dir = mkdtempSync(join(tmpdir(), 'agora-ts-tmux-craftsman-'));
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  while (tempDirs.length > 0) {
+    const dir = tempDirs.pop();
+    if (dir) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
 
 describe('tmux craftsman adapter', () => {
   it('sends the inner adapter command into the matching tmux pane', () => {
@@ -12,7 +32,7 @@ describe('tmux craftsman adapter', () => {
       return '';
     });
     const inner = new CodexCraftsmanAdapter();
-    const adapter = new TmuxCraftsmanAdapter(inner, { exec });
+    const adapter = new TmuxCraftsmanAdapter(inner, { exec, registryDir: makeRegistryDir() });
 
     const result = adapter.dispatchTask({
       execution_id: 'exec-tmux-1',
@@ -51,7 +71,7 @@ describe('tmux craftsman adapter', () => {
       return '';
     });
     const inner = new CodexCraftsmanAdapter();
-    const adapter = new TmuxCraftsmanAdapter(inner, { exec });
+    const adapter = new TmuxCraftsmanAdapter(inner, { exec, registryDir: makeRegistryDir() });
 
     adapter.dispatchTask({
       execution_id: 'exec-tmux-continuous-1',
