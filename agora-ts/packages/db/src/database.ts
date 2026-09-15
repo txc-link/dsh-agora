@@ -137,6 +137,7 @@ export function runMigrations(db: AgoraDatabase): void {
     '048_collaboration_governance.sql',
     '049_action_audit.sql',
     '050_memory_summaries_routines.sql',
+    '052_executive_request_idempotency.sql',
   ];
   const migrationsDir = resolveMigrationsDir();
 

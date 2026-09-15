@@ -1849,6 +1849,7 @@ export function buildApp(options: BuildAppOptions = {}) {
       project_id: z.string().min(1).nullable().optional(),
       due_at: z.string().datetime({ offset: true }).nullable().optional(),
       target_position_id: z.string().min(1).nullable().optional(),
+      idempotency_key: z.string().trim().min(1).max(200).optional(),
     }).strict().safeParse(request.body);
     if (!payload.success) return reply.status(400).send({ message: payload.error.message });
     const result = executiveAssistantService.intake({
@@ -1862,8 +1863,10 @@ export function buildApp(options: BuildAppOptions = {}) {
       projectId: payload.data.project_id ?? null,
       dueAt: payload.data.due_at ?? null,
       targetPositionId: payload.data.target_position_id ?? null,
+      idempotencyKey: payload.data.idempotency_key ?? null,
     });
-    return result.ok ? reply.status(201).send(result) : reply.status(400).send({ message: result.error });
+    if (result.ok) return reply.status(201).send(result);
+    return reply.status(result.code === 'idempotency_conflict' ? 409 : 400).send({ message: result.error });
   });
 
   app.get('/api/organizations/:organizationId/assistant/inbox', async (request, reply) => {

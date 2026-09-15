@@ -49,14 +49,19 @@ function assistantRepository(): IExecutiveAssistantRepository & { requests: Exec
   return {
     requests, commitments,
     insertRequest(input) {
+      const existing = input.idempotencyKey
+        ? requests.find((item) => item.organizationId === input.organizationId && item.idempotencyKey === input.idempotencyKey)
+        : undefined;
+      if (existing) return { request: existing, created: false };
       const record: ExecutiveRequestRecord = {
         id: `request-${requests.length + 1}`, organizationId: input.organizationId, requestedBy: input.requestedBy,
         title: input.title, body: input.body, priority: input.priority, requestedCapabilities: input.requestedCapabilities,
         taskType: input.taskType, projectId: input.projectId ?? null, dueAt: input.dueAt ?? null,
         status: 'received', assignedPositionId: null, assignedEmploymentId: null, taskId: null, blockedReason: null,
         version: 1, createdAt: 'now', updatedAt: 'now', completedAt: null, metadata: input.metadata ?? null,
+        idempotencyKey: input.idempotencyKey ?? null, intakeDigest: input.intakeDigest ?? null,
       };
-      requests.push(record); return record;
+      requests.push(record); return { request: record, created: true };
     },
     getRequest: (id) => requests.find((item) => item.id === id) ?? null,
     getRequestByTask: (taskId) => requests.find((item) => item.taskId === taskId) ?? null,
@@ -93,9 +98,13 @@ function assistantRepository(): IExecutiveAssistantRepository & { requests: Exec
   };
 }
 
-function taskPort(state: { assigned?: string; taskState?: string } = {}): ExecutiveTaskPort {
+function taskPort(state: { assigned?: string; taskState?: string; createCalls?: number } = {}): ExecutiveTaskPort {
   return {
-    createAssignedTask(input) { state.assigned = input.assigneeRef; return { taskId: 'task-1' }; },
+    createAssignedTask(input) {
+      state.assigned = input.assigneeRef;
+      state.createCalls = (state.createCalls ?? 0) + 1;
+      return { taskId: 'task-1' };
+    },
     getTaskState: () => state.taskState ?? 'active',
   };
 }
@@ -129,6 +138,54 @@ describe('ExecutiveAssistantService', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.request).toMatchObject({ status: 'triage', assignedPositionId: 'ea-position' });
+  });
+
+  it('returns the original request and commitment for an identical idempotent replay', () => {
+    const repository = assistantRepository();
+    const state: { assigned?: string; createCalls?: number } = {};
+    const service = new ExecutiveAssistantService({
+      repository, organizationRepository: organizationFixture(), taskPort: taskPort(state),
+    });
+    const input = {
+      organizationId: 'org', requestedBy: 'human:ceo', title: 'Prepare brief', body: 'Prepare the morning brief',
+      priority: 'normal' as const, requestedCapabilities: ['research', 'analysis'], taskType: 'quick',
+      targetPositionId: 'research-position', idempotencyKey: 'paos:proposal-1',
+    };
+
+    const first = service.intake(input);
+    const replay = service.intake({
+      ...input,
+      requestedBy: ' human:ceo ',
+      title: ' Prepare brief ',
+      requestedCapabilities: ['ANALYSIS', 'research', 'analysis'],
+    });
+
+    expect(first.ok).toBe(true);
+    expect(replay).toEqual(first);
+    expect(state.createCalls).toBe(1);
+    expect(repository.requests).toHaveLength(1);
+    expect(repository.commitments).toHaveLength(1);
+  });
+
+  it('rejects reuse of an idempotency key for different normalized input', () => {
+    const repository = assistantRepository();
+    const state: { assigned?: string; createCalls?: number } = {};
+    const service = new ExecutiveAssistantService({
+      repository, organizationRepository: organizationFixture(), taskPort: taskPort(state),
+    });
+    const common = {
+      organizationId: 'org', requestedBy: 'human:ceo', body: 'Prepare the morning brief',
+      priority: 'normal' as const, idempotencyKey: 'paos:proposal-1',
+    };
+    expect(service.intake({ ...common, title: 'Prepare brief' }).ok).toBe(true);
+
+    expect(service.intake({ ...common, title: 'Different request' })).toEqual({
+      ok: false,
+      code: 'idempotency_conflict',
+      error: "idempotency key 'paos:proposal-1' was already used for different input",
+    });
+    expect(state.createCalls).toBe(1);
+    expect(repository.requests).toHaveLength(1);
   });
 
   it('reconciles a done task into fulfilled request and commitment', () => {

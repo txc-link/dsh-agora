@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type {
   CommitmentRecord,
   EmploymentRecord,
@@ -47,15 +48,45 @@ export interface ExecutiveIntakeInput {
   projectId?: string | null;
   dueAt?: string | null;
   targetPositionId?: string | null;
+  idempotencyKey?: string | null;
   metadata?: Record<string, unknown> | null;
 }
 
 export type ExecutiveAssistantResult =
   | { ok: true; request: ExecutiveRequestRecord; commitment: CommitmentRecord | null }
-  | { ok: false; error: string };
+  | { ok: false; error: string; code?: 'idempotency_conflict' };
 
 function normalizeList(values: string[] | undefined): string[] {
   return [...new Set((values ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean))];
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, item]) => item !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+function intakeDigest(input: {
+  requestedBy: string;
+  title: string;
+  body: string;
+  priority: ExecutiveRequestPriority;
+  requestedCapabilities: string[];
+  taskType: string;
+  projectId: string | null;
+  dueAt: string | null;
+  targetPositionId: string | null;
+  metadata: Record<string, unknown> | null;
+}): string {
+  return createHash('sha256').update(stableJson({
+    ...input,
+    requestedCapabilities: [...input.requestedCapabilities].sort(),
+  })).digest('hex');
 }
 
 function activeEmploymentByPosition(
@@ -97,8 +128,7 @@ export class ExecutiveAssistantService {
       return { ok: false, error: 'dueAt must be an ISO datetime' };
     }
     const capabilities = normalizeList(input.requestedCapabilities);
-    let request = this.repository.insertRequest({
-      organizationId: input.organizationId,
+    const normalized = {
       requestedBy: input.requestedBy.trim(),
       title: input.title.trim(),
       body: input.body.trim(),
@@ -107,8 +137,36 @@ export class ExecutiveAssistantService {
       taskType: input.taskType?.trim() || 'quick',
       projectId: input.projectId ?? null,
       dueAt: input.dueAt ?? null,
+      targetPositionId: input.targetPositionId ?? null,
       metadata: input.metadata ?? null,
+    };
+    const idempotencyKey = input.idempotencyKey?.trim() || null;
+    const digest = idempotencyKey ? intakeDigest(normalized) : null;
+    const inserted = this.repository.insertRequest({
+      organizationId: input.organizationId,
+      requestedBy: normalized.requestedBy,
+      title: normalized.title,
+      body: normalized.body,
+      priority: normalized.priority,
+      requestedCapabilities: capabilities,
+      taskType: normalized.taskType,
+      projectId: normalized.projectId,
+      dueAt: normalized.dueAt,
+      idempotencyKey,
+      intakeDigest: digest,
+      metadata: normalized.metadata,
     });
+    let request = inserted.request;
+    if (!inserted.created) {
+      if (request.intakeDigest !== digest) {
+        return {
+          ok: false,
+          code: 'idempotency_conflict',
+          error: `idempotency key '${idempotencyKey}' was already used for different input`,
+        };
+      }
+      return { ok: true, request, commitment: this.repository.getCommitmentByRequest(request.id) };
+    }
 
     const positions = this.organizations.listPositions(input.organizationId).filter((position) => position.status === 'active');
     const employments = activeEmploymentByPosition(this.organizations, input.organizationId);
@@ -152,13 +210,13 @@ export class ExecutiveAssistantService {
         requestId: request.id,
         organizationId: input.organizationId,
         informationDomain: organization.informationDomain,
-        title: input.title.trim(),
-        description: input.body.trim(),
-        requestedBy: input.requestedBy.trim(),
+        title: normalized.title,
+        description: normalized.body,
+        requestedBy: normalized.requestedBy,
         priority: input.priority,
         requestedCapabilities: capabilities,
-        taskType: input.taskType?.trim() || 'quick',
-        projectId: input.projectId ?? null,
+        taskType: normalized.taskType,
+        projectId: normalized.projectId,
         assigneePositionId: owner.id,
         assigneePositionTitle: owner.title,
         assigneeEmploymentId: employment.id,

@@ -164,6 +164,7 @@ agora-ts 这一阶段不主动开 slice。R-E / R-F 按矩阵仓 SSoT phase 3 + 
   Citizen/Position/Employment/RelationshipProfile 命令和可复制 Agent cards。
   Planning: `Doc/09-PLANNING/TASKS/2026-08-30-element-agent-workspace-sample/`；
   Walkthrough: `Doc/10-WALKTHROUGH/2026-08-30-element-agent-workspace-sample.md`。
+- 2026-09-15: **Executive intake idempotency** (`81ded18`, `5305ca6`) — EA REST/CLI 新增可选 `idempotency_key`；migration 052 按 Organization 持久化唯一键和规范化输入 SHA-256。相同输入重试直接返回原 Request/Commitment，不再创建第二个 Task/TaskClaim/RuntimeDispatch；同键异参返回 HTTP 409。Linux 首轮全量除依赖升级后场景矩阵 30 秒预算外 1708/1709 通过，预算调整为 60 秒后目标文件 7/7；功能聚焦 29/29、架构/导出/Lint/构建/类型检查通过。尚未部署。Planning: `Doc/09-PLANNING/TASKS/2026-09-15-executive-intake-idempotency/`；Walkthrough: `Doc/10-WALKTHROUGH/2026-09-15-executive-intake-idempotency.md`。
 - 2026-08-30: **Company OS execution closeout** (`a633447`, `dc7363a`) — EA
   委派写入 DSH runtime dispatch；worker 完成后 result envelope 回写 task、
   单阶段 workflow 自动 done、request/commitment 自动核销，并生成按 SHA-256
@@ -207,5 +208,6 @@ agora-ts 这一阶段不主动开 slice。R-E / R-F 按矩阵仓 SSoT phase 3 + 
    核销 request/commitment。
 5. CLI/REST 是完整管理面；Matrix 只做 `/agora company` 与 `/agora assistant` 薄投影，不复制组织和路由状态。
 6. Company 仅使用 `domain:company`。Life/Health/Companion 继续使用独立顶层 Space、身份和安全域，跨域读取仍需 InformationPolicy/Consent/Gate。
+7. EA intake 可接收调用方稳定幂等键；SQLite 以 `organization_id + idempotency_key` 为唯一边界。相同规范化输入重放返回原账本记录，同键异参拒绝，确保客户端网络重试不会复制执行链。
 
 尚未宣称完成的长期能力：自动例行总结、偏好/记忆质量治理、文档模板分层、自主学习预算和 protected-domain E2EE 上线 Gate；这些在现有 Brain/Mem0/Forum/Routine 能力之上继续迭代，不阻碍本次组织与委派主链运行。

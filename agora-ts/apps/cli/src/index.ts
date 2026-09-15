@@ -1780,13 +1780,15 @@ export function createCliProgram(deps: CliDependencies = {}) {
     .option('--project-id <projectId>')
     .option('--due-at <iso>')
     .option('--target-position <positionId>')
-    .action((title: string, options: { org: string; body: string; requestedBy: string; priority: 'low' | 'normal' | 'high'; capability: string[]; taskType: string; projectId?: string; dueAt?: string; targetPosition?: string }) => {
+    .option('--idempotency-key <key>', 'stable key for safely retrying the same request')
+    .action((title: string, options: { org: string; body: string; requestedBy: string; priority: 'low' | 'normal' | 'high'; capability: string[]; taskType: string; projectId?: string; dueAt?: string; targetPosition?: string; idempotencyKey?: string }) => {
       const result = getExecutiveAssistantService().intake({
         organizationId: options.org, requestedBy: options.requestedBy, title, body: options.body,
         priority: options.priority, requestedCapabilities: options.capability, taskType: options.taskType,
         ...(options.projectId ? { projectId: options.projectId } : {}),
         ...(options.dueAt ? { dueAt: options.dueAt } : {}),
         ...(options.targetPosition ? { targetPositionId: options.targetPosition } : {}),
+        ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
       });
       writeLine(stdout, JSON.stringify(result, null, 2));
       if (!result.ok) process.exitCode = 1;
