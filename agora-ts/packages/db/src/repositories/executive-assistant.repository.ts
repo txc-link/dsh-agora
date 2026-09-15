@@ -7,6 +7,7 @@ import type {
   IExecutiveAssistantRepository,
   InsertCommitmentInput,
   InsertExecutiveRequestInput,
+  InsertExecutiveRequestResult,
 } from '@agora-ts/contracts';
 import type { AgoraDatabase } from '../database.js';
 import { parseJsonValue, stringifyJsonValue } from './json.js';
@@ -23,20 +24,32 @@ function metadata(raw: unknown): Record<string, unknown> | null {
 export class ExecutiveAssistantRepository implements IExecutiveAssistantRepository {
   constructor(private readonly db: AgoraDatabase) {}
 
-  insertRequest(input: InsertExecutiveRequestInput): ExecutiveRequestRecord {
+  insertRequest(input: InsertExecutiveRequestInput): InsertExecutiveRequestResult {
     const id = input.id ?? randomUUID();
     const now = new Date().toISOString();
-    this.db.prepare(`
+    const info = this.db.prepare(`
       INSERT INTO executive_requests (
         id, organization_id, requested_by, title, body, priority, requested_capabilities, task_type,
-        project_id, due_at, status, version, created_at, updated_at, metadata
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'received', 1, ?, ?, ?)
+        project_id, due_at, status, version, created_at, updated_at, idempotency_key, intake_digest, metadata
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'received', 1, ?, ?, ?, ?, ?)
+      ON CONFLICT DO NOTHING
     `).run(
       id, input.organizationId, input.requestedBy, input.title, input.body, input.priority,
       stringifyJsonValue(input.requestedCapabilities), input.taskType, input.projectId ?? null, input.dueAt ?? null,
-      now, now, stringifyJsonValue(input.metadata ?? null),
+      now, now, input.idempotencyKey ?? null, input.intakeDigest ?? null, stringifyJsonValue(input.metadata ?? null),
     );
-    return this.requireRequest(id);
+    const request = input.idempotencyKey
+      ? this.getRequestByIdempotencyKey(input.organizationId, input.idempotencyKey)
+      : this.getRequest(id);
+    if (!request) throw new Error(`executive request '${id}' disappeared after write`);
+    return { request, created: info.changes > 0 };
+  }
+
+  private getRequestByIdempotencyKey(organizationId: string, idempotencyKey: string): ExecutiveRequestRecord | null {
+    const row = this.db.prepare(
+      'SELECT * FROM executive_requests WHERE organization_id = ? AND idempotency_key = ?',
+    ).get(organizationId, idempotencyKey) as Record<string, unknown> | undefined;
+    return row ? this.parseRequest(row) : null;
   }
 
   getRequest(requestId: string): ExecutiveRequestRecord | null {
@@ -138,12 +151,6 @@ export class ExecutiveAssistantRepository implements IExecutiveAssistantReposito
     return row ? this.parseCommitment(row) : null;
   }
 
-  private requireRequest(id: string): ExecutiveRequestRecord {
-    const record = this.getRequest(id);
-    if (!record) throw new Error(`executive request '${id}' disappeared after write`);
-    return record;
-  }
-
   private parseRequest(row: Record<string, unknown>): ExecutiveRequestRecord {
     return {
       id: String(row.id), organizationId: String(row.organization_id), requestedBy: String(row.requested_by),
@@ -155,7 +162,9 @@ export class ExecutiveAssistantRepository implements IExecutiveAssistantReposito
       assignedEmploymentId: row.assigned_employment_id === null ? null : String(row.assigned_employment_id),
       taskId: row.task_id === null ? null : String(row.task_id), blockedReason: row.blocked_reason === null ? null : String(row.blocked_reason),
       version: Number(row.version), createdAt: String(row.created_at), updatedAt: String(row.updated_at),
-      completedAt: row.completed_at === null ? null : String(row.completed_at), metadata: metadata(row.metadata),
+      completedAt: row.completed_at === null ? null : String(row.completed_at),
+      idempotencyKey: row.idempotency_key === null ? null : String(row.idempotency_key),
+      intakeDigest: row.intake_digest === null ? null : String(row.intake_digest), metadata: metadata(row.metadata),
     };
   }
 

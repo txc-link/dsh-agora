@@ -22,6 +22,8 @@ export interface ExecutiveRequestRecord {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+  idempotencyKey: string | null;
+  intakeDigest: string | null;
   metadata: Record<string, unknown> | null;
 }
 
@@ -54,7 +56,14 @@ export interface InsertExecutiveRequestInput {
   taskType: string;
   projectId?: string | null;
   dueAt?: string | null;
+  idempotencyKey?: string | null;
+  intakeDigest?: string | null;
   metadata?: Record<string, unknown> | null;
+}
+
+export interface InsertExecutiveRequestResult {
+  request: ExecutiveRequestRecord;
+  created: boolean;
 }
 
 export interface InsertCommitmentInput {
@@ -70,7 +79,7 @@ export interface InsertCommitmentInput {
 }
 
 export interface IExecutiveAssistantRepository {
-  insertRequest(input: InsertExecutiveRequestInput): ExecutiveRequestRecord;
+  insertRequest(input: InsertExecutiveRequestInput): InsertExecutiveRequestResult;
   getRequest(requestId: string): ExecutiveRequestRecord | null;
   getRequestByTask(taskId: string): ExecutiveRequestRecord | null;
   listRequests(organizationId: string, status?: ExecutiveRequestStatus): ExecutiveRequestRecord[];

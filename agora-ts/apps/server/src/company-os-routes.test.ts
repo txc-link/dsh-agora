@@ -72,10 +72,12 @@ describe('Company OS REST', () => {
       stages: [{ id: 'execute', name: 'Execute', mode: 'execute', execution_kind: 'citizen_execute', gate: { type: 'command' } }],
     });
     let createdInput: Record<string, unknown> | null = null;
+    let createCalls = 0;
     const taskRepository = new TaskRepository(db);
     const participantRepository = new ParticipantBindingRepository(db);
     const taskService = {
       createTask(input: Record<string, unknown>) {
+        createCalls += 1;
         createdInput = input;
         const inserted = taskRepository.insertTask({
           id: 'task-ea-1',
@@ -152,13 +154,14 @@ describe('Company OS REST', () => {
         employment_kind: 'resident',
       },
     });
+    const requestPayload = {
+      requested_by: 'human:ceo', title: 'Prepare brief', body: 'Prepare the morning brief',
+      requested_capabilities: [], task_type: 'quick', project_id: null,
+      due_at: '2026-09-02T18:00:00+08:00', idempotency_key: 'paos:proposal-1',
+    };
     const request = await app.inject({
       method: 'POST', url: `/api/organizations/${organizationId}/assistant/requests`,
-      payload: {
-        requested_by: 'human:ceo', title: 'Prepare brief', body: 'Prepare the morning brief',
-        requested_capabilities: [], task_type: 'quick', project_id: null,
-        due_at: '2026-09-02T18:00:00+08:00',
-      },
+      payload: requestPayload,
     });
 
     expect(request.statusCode).toBe(201);
@@ -167,6 +170,19 @@ describe('Company OS REST', () => {
       request: { status: 'triage', taskId: 'task-ea-1', dueAt: '2026-09-02T18:00:00+08:00' },
       commitment: { status: 'open', taskId: 'task-ea-1' },
     });
+    const replay = await app.inject({
+      method: 'POST', url: `/api/organizations/${organizationId}/assistant/requests`, payload: requestPayload,
+    });
+    expect(replay.statusCode).toBe(201);
+    expect(replay.json()).toEqual(request.json());
+    const conflict = await app.inject({
+      method: 'POST', url: `/api/organizations/${organizationId}/assistant/requests`,
+      payload: { ...requestPayload, title: 'Different request' },
+    });
+    expect(conflict.statusCode).toBe(409);
+    expect(conflict.json()).toMatchObject({ message: expect.stringContaining('already used for different input') });
+    expect(createCalls).toBe(1);
+    expect(runtimeNodeRegistryService.listDispatches('node-b')).toHaveLength(1);
     expect(createdInput).toMatchObject({
       team_override: {
         members: [{ role: 'executor', agentId: 'dsh:node-b:ea', member_kind: 'controller' }],

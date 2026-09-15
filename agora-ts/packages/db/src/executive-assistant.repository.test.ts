@@ -31,10 +31,12 @@ describe('ExecutiveAssistantRepository', () => {
       VALUES ('task', 'Research', '', 'quick', 'normal', 'human:ceo', 'active', '{}', '{}', 'now', 'now')
     `).run();
     let repository = new ExecutiveAssistantRepository(database);
-    const request = repository.insertRequest({
+    const inserted = repository.insertRequest({
       id: 'request', organizationId: 'org', requestedBy: 'human:ceo', title: 'Research', body: 'Deliver a report',
       priority: 'normal', requestedCapabilities: ['research'], taskType: 'research',
+      idempotencyKey: 'paos:proposal-1', intakeDigest: 'digest-1',
     });
+    const request = inserted.request;
     const routed = repository.updateRequestRouting(request.id, {
       status: 'delegated', assignedPositionId: 'position', assignedEmploymentId: 'employment', taskId: 'task',
     }, request.version);
@@ -48,6 +50,12 @@ describe('ExecutiveAssistantRepository', () => {
     database = createAgoraDatabase({ dbPath });
     runMigrations(database);
     repository = new ExecutiveAssistantRepository(database);
+    expect(repository.listRequests('org')).toHaveLength(1);
+    expect(repository.insertRequest({
+      organizationId: 'org', requestedBy: 'human:ceo', title: 'Research', body: 'Deliver a report',
+      priority: 'normal', requestedCapabilities: ['research'], taskType: 'research',
+      idempotencyKey: 'paos:proposal-1', intakeDigest: 'digest-1',
+    })).toMatchObject({ created: false, request: { id: 'request', idempotencyKey: 'paos:proposal-1', intakeDigest: 'digest-1' } });
     expect(repository.listRequests('org')).toHaveLength(1);
     const commitment = repository.getCommitmentByRequest('request');
     expect(commitment?.status).toBe('open');

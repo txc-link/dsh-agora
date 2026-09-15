@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ArchiveJobRepository, createAgoraDatabase, HumanAccountRepository, HumanIdentityBindingRepository, NotificationOutboxRepository, runMigrations, SubtaskRepository, TaskContextBindingRepository, TaskConversationReadCursorRepository, TaskConversationRepository, TaskRepository, TemplateRepository, type AgoraDatabase } from '@agora-ts/db';
-import type { CcConnectInspectionService, CcConnectManagementService, DashboardQueryService, RetrievalService, TaskService } from '@agora-ts/core';
+import type { CcConnectInspectionService, CcConnectManagementService, DashboardQueryService, ExecutiveAssistantService, RetrievalService, TaskService } from '@agora-ts/core';
 import { HumanAccountService, ProjectBrainAutomationService, ProjectBrainService, StubCraftsmanAdapter, StubIMProvisioningPort, TaskConversationService, TaskContextBindingService, TemplateAuthoringService } from '@agora-ts/core';
 import { FilesystemProjectBrainQueryAdapter, FilesystemProjectKnowledgeAdapter } from '@agora-ts/adapters-brain';
 import { OpenClawCitizenProjectionAdapter } from '@agora-ts/adapters-openclaw';
@@ -5445,6 +5445,30 @@ token = "MTQ5MTc4MTM0NDY2NDIyNzk0Mg.fake.fake"
     expect(stderr.value).toBe('');
     expect(calls).toEqual([{ runningAfterMs: 60000, waitingAfterMs: 15000 }]);
     expect(stdout.value).toContain('"probed": 1');
+  });
+});
+
+describe('cli executive assistant intake', () => {
+  it('forwards a stable idempotency key to the service', async () => {
+    const stdout = createBuffer();
+    const stderr = createBuffer();
+    const intake = vi.fn(() => ({ ok: true as const, request: {} as never, commitment: null }));
+    const program = createCliProgram({
+      stdout,
+      stderr,
+      executiveAssistantService: { intake } as unknown as ExecutiveAssistantService,
+    }).exitOverride();
+
+    await program.parseAsync([
+      'assistant', 'ask', 'Prepare brief', '--org', 'org-1', '--body', 'Prepare the morning brief',
+      '--idempotency-key', 'paos:proposal-1',
+    ], { from: 'user' });
+
+    expect(intake).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'org-1',
+      idempotencyKey: 'paos:proposal-1',
+    }));
+    expect(stderr.value).toBe('');
   });
 });
 
