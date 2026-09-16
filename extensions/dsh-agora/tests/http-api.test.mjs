@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import test from 'node:test'
 import { handleHttpRequest } from '../lib/index.js'
@@ -31,6 +32,7 @@ test('host API rejects invalid coordination strategies before reaching the serve
 
 test('dispatch derives a per-message Agora key and resumes the room session', async () => {
   const calls = []
+  const conversationKey = `matrix-mx_room:test:${randomUUID()}`
   const service = {
     dispatchAgent: async input => {
       calls.push(input)
@@ -41,19 +43,19 @@ test('dispatch derives a per-message Agora key and resumes the room session', as
   // First message of the conversation: room-scoped key + eventId, no session yet.
   const first = await request('dispatch', {
     runtimeTargetRef: 'dsh:node-a:default', prompt: 'hi',
-    idempotencyKey: 'matrix-mx_room', eventId: '$evt-1', waitTimeoutMs: 0,
+    idempotencyKey: conversationKey, eventId: '$evt-1', waitTimeoutMs: 0,
   }, service)
   assert.equal(first.status, 200)
-  assert.equal(calls[0].idempotency_key, 'matrix-mx_room#$evt-1',
+  assert.equal(calls[0].idempotency_key, `${conversationKey}#$evt-1`,
     'the room-scoped key alone would make Agora replay this dispatch forever')
   assert.equal(calls[0].session_id, undefined)
 
   // Second message of the same conversation: fresh dispatch key, same session.
   await request('dispatch', {
     runtimeTargetRef: 'dsh:node-a:default', prompt: 'again',
-    idempotencyKey: 'matrix-mx_room', eventId: '$evt-2', waitTimeoutMs: 0,
+    idempotencyKey: conversationKey, eventId: '$evt-2', waitTimeoutMs: 0,
   }, service)
-  assert.equal(calls[1].idempotency_key, 'matrix-mx_room#$evt-2')
+  assert.equal(calls[1].idempotency_key, `${conversationKey}#$evt-2`)
   assert.equal(calls[1].session_id, 'session-1', 'the room must keep one DSH session')
 })
 
