@@ -12,7 +12,7 @@
 
 - dsh-agora plugin TypeScript typecheck passed; focused runtime/node-worker tests passed.
 - dsh-matrix-connector build and full test suite: 299/299 passed.
-- Live `dsh-web.service` restarted and resolved dsh-agora-plugin `0.7.1` / dsh-matrix-connector `0.6.4`.
+- Live `dsh-web.service` restarted and resolved dsh-agora-plugin `0.7.2` / dsh-matrix-connector `0.6.4`.
 - Live runtime inventory reports `node-home-linux` online with the expected non-secret machine metadata.
 - `matrix-agentd.mjs` passed `node --check`; `_preamble.sh` passed `sh -n`; service is active with `AGENTD_DEFAULT_ROLE=agent9` and `AGENTD_CALLERS=root,agent9`.
 

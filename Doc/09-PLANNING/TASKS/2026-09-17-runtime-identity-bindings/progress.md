@@ -2,7 +2,7 @@
 
 - [x] Extend runtime agent config metadata and roster rendering.
 - [x] Add docs/config examples.
-- [x] Run tests/typecheck/build (connector 299/299; plugin typecheck and focused runtime tests pass; full plugin suite has one pre-existing/flaky HTTP session assertion).
+- [x] Run tests/typecheck/build (connector 299/299; dsh-agora plugin 38/38; both packages packed successfully).
 - [x] Apply safe home GPU metadata and verify live roster (no password/private key written).
 - [x] Implement Matrix no-mention fallback: `agent9` is the sole manager, reads all role cards, and may emit bounded structured delegation messages.
 - [ ] Obtain confirmation before creating Matrix users or changing existing account bindings.
