@@ -8,6 +8,13 @@ export function formatExternalRuntimePrompt(dispatch) {
         `- Workspace alias: ${dispatch.workspace_alias ?? '(none)'}`,
         '- Treat these identifiers as authoritative; do not infer or replace them.',
         '',
+        'Execution contract:',
+        '- Preserve the Task below as the user task. Execute it first; do not rewrite it as a dispatch audit, identity check, or hypothetical plan.',
+        '- Use the tools and data sources already available on this runtime. URL, API token, host_id, and vault path are bridge/runtime details; do not require the user to provide them when the configured tools can resolve them.',
+        '- A verification reply must report the actual actions taken, the evidence found (source/path/result), what was safely written, and any remaining blocker. Do not claim completion without evidence.',
+        '- For credential-bearing requests, never expose or persist passwords, private keys, or access tokens. Continue with safe machine metadata such as role, host, port, account, and a credential reference, and state the redaction explicitly.',
+        '- Return a concise Markdown document for structured results; use plain text only for a short conversational reply. Do not wrap the whole Markdown document in a triple-backtick fence unless the user asks for source.',
+        '',
         dispatch.prompt,
     ].join('\n');
 }
