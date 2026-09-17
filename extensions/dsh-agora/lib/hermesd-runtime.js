@@ -170,7 +170,6 @@ function sleep(ms, signal) {
             return;
         }
         const timer = setTimeout(resolve, ms);
-        timer.unref?.();
         signal.addEventListener('abort', () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
     });
 }
