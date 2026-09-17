@@ -9,6 +9,8 @@ export interface ConfiguredDshAgent {
     readonly workspaceAlias?: string;
     readonly roles?: readonly string[];
     readonly capabilities?: readonly string[];
+    /** Safe identity metadata only; never put credentials or private key material here. */
+    readonly metadata?: Readonly<Record<string, unknown>>;
 }
 export interface HarnessRuntimeOptions {
     readonly baseUrl: string;

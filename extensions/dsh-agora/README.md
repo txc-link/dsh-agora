@@ -178,6 +178,10 @@ dsh plugin --profile web add dsh-better-sidebar
         workspace: '/absolute/path/to/workspace'
         roles: ['general']
         capabilities: ['research', 'coding']
+        # Optional non-secret identity metadata shown by the Matrix roster.
+        metadata:
+          identity_ref: 'gpu-home-pi'
+          harness_label: 'Pi'
 ```
 
 同一个节点可以把 OpenClaw 和 Hermes API Server 暴露成 Agora 的受治理 runtime。它们仍由 Agora 分配任务、限制并发、记录进度和持久化结果，不会取得公司级调度权：
@@ -234,6 +238,31 @@ workspace: 'C:/Users/example/workspace'
 - `maxConcurrent`：该节点允许同时执行的派发数；
 - `dispatchLeaseSeconds`：默认 120 秒；worker 会在约三分之一租约时自动续租；用 `claim_renewed_at` 判断租约存活，用 `latest_progress` 判断实际工作推进，不要再用 dispatch `updated_at` 混淆两者；
 - profile config 的优先级高于同名环境变量。
+
+### 身份、机器与安全访问元数据
+
+`nodeId` 和 `dsh:<nodeId>:<agentId>` 是调度稳定标识，不要为了改显示名而重命名。建议使用 `runtimeAgents[].metadata.identity_ref` 表示人类可读的机器/身份句柄，例如 `mac-home-pi`、`mac-home-codex`、`gpu-home-pi`、`gpu-home-hermes`、`tencent-cloud-hermes`、`windows-work-codex`；同一节点可保留 `default` 作为旧目标兼容别名。
+
+机器连接信息放在节点 `nodeMetadata.machine`，只允许安全的定位字段：
+
+```yaml
+nodeMetadata:
+  machine:
+    id: gpu-home
+    label: Home GPU
+    platform: linux
+    access:
+      protocol: ssh
+      host: 203.0.113.10
+      port: 16000
+      user: root
+      reachability: public-tunnel
+      auth: ssh-key
+```
+
+`host`、`port`、`user` 会在 `/agora roster` 中显示，便于确认角色落在哪台机器；密码、私钥内容和 token 必须通过 SSH agent、`authorized_keys` 或独立 secret manager 注入，不能放入 profile、Git 或 Matrix 消息。对于暂时不能外部 SSH 的办公 Windows，使用 `reachability: local-only`，不要伪造公网地址。
+
+若输入是 `https://host:port`，先按 HTTPS/Web 访问记录；只有确认远端端口确实是 SSH 后才标记 `protocol: ssh`。同一公网 IP 的不同端口应通过不同的 `machine.id` 或明确端口区分，避免把 Mac、GPU 误合并成一台机器。
 
 也可使用环境变量。只有在 profile 没有写死相应字段时，它们才会生效：
 

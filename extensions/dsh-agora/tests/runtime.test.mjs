@@ -162,10 +162,19 @@ test('Harness runtime creates a Session and tracks the exact dispatched turn', a
   }
   const runtime = new HarnessRuntimeAdapter({
     baseUrl: 'http://127.0.0.1:3999',
-    agents: [{ id: 'developer', workspace: '/repo', preset: 'coding' }],
+    agents: [{
+      id: 'developer',
+      workspace: '/repo',
+      preset: 'coding',
+      metadata: { identity_ref: 'mac-home-codex', harness_label: 'Codex' },
+    }],
     fetch,
     launchUrl: baseUrl => `${baseUrl}/?token=test-launch-token`,
     socketFactory,
+  })
+  assert.deepEqual(runtime.describeAgents()[0].metadata, {
+    identity_ref: 'mac-home-codex',
+    harness_label: 'Codex',
   })
   const result = await runtime.execute({
     id: 'dispatch-1', node_id: 'node-b', status: 'claimed', claimed_by: 'instance-b', claim_token: 'claim-1', claim_expires_at: null,

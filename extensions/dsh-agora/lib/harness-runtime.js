@@ -19,6 +19,7 @@ export class HarnessRuntimeAdapter {
             workspace_alias: agent.workspaceAlias,
             roles: agent.roles,
             capabilities: agent.capabilities,
+            ...(agent.metadata === undefined ? {} : { metadata: agent.metadata }),
         }));
     }
     async execute(dispatch, signal, context) {
@@ -440,6 +441,7 @@ function normalizeAgents(agents) {
             workspaceAlias: optional(agent.workspaceAlias),
             roles: unique(agent.roles ?? []),
             capabilities: unique(agent.capabilities ?? ['session.create', 'session.resume', 'session.prompt', 'session.cancel']),
+            ...(agent.metadata === undefined ? {} : { metadata: agent.metadata }),
         });
     });
 }

@@ -22,6 +22,8 @@ export interface ConfiguredDshAgent {
   readonly workspaceAlias?: string
   readonly roles?: readonly string[]
   readonly capabilities?: readonly string[]
+  /** Safe identity metadata only; never put credentials or private key material here. */
+  readonly metadata?: Readonly<Record<string, unknown>>
 }
 
 export interface HarnessRuntimeOptions {
@@ -60,6 +62,7 @@ export class HarnessRuntimeAdapter implements DshAgoraRuntimeAdapterV1 {
       workspace_alias: agent.workspaceAlias,
       roles: agent.roles,
       capabilities: agent.capabilities,
+      ...(agent.metadata === undefined ? {} : { metadata: agent.metadata }),
     }))
   }
 
@@ -159,6 +162,7 @@ interface NormalizedAgent {
   readonly workspaceAlias: string | null
   readonly roles: readonly string[]
   readonly capabilities: readonly string[]
+  readonly metadata?: Readonly<Record<string, unknown>>
 }
 
 /** Structural view of the WebSocket API the Remote stream mux needs. */
@@ -554,6 +558,7 @@ function normalizeAgents(agents: readonly ConfiguredDshAgent[]): readonly Normal
       workspaceAlias: optional(agent.workspaceAlias),
       roles: unique(agent.roles ?? []),
       capabilities: unique(agent.capabilities ?? ['session.create', 'session.resume', 'session.prompt', 'session.cancel']),
+      ...(agent.metadata === undefined ? {} : { metadata: agent.metadata }),
     })
   })
 }

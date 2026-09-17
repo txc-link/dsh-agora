@@ -5,6 +5,8 @@
 **Repo**: txc-link/dsh-agora (主仓, branch master / develop)
 **Phase**: 3 (matrix-connector v0.1.x + 准备 R-E Space / R-F Web Detail)
 
+> 2026-09-17 runtime identity follow-up: dsh-agora plugin 0.7.1 adds safe per-agent identity metadata projection; matrix connector 0.6.4 renders machine/access metadata; live matrix-agentd no-mention routing is documented in `Doc/10-WALKTHROUGH/2026-09-17-runtime-identity-manager.md`. Existing target refs remain stable; Matrix account creation is intentionally pending explicit mapping/credential approval.
+
 ---
 
 ## 1. Status
