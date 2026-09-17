@@ -10,6 +10,7 @@ import {
 } from './contracts.js'
 import type { DshAgoraExtensionRegistry } from './extension-sdk.js'
 import type { DshImBridgeV1, DshImSendRequestV1 } from './im-bridge-v1.js'
+import { redactSensitiveText, redactSensitiveValue } from './result-safety.js'
 
 export interface RuntimeNodeWorkerOptions {
   readonly client: AgoraClient
@@ -189,7 +190,12 @@ export class RuntimeNodeWorker {
       renewalAbort.abort()
       await renewal
       if (leaseLostAbort.signal.aborted) return
-      const deliveryPayload = this.presentationPayload(dispatch, result.answer)
+      const safeAnswer = redactSensitiveText(result.answer)
+      const safeMetadata = redactSensitiveValue(result.metadata ?? {}) as Readonly<Record<string, unknown>>
+      const safeEnvelope = result.resultEnvelope === undefined || result.resultEnvelope === null
+        ? null
+        : redactSensitiveValue(result.resultEnvelope) as RuntimeResultEnvelope
+      const deliveryPayload = this.presentationPayload(dispatch, safeAnswer)
       await this.options.client.completeRuntimeDispatch(
         this.options.nodeId,
         dispatch.id,
@@ -199,11 +205,11 @@ export class RuntimeNodeWorker {
           status: 'completed',
           session_id: result.sessionId,
           result: {
-            answer: result.answer,
+            answer: safeAnswer,
             reason: result.reason ?? null,
-            ...(result.metadata ?? {}),
+            ...safeMetadata,
           },
-          result_envelope: result.resultEnvelope ?? defaultResultEnvelope(dispatch, result.answer),
+          result_envelope: safeEnvelope ?? defaultResultEnvelope(dispatch, safeAnswer),
           ...(deliveryPayload === null ? {} : { delivery_payload: deliveryPayload }),
         },
         this.abortController.signal,

@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "resources": [
+    {
+      "id": "resource:obsidian:austin-vault",
+      "kind": "vault",
+      "aliases": ["obsidian", "Obsidian", "obsiandian", "obsidian vault", "笔记库"],
+      "location": "/home/ailink/vaults/Austin/",
+      "allowed_operations": ["list", "search", "read_markdown", "memory.write.redacted"],
+      "secret_policy": "handle_only"
+    },
+    {
+      "id": "resource:ssh:gpu-home",
+      "kind": "ssh_host",
+      "aliases": ["gpu", "gpu服务器", "gpu-home", "home gpu"],
+      "location": "8.136.15.147:16000",
+      "allowed_operations": ["ssh.connect", "remote.exec", "read_safe_metadata"],
+      "secret_policy": "handle_only"
+    },
+    {
+      "id": "resource:ssh:mac-home",
+      "kind": "ssh_host",
+      "aliases": ["mac", "macbook", "mac-home", "macbook air"],
+      "location": "8.136.15.147:18100",
+      "allowed_operations": ["ssh.connect", "remote.exec", "read_safe_metadata"],
+      "secret_policy": "handle_only"
+    },
+    {
+      "id": "resource:ssh:windows-work",
+      "kind": "ssh_host",
+      "aliases": ["windows", "工位电脑", "windows-work", "办公电脑"],
+      "location": "8.136.15.147:18110",
+      "allowed_operations": ["ssh.connect", "remote.exec", "read_safe_metadata"],
+      "secret_policy": "handle_only"
+    },
+    {
+      "id": "resource:ssh:tencent-jp",
+      "kind": "ssh_host",
+      "aliases": ["腾讯云", "日区服务器", "tencent-cloud", "tencent-jp"],
+      "location": "43.133.183.150:22",
+      "allowed_operations": ["ssh.connect", "remote.exec", "read_safe_metadata"],
+      "secret_policy": "handle_only"
+    }
+  ]
+}

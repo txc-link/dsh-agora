@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 import { createHash, generateKeyPairSync, sign } from 'node:crypto'
 import {
@@ -9,6 +12,44 @@ import {
   DSH_AGORA_EXTENSION_MANIFEST_PROTOCOL,
   runExtensionConformance,
 } from '../lib/index.js'
+import { formatExternalRuntimePrompt } from '../lib/runtime-prompt.js'
+
+test('runtime prompt binds the home Obsidian aliases without exposing credentials', () => {
+  const registryPath = join(mkdtempSync(join(tmpdir(), 'dsh-resource-registry-')), 'resources.json')
+  writeFileSync(registryPath, JSON.stringify({ resources: [{
+    id: 'obsidian:austin-vault', kind: 'vault', aliases: ['obsidian', 'Obsidian', 'obsiandian'],
+    location: '/home/ailink/vaults/Austin/', allowed_operations: ['list', 'search', 'read_markdown', 'memory.write.redacted'], secret_policy: 'handle_only',
+  }] }))
+  const previousRegistryPath = process.env.PAOS_RESOURCE_REGISTRY_PATH
+  process.env.PAOS_RESOURCE_REGISTRY_PATH = registryPath
+  const homePrompt = formatExternalRuntimePrompt({
+    id: 'dispatch-home', node_id: 'node-home-linux', status: 'claimed', claimed_by: null, claim_token: null,
+    claim_expires_at: null, attempt: 1, claimed_at: null, claim_renewed_at: null,
+    runtime_target_ref: 'dsh:node-home-linux:default', prompt: '查 Obsidian', idempotency_key: 'once',
+    task_id: null, participant_binding_id: null, session_id: null, workspace_alias: null, agent_preset: null,
+    metadata: null, latest_progress: null, progress_updated_at: null, result: null, error: null,
+    created_at: '', updated_at: '', completed_at: null,
+  })
+  assert.match(homePrompt, /Aliases: obsidian, Obsidian, obsiandian/)
+  assert.match(homePrompt, /\/home\/ailink\/vaults\/Austin\//)
+  assert.match(homePrompt, /memory\.write\.redacted/)
+  assert.match(homePrompt, /raw passwords, private keys, and tokens must never enter the reply or shared memory/)
+  assert.match(homePrompt, /approved credential handle\/tool/)
+  assert.doesNotMatch(homePrompt, /ailink@123|unittec@123|BEGIN OPENSSH PRIVATE KEY/)
+
+  const otherPrompt = formatExternalRuntimePrompt({
+    id: 'dispatch-other', node_id: 'node-other', status: 'claimed', claimed_by: null, claim_token: null,
+    claim_expires_at: null, attempt: 1, claimed_at: null, claim_renewed_at: null,
+    runtime_target_ref: 'dsh:node-other:default', prompt: '查资料', idempotency_key: 'once',
+    task_id: null, participant_binding_id: null, session_id: null, workspace_alias: null, agent_preset: null,
+    metadata: null, latest_progress: null, progress_updated_at: null, result: null, error: null,
+    created_at: '', updated_at: '', completed_at: null,
+  })
+  assert.doesNotMatch(otherPrompt, /\/home\/ailink\/vaults\/Austin\//)
+  assert.match(otherPrompt, /Treat unknown names as research subjects/)
+  if (previousRegistryPath === undefined) delete process.env.PAOS_RESOURCE_REGISTRY_PATH
+  else process.env.PAOS_RESOURCE_REGISTRY_PATH = previousRegistryPath
+})
 
 test('extension registry versions, isolates, and disposes runtime adapters', () => {
   const registry = new DshAgoraExtensionRegistry()

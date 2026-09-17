@@ -1,5 +1,6 @@
 import { AgoraApiError } from './agora-client.js';
 import { DSH_AGORA_NODE_PROTOCOL, } from './contracts.js';
+import { redactSensitiveText, redactSensitiveValue } from './result-safety.js';
 export class RuntimeNodeWorker {
     options;
     abortController = new AbortController();
@@ -151,18 +152,23 @@ export class RuntimeNodeWorker {
             await renewal;
             if (leaseLostAbort.signal.aborted)
                 return;
-            const deliveryPayload = this.presentationPayload(dispatch, result.answer);
+            const safeAnswer = redactSensitiveText(result.answer);
+            const safeMetadata = redactSensitiveValue(result.metadata ?? {});
+            const safeEnvelope = result.resultEnvelope === undefined || result.resultEnvelope === null
+                ? null
+                : redactSensitiveValue(result.resultEnvelope);
+            const deliveryPayload = this.presentationPayload(dispatch, safeAnswer);
             await this.options.client.completeRuntimeDispatch(this.options.nodeId, dispatch.id, {
                 instance_id: this.options.instanceId,
                 claim_token: dispatch.claim_token,
                 status: 'completed',
                 session_id: result.sessionId,
                 result: {
-                    answer: result.answer,
+                    answer: safeAnswer,
                     reason: result.reason ?? null,
-                    ...(result.metadata ?? {}),
+                    ...safeMetadata,
                 },
-                result_envelope: result.resultEnvelope ?? defaultResultEnvelope(dispatch, result.answer),
+                result_envelope: safeEnvelope ?? defaultResultEnvelope(dispatch, safeAnswer),
                 ...(deliveryPayload === null ? {} : { delivery_payload: deliveryPayload }),
             }, this.abortController.signal);
             if (dispatch.task_id && dispatch.participant_binding_id) {
